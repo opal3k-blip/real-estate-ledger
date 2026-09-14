@@ -204,26 +204,26 @@ function allocationOptimizer(core, rows){
 function earlyWarnings(core, rows){
   const alerts = computeAlerts(core).map(a=>({
     severity:a.severity==='high'?'critical':a.severity==='medium'?'warning':'info',
-    oppId:a.oppId, name:a.name, metric:a.kind, message:a.message, action:'Review IC',
+    oppId:a.oppId, name:a.name, metric:a.kind, message:a.message, action:core.T('مراجعة اللجنة','Review IC'),
   }));
   rows.forEach(r=>{
     const actual = r.actual && r.actual.data;
     const base = r.baseline && r.baseline.data && r.baseline.data.metrics;
     if(actual && base){
       if(base.dscrMin!=null && actual.actualDSCR!=null && actual.actualDSCR < base.dscrMin){
-        alerts.push({ severity:'critical', oppId:r.rec.id, name:r.d.meta.name||r.rec.id, metric:'DSCR', message:`Actual DSCR ${actual.actualDSCR.toFixed(2)}× below IC baseline ${base.dscrMin.toFixed(2)}×`, action:'Review IC' });
+        alerts.push({ severity:'critical', oppId:r.rec.id, name:r.d.meta.name||r.rec.id, metric:'DSCR', message:core.T(`DSCR الفعلي ${actual.actualDSCR.toFixed(2)}× أقل من الأساس المعتمد من اللجنة ${base.dscrMin.toFixed(2)}×`, `Actual DSCR ${actual.actualDSCR.toFixed(2)}× below IC baseline ${base.dscrMin.toFixed(2)}×`), action:core.T('مراجعة اللجنة','Review IC') });
       }
       if(base.equityIRR!=null && actual.actualEquityIRR!=null && actual.actualEquityIRR < base.equityIRR - 0.03){
-        alerts.push({ severity:'warning', oppId:r.rec.id, name:r.d.meta.name||r.rec.id, metric:'IRR', message:`Actual IRR ${pctPoint(actual.actualEquityIRR)} is more than 300 bps below baseline ${pctPoint(base.equityIRR)}`, action:'Update recovery plan' });
+        alerts.push({ severity:'warning', oppId:r.rec.id, name:r.d.meta.name||r.rec.id, metric:core.T('العائد الداخلي','IRR'), message:core.T(`العائد الفعلي ${pctPoint(actual.actualEquityIRR)} أقل بأكثر من 300 نقطة أساس من الأساس المعتمد ${pctPoint(base.equityIRR)}`, `Actual IRR ${pctPoint(actual.actualEquityIRR)} is more than 300 bps below baseline ${pctPoint(base.equityIRR)}`), action:core.T('تحديث خطة التعافي','Update recovery plan') });
       }
       if(base.MOIC!=null && actual.actualMOIC!=null && actual.actualMOIC < base.MOIC * 0.9){
-        alerts.push({ severity:'warning', oppId:r.rec.id, name:r.d.meta.name||r.rec.id, metric:'MOIC', message:`Actual MOIC ${ratio(actual.actualMOIC)} is >10% below baseline ${ratio(base.MOIC)}`, action:'Reforecast exit' });
+        alerts.push({ severity:'warning', oppId:r.rec.id, name:r.d.meta.name||r.rec.id, metric:'MOIC', message:core.T(`مضاعف رأس المال الفعلي ${ratio(actual.actualMOIC)} أقل بأكثر من 10% من الأساس المعتمد ${ratio(base.MOIC)}`, `Actual MOIC ${ratio(actual.actualMOIC)} is >10% below baseline ${ratio(base.MOIC)}`), action:core.T('إعادة توقّع الخروج','Reforecast exit') });
       }
     }
     const dd = (r.d.dd && r.d.dd.items) || {};
     Object.values(dd).forEach(item=>{
       if(item && item.dueDate && item.dueDate < core.todayStr() && item.status !== 'completed'){
-        alerts.push({ severity:item.severity==='critical'?'critical':'warning', oppId:r.rec.id, name:r.d.meta.name||r.rec.id, metric:'DD', message:`DD expired: ${item.title || item.name || item.dueDate}`, action:'Refresh evidence' });
+        alerts.push({ severity:item.severity==='critical'?'critical':'warning', oppId:r.rec.id, name:r.d.meta.name||r.rec.id, metric:core.T('العناية الواجبة','DD'), message:core.T(`انتهت صلاحية بند العناية الواجبة: ${item.title || item.name || item.dueDate}`, `DD expired: ${item.title || item.name || item.dueDate}`), action:core.T('تحديث الأدلة','Refresh evidence') });
       }
     });
   });
@@ -255,14 +255,14 @@ function formulaValidation(core, rows){
     const name = r.d.meta.name || r.rec.id;
     if(c.TPC!=null && c.debt!=null && c.equity!=null){
       const diff = Math.abs((c.debt + c.equity) - c.TPC);
-      checks.push({ name, check:'Debt + Equity = TPC', pass: diff <= Math.max(1, c.TPC*0.001), detail: core.fmtSAR(diff), kpi:'TPC / Equity / Debt' });
+      checks.push({ name, check:core.T('الدين + حقوق الملكية = TPC','Debt + Equity = TPC'), pass: diff <= Math.max(1, c.TPC*0.001), detail: core.fmtSAR(diff), kpi:'TPC / Equity / Debt' });
     }
     if(c.MOIC!=null && c.investorCashInvested!=null && c.totalDistrib!=null && c.investorCashInvested>0){
       const expected = c.totalDistrib / c.investorCashInvested;
-      checks.push({ name, check:'MOIC = Total Distributions / Total Contributed Equity', pass: Math.abs(expected-c.MOIC) <= 0.01, detail: `${ratio(c.MOIC)} vs ${ratio(expected)}`, kpi:'MOIC/PIC' });
+      checks.push({ name, check:core.T('MOIC = إجمالي التوزيعات / إجمالي حقوق الملكية المساهَم بها','MOIC = Total Distributions / Total Contributed Equity'), pass: Math.abs(expected-c.MOIC) <= 0.01, detail: `${ratio(c.MOIC)} vs ${ratio(expected)}`, kpi:'MOIC/PIC' });
     }
     if(c.projectCF && c.totalYears!=null){
-      checks.push({ name, check:'Cash-flow length matches model years', pass: c.projectCF.length >= Math.max(1, Number(c.totalYears)||1), detail:`${c.projectCF.length} rows`, kpi:'IRR / NPV' });
+      checks.push({ name, check:core.T('طول التدفقات النقدية يطابق سنوات النموذج','Cash-flow length matches model years'), pass: c.projectCF.length >= Math.max(1, Number(c.totalYears)||1), detail:`${c.projectCF.length} ${core.T('صفوف','rows')}`, kpi:'IRR / NPV' });
     }
   });
   return checks;
@@ -338,13 +338,13 @@ function renderInstitutionalInvestmentIntelligenceDashboard(core){
   </div>
 
   <div class="panel" style="margin-bottom:14px;">
-    <div class="panel-head"><h3>${core.T('Investment Intelligence Engine','Investment Intelligence Engine')}</h3></div>
+    <div class="panel-head"><h3>${core.T('محرك ذكاء الاستثمار','Investment Intelligence Engine')}</h3></div>
     <div class="grid3">
-      ${miniScore(core, 'Investment Quality', { score: median(rows.map(r=>r.suite.investmentQuality.score)) || 0, band: confidenceBand(median(rows.map(r=>r.suite.investmentQuality.score)) || 0) })}
-      ${miniScore(core, 'Decision Confidence', { score: median(rows.map(r=>r.suite.decisionConfidence.score)) || 0, band: confidenceBand(median(rows.map(r=>r.suite.decisionConfidence.score)) || 0) })}
-      ${miniScore(core, 'Execution Confidence', { score: median(rows.map(r=>r.suite.executionConfidence.score)) || 0, band: confidenceBand(median(rows.map(r=>r.suite.executionConfidence.score)) || 0) })}
+      ${miniScore(core, core.T('جودة الاستثمار','Investment Quality'), { score: median(rows.map(r=>r.suite.investmentQuality.score)) || 0, band: confidenceBand(median(rows.map(r=>r.suite.investmentQuality.score)) || 0) })}
+      ${miniScore(core, core.T('ثقة القرار','Decision Confidence'), { score: median(rows.map(r=>r.suite.decisionConfidence.score)) || 0, band: confidenceBand(median(rows.map(r=>r.suite.decisionConfidence.score)) || 0) })}
+      ${miniScore(core, core.T('ثقة التنفيذ','Execution Confidence'), { score: median(rows.map(r=>r.suite.executionConfidence.score)) || 0, band: confidenceBand(median(rows.map(r=>r.suite.executionConfidence.score)) || 0) })}
     </div>
-    <div class="tablewrap" style="margin-top:10px;"><table class="db" style="font-size:12px;"><thead><tr><th>${core.T('الفرصة','Opportunity')}</th><th>Quality</th><th>Decision</th><th>Execution</th><th>Evidence</th><th>${core.T('لماذا؟','Why?')}</th></tr></thead><tbody>
+    <div class="tablewrap" style="margin-top:10px;"><table class="db" style="font-size:12px;"><thead><tr><th>${core.T('الفرصة','Opportunity')}</th><th>${core.T('الجودة','Quality')}</th><th>${core.T('القرار','Decision')}</th><th>${core.T('التنفيذ','Execution')}</th><th>${core.T('الأدلة','Evidence')}</th><th>${core.T('لماذا؟','Why?')}</th></tr></thead><tbody>
       ${rows.map(r=>`<tr>
         <td><button class="btn btn-sm btn-ghost" data-action="institutional-intelligence-open-opp" data-id="${r.rec.id}">${core.esc(r.d.meta.name||r.rec.id)}</button></td>
         <td class="num">${r.suite.investmentQuality.score.toFixed(0)}</td>
@@ -352,29 +352,29 @@ function renderInstitutionalInvestmentIntelligenceDashboard(core){
         <td class="num">${r.suite.executionConfidence.score.toFixed(0)}</td>
         <td class="num">${r.suite.evidenceConfidence.score.toFixed(0)}</td>
         <td>${escJoin(core, [
-          isFinite(r.c.equityIRR) ? `IRR ${pctPoint(r.c.equityIRR)}` : '',
-          `Risk ${r.risk.en}`,
-          r.suite.decisionConfidence.blockers.length ? r.suite.decisionConfidence.blockers.map(b=>b.en).join(', ') : 'No critical blocker',
+          isFinite(r.c.equityIRR) ? core.T(`العائد ${pctPoint(r.c.equityIRR)}`, `IRR ${pctPoint(r.c.equityIRR)}`) : '',
+          core.T(`المخاطر: ${r.risk.ar}`, `Risk: ${r.risk.en}`),
+          r.suite.decisionConfidence.blockers.length ? r.suite.decisionConfidence.blockers.map(b=>core.T(b.ar,b.en)).join(core.T('، ', ', ')) : core.T('لا يوجد عائق حرج','No critical blocker'),
         ])}</td>
       </tr>`).join('')}
     </tbody></table></div>
   </div>
 
   <div class="panel" style="margin-bottom:14px;">
-    <div class="panel-head"><h3>${core.T('Portfolio Intelligence','Portfolio Intelligence')}</h3></div>
+    <div class="panel-head"><h3>${core.T('ذكاء المحفظة','Portfolio Intelligence')}</h3></div>
     ${kv(core, [
       [core.T('NAV تقديرية من الاكتتاب','Estimated Underwriting NAV'), core.fmtSAR(p.nav)],
-      ['AUM / Committed', core.fmtSAR(p.committed)],
-      ['Drawn / Paid-in', core.fmtSAR(p.paidIn)],
-      ['Remaining Capital', core.fmtSAR(p.uninvestedCapital)],
-      ['Average IRR', p.grossIRR!=null? pctPoint(p.grossIRR):'—'],
-      ['Average MOIC', p.portfolioMOIC!=null? ratio(p.portfolioMOIC):'—'],
-      ['Average DSCR', p.dscrAvg!=null? ratio(p.dscrAvg):'—'],
-      ['Average LTV', p.ltv!=null? pctPoint(p.ltv):'—'],
+      [core.T('الأصول تحت الإدارة / الملتزَم به (AUM)','AUM / Committed'), core.fmtSAR(p.committed)],
+      [core.T('المسحوب / المسدَّد','Drawn / Paid-in'), core.fmtSAR(p.paidIn)],
+      [core.T('رأس المال المتبقي','Remaining Capital'), core.fmtSAR(p.uninvestedCapital)],
+      [core.T('متوسط العائد الداخلي (IRR)','Average IRR'), p.grossIRR!=null? pctPoint(p.grossIRR):'—'],
+      [core.T('متوسط مضاعف رأس المال (MOIC)','Average MOIC'), p.portfolioMOIC!=null? ratio(p.portfolioMOIC):'—'],
+      [core.T('متوسط تغطية خدمة الدين (DSCR)','Average DSCR'), p.dscrAvg!=null? ratio(p.dscrAvg):'—'],
+      [core.T('متوسط نسبة القرض إلى القيمة (LTV)','Average LTV'), p.ltv!=null? pctPoint(p.ltv):'—'],
     ])}
     <div class="grid3" style="margin-top:10px;">
-      <div class="note">Top Performers: ${top.map(r=>core.esc(r.d.meta.name||r.rec.id)).join(' · ') || '—'}</div>
-      <div class="note">Worst Execution: ${worst.map(r=>core.esc(r.d.meta.name||r.rec.id)).join(' · ') || '—'}</div>
+      <div class="note">${core.T('الأفضل أداءً','Top Performers')}: ${top.map(r=>core.esc(r.d.meta.name||r.rec.id)).join(' · ') || '—'}</div>
+      <div class="note">${core.T('الأضعف تنفيذاً','Worst Execution')}: ${worst.map(r=>core.esc(r.d.meta.name||r.rec.id)).join(' · ') || '—'}</div>
       <div class="note">${core.T('أهم المخاطر','Top Risks')}: ${warnings.slice(0,5).map(w=>core.esc(w.name)).join(' · ') || '—'}</div>
     </div>
   </div>
@@ -390,49 +390,49 @@ function renderInstitutionalInvestmentIntelligenceDashboard(core){
   </div>
 
   <div class="panel" style="margin-bottom:14px;">
-    <div class="panel-head"><h3>${core.T('Portfolio Stress Testing','Portfolio Stress Testing')}</h3></div>
-    <div class="tablewrap"><table class="db" style="font-size:12px;"><thead><tr><th>Scenario</th><th>Portfolio IRR</th><th>Δ</th><th>MOIC</th><th>DSCR</th><th>Probability</th></tr></thead><tbody>
-      ${stress.map(s=>`<tr><td>${core.T(s.ar,s.en)}</td><td class="num">${pctPoint(s.stressed.irr)}</td><td class="num" style="${s.delta<0?'color:var(--bad);font-weight:700;':''}">${s.delta==null?'—':(s.delta*100).toFixed(1)+' pts'}</td><td class="num">${ratio(s.stressed.moic)}</td><td class="num">${ratio(s.stressed.dscr)}</td><td>${s.key==='worst_case'?'Low / Severe':s.key==='best_case'?'Low / Upside':'Medium'}</td></tr>`).join('')}
+    <div class="panel-head"><h3>${core.T('اختبار جهد المحفظة','Portfolio Stress Testing')}</h3></div>
+    <div class="tablewrap"><table class="db" style="font-size:12px;"><thead><tr><th>${core.T('السيناريو','Scenario')}</th><th>${core.T('العائد الداخلي للمحفظة','Portfolio IRR')}</th><th>Δ</th><th>MOIC</th><th>DSCR</th><th>${core.T('الاحتمالية','Probability')}</th></tr></thead><tbody>
+      ${stress.map(s=>`<tr><td>${core.T(s.ar,s.en)}</td><td class="num">${pctPoint(s.stressed.irr)}</td><td class="num" style="${s.delta<0?'color:var(--bad);font-weight:700;':''}">${s.delta==null?'—':(s.delta*100).toFixed(1)+' '+core.T('نقطة','pts')}</td><td class="num">${ratio(s.stressed.moic)}</td><td class="num">${ratio(s.stressed.dscr)}</td><td>${s.key==='worst_case'?core.T('منخفضة / حادة','Low / Severe'):s.key==='best_case'?core.T('منخفضة / إيجابية','Low / Upside'):core.T('متوسطة','Medium')}</td></tr>`).join('')}
     </tbody></table></div>
   </div>
 
   <div class="panel" style="margin-bottom:14px;">
-    <div class="panel-head"><h3>${core.T('Early Warning Engine','Early Warning Engine')}</h3></div>
+    <div class="panel-head"><h3>${core.T('محرك الإنذار المبكر','Early Warning Engine')}</h3></div>
     <div style="display:flex;flex-direction:column;gap:6px;">
-      ${warnings.slice(0,18).map(w=>`<div style="padding:8px 10px;border-radius:8px;border:1px solid ${w.severity==='critical'?'var(--bad)':w.severity==='warning'?'var(--warn)':'var(--border)'};background:${w.severity==='critical'?'var(--bad-soft)':w.severity==='warning'?'var(--warn-soft)':'var(--surface-2)'};"><b>${w.severity==='critical'?'🔴 Critical':w.severity==='warning'?'🟡 Warning':'⚪ Info'} — ${core.esc(w.metric)}</b> | ${core.esc(w.name)} — ${core.esc(w.message)} <span class="tag">${core.esc(w.action)}</span></div>`).join('') || `<p class="note">${core.T('لا توجد تحذيرات مبكرة حالياً.','No early warnings currently.')}</p>`}
+      ${warnings.slice(0,18).map(w=>`<div style="padding:8px 10px;border-radius:8px;border:1px solid ${w.severity==='critical'?'var(--bad)':w.severity==='warning'?'var(--warn)':'var(--border)'};background:${w.severity==='critical'?'var(--bad-soft)':w.severity==='warning'?'var(--warn-soft)':'var(--surface-2)'};"><b>${w.severity==='critical'?'🔴 '+core.T('حرج','Critical'):w.severity==='warning'?'🟡 '+core.T('تحذير','Warning'):'⚪ '+core.T('معلومة','Info')} — ${core.esc(w.metric)}</b> | ${core.esc(w.name)} — ${core.esc(w.message)} <span class="tag">${core.esc(w.action)}</span></div>`).join('') || `<p class="note">${core.T('لا توجد تحذيرات مبكرة حالياً.','No early warnings currently.')}</p>`}
     </div>
   </div>
 
   <div class="panel" style="margin-bottom:14px;">
-    <div class="panel-head"><h3>${core.T('Knowledge Engine','Knowledge Engine')}</h3></div>
+    <div class="panel-head"><h3>${core.T('محرك المعرفة المؤسسية','Knowledge Engine')}</h3></div>
     ${kv(core, [
-      ['Closed/Actual Sample', knowledge.sample],
-      ['Median IRR Variance', knowledge.medIrr==null?'—':(knowledge.medIrr*100).toFixed(1)+' pts'],
-      ['Median MOIC Variance', knowledge.medMoic==null?'—':knowledge.medMoic.toFixed(2)+'×'],
-      ['Median DSCR Variance', knowledge.medDscr==null?'—':knowledge.medDscr.toFixed(2)+'×'],
-      ['Median Price/Cost Variance', knowledge.medPrice==null?'—':pctPoint(knowledge.medPrice)],
-      ['Recommended Construction Contingency', pctPoint(knowledge.recContingency)],
+      [core.T('العينة المُغلقة/الفعلية','Closed/Actual Sample'), knowledge.sample],
+      [core.T('الوسيط — انحراف العائد الداخلي','Median IRR Variance'), knowledge.medIrr==null?'—':(knowledge.medIrr*100).toFixed(1)+' '+core.T('نقطة','pts')],
+      [core.T('الوسيط — انحراف مضاعف رأس المال','Median MOIC Variance'), knowledge.medMoic==null?'—':knowledge.medMoic.toFixed(2)+'×'],
+      [core.T('الوسيط — انحراف تغطية خدمة الدين','Median DSCR Variance'), knowledge.medDscr==null?'—':knowledge.medDscr.toFixed(2)+'×'],
+      [core.T('الوسيط — انحراف السعر/التكلفة','Median Price/Cost Variance'), knowledge.medPrice==null?'—':pctPoint(knowledge.medPrice)],
+      [core.T('احتياطي الطوارئ الإنشائي الموصو به','Recommended Construction Contingency'), pctPoint(knowledge.recContingency)],
     ])}
     <p class="note">${core.T('كل إدخال Actual جديد يغذي هذه القراءة تلقائياً. عندما تكبر العينة، تتحول من قراءة وصفية إلى سياسة افتراضات داخلية.','Every new Actual entry feeds this automatically. As the sample grows, this becomes an internal underwriting-assumption policy engine.')}</p>
   </div>
 
   <div class="panel" style="margin-bottom:14px;">
-    <div class="panel-head"><h3>${core.T('Institutional Reporting','Institutional Reporting')}</h3></div>
+    <div class="panel-head"><h3>${core.T('التقارير المؤسسية','Institutional Reporting')}</h3></div>
     <div class="grid3">
-      ${['Board Pack','IC Pack','Fund Pack','Quarterly Pack','Asset Pack','LP Report','ESG Report'].map(name=>`<div style="padding:10px;border:1px solid var(--border);border-radius:10px;background:var(--surface);"><b>${name}</b><p class="note" style="margin:4px 0 0;">${core.T('جاهز كمصدر بيانات موحد؛ يتم توليده من نفس بيانات محرك الذكاء الاستثماري المؤسسي وكتب IC الحالية.','Ready as a unified data source; generated from the same Institutional Investment Intelligence data and existing IC books.')}</p></div>`).join('')}
+      ${[['حزمة مجلس الإدارة','Board Pack'],['حزمة لجنة الاستثمار','IC Pack'],['حزمة الصندوق','Fund Pack'],['الحزمة الربع سنوية','Quarterly Pack'],['حزمة الأصل','Asset Pack'],['تقرير الشركاء المحدودين','LP Report'],['تقرير الاستدامة (ESG)','ESG Report']].map(([ar,en])=>`<div style="padding:10px;border:1px solid var(--border);border-radius:10px;background:var(--surface);"><b>${core.T(ar,en)}</b><p class="note" style="margin:4px 0 0;">${core.T('جاهز كمصدر بيانات موحد؛ يتم توليده من نفس بيانات محرك الذكاء الاستثماري المؤسسي وكتب IC الحالية.','Ready as a unified data source; generated from the same Institutional Investment Intelligence data and existing IC books.')}</p></div>`).join('')}
     </div>
   </div>
 
   <div class="panel">
-    <div class="panel-head"><h3>${core.T('حوكمة المحرك — Simulator / Validator / Regression / Replay','Engine Governance — Simulator / Validator / Regression / Replay')}</h3></div>
+    <div class="panel-head"><h3>${core.T('حوكمة المحرك — محاكاة / تحقق / اختبار رجعي / إعادة تشغيل','Engine Governance — Simulator / Validator / Regression / Replay')}</h3></div>
     ${kv(core, [
-      ['Rule Simulator', core.T('مغطى باختبارات Firestore Emulator قبل النشر؛ آخر suite يضم سيناريوهات v4 المزيفة وMonday وappend-only.','Covered by Firestore Emulator pre-deploy tests; latest suite includes fake v4, Monday, and append-only scenarios.')],
-      ['Formula Validator', failedFormulas.length ? `FAIL (${failedFormulas.length})` : 'PASS'],
-      ['Regression Dashboard', 'Financial Tests + Firestore Tests + Browser readiness manifest'],
-      ['Decision Replay', core.T('متاح داخل كل Investment Passport من سجل icDecisions + v4 snapshots + actuals.','Available in each Investment Passport from icDecisions + v4 snapshots + actuals.')],
+      [core.T('محاكي القواعد','Rule Simulator'), core.T('مغطى باختبارات Firestore Emulator قبل النشر؛ آخر مجموعة اختبارات تضم سيناريوهات v4 المزيفة وMonday وappend-only.','Covered by Firestore Emulator pre-deploy tests; latest suite includes fake v4, Monday, and append-only scenarios.')],
+      [core.T('مدقّق الصيغ','Formula Validator'), failedFormulas.length ? core.T(`فشل (${failedFormulas.length})`,`FAIL (${failedFormulas.length})`) : core.T('ناجح','PASS')],
+      [core.T('لوحة الاختبار الرجعي','Regression Dashboard'), core.T('اختبارات مالية + اختبارات Firestore + بيان جاهزية المتصفح','Financial Tests + Firestore Tests + Browser readiness manifest')],
+      [core.T('إعادة تشغيل القرار','Decision Replay'), core.T('متاح داخل كل Investment Passport من سجل icDecisions + v4 snapshots + actuals.','Available in each Investment Passport from icDecisions + v4 snapshots + actuals.')],
     ])}
-    <div class="tablewrap" style="margin-top:10px;"><table class="db" style="font-size:12px;"><thead><tr><th>Formula</th><th>Status</th><th>Affected KPIs</th><th>Detail</th><th>Opportunity</th></tr></thead><tbody>
-      ${formulas.slice(0,24).map(f=>`<tr><td>${core.esc(f.check)}</td><td style="font-weight:700;color:${f.pass?'var(--good)':'var(--bad)'};">${f.pass?'PASS':'FAIL'}</td><td>${core.esc(f.kpi)}</td><td>${core.esc(f.detail)}</td><td>${core.esc(f.name)}</td></tr>`).join('')}
+    <div class="tablewrap" style="margin-top:10px;"><table class="db" style="font-size:12px;"><thead><tr><th>${core.T('الصيغة','Formula')}</th><th>${core.T('الحالة','Status')}</th><th>${core.T('مؤشرات الأداء المتأثرة','Affected KPIs')}</th><th>${core.T('التفاصيل','Detail')}</th><th>${core.T('الفرصة','Opportunity')}</th></tr></thead><tbody>
+      ${formulas.slice(0,24).map(f=>`<tr><td>${core.esc(f.check)}</td><td style="font-weight:700;color:${f.pass?'var(--good)':'var(--bad)'};">${f.pass?core.T('ناجح','PASS'):core.T('فشل','FAIL')}</td><td>${core.esc(f.kpi)}</td><td>${core.esc(f.detail)}</td><td>${core.esc(f.name)}</td></tr>`).join('')}
     </tbody></table></div>
   </div>`;
 }
@@ -450,26 +450,26 @@ function renderPassport(core, row){
   return `<div class="section" data-institutional-intelligence-passport="${row.rec.id}">
     <h3>🛂 ${core.T('Investment Passport — المرجع الرسمي للأصل','Investment Passport — Official Asset Reference')}</h3>
     <div class="grid3" style="margin-bottom:10px;">
-      ${miniScore(core, 'Investment Quality', suite.investmentQuality)}
-      ${miniScore(core, 'Decision Confidence', suite.decisionConfidence)}
-      ${miniScore(core, 'Execution Confidence', suite.executionConfidence)}
+      ${miniScore(core, core.T('جودة الاستثمار','Investment Quality'), suite.investmentQuality)}
+      ${miniScore(core, core.T('ثقة القرار','Decision Confidence'), suite.decisionConfidence)}
+      ${miniScore(core, core.T('ثقة التنفيذ','Execution Confidence'), suite.executionConfidence)}
     </div>
     ${kv(core, [
-      ['Investment Thesis', d.thesis ? core.esc(d.thesis).slice(0,300) : '—'],
-      ['Thesis Validation', `${thesis.valid===true?'✅ Valid':thesis.valid===false?'🔴 Challenged':'🟡 Pending'} — ${core.esc(thesis.reason)}`],
-      ['Current Status', core.esc((d.pipeline && d.pipeline.stage) || '—')],
-      ['IRR / MOIC / DSCR', `${pctPoint(c.equityIRR)} · ${ratio(c.MOIC)} · ${ratio(c.dscrMin)}`],
-      ['Maximum Price / Current Price', `${core.fmtSAR(c.maxLandPrice || 0)} / ${core.fmtSAR(d.land.price || 0)}`],
-      ['Actual Performance', actual ? `${actual.period || actual.asOfDate}: IRR ${pctPoint(actual.actualEquityIRR)}, MOIC ${ratio(actual.actualMOIC)}, DSCR ${ratio(actual.actualDSCR)}` : '—'],
-      ['Risk', `${core.T(row.risk.ar,row.risk.en)} (${row.riskScore}/25)`],
-      ['DD / Evidence', `${Math.round((suite.executionConfidence.dd.pct||0)*100)}% DD · ${suite.evidenceConfidence.score.toFixed(0)}/100 Evidence`],
-      ['Conditions', (((d.ic && d.ic.decisions)||[]).slice(-1)[0]||{}).conditions ? `${(((d.ic && d.ic.decisions)||[]).slice(-1)[0]||{}).conditions.length}` : '0'],
-      ['Capital', d.capitalAllocation && d.capitalAllocation.targetEquity ? core.fmtSAR(d.capitalAllocation.targetEquity) : '—'],
-      ['Next Action', core.esc((d.pipeline && d.pipeline.nextAction) || (gate.ready ? 'Ready for IC / monitoring' : 'Resolve readiness blockers'))],
+      [core.T('الأطروحة الاستثمارية','Investment Thesis'), d.thesis ? core.esc(d.thesis).slice(0,300) : '—'],
+      [core.T('التحقق من الأطروحة','Thesis Validation'), `${thesis.valid===true?'✅ '+core.T('صالحة','Valid'):thesis.valid===false?'🔴 '+core.T('مُتحدّى عليها','Challenged'):'🟡 '+core.T('معلّقة','Pending')} — ${core.esc(thesis.reason)}`],
+      [core.T('الحالة الحالية','Current Status'), core.esc((d.pipeline && d.pipeline.stage) || '—')],
+      [core.T('العائد / المضاعف / التغطية (IRR/MOIC/DSCR)','IRR / MOIC / DSCR'), `${pctPoint(c.equityIRR)} · ${ratio(c.MOIC)} · ${ratio(c.dscrMin)}`],
+      [core.T('السعر الأقصى / السعر الحالي','Maximum Price / Current Price'), `${core.fmtSAR(c.maxLandPrice || 0)} / ${core.fmtSAR(d.land.price || 0)}`],
+      [core.T('الأداء الفعلي','Actual Performance'), actual ? `${actual.period || actual.asOfDate}: IRR ${pctPoint(actual.actualEquityIRR)}, MOIC ${ratio(actual.actualMOIC)}, DSCR ${ratio(actual.actualDSCR)}` : '—'],
+      [core.T('المخاطر','Risk'), `${core.T(row.risk.ar,row.risk.en)} (${row.riskScore}/25)`],
+      [core.T('العناية الواجبة / الأدلة','DD / Evidence'), `${Math.round((suite.executionConfidence.dd.pct||0)*100)}% ${core.T('عناية واجبة','DD')} · ${suite.evidenceConfidence.score.toFixed(0)}/100 ${core.T('أدلة','Evidence')}`],
+      [core.T('الشروط','Conditions'), (((d.ic && d.ic.decisions)||[]).slice(-1)[0]||{}).conditions ? `${(((d.ic && d.ic.decisions)||[]).slice(-1)[0]||{}).conditions.length}` : '0'],
+      [core.T('رأس المال','Capital'), d.capitalAllocation && d.capitalAllocation.targetEquity ? core.fmtSAR(d.capitalAllocation.targetEquity) : '—'],
+      [core.T('الإجراء التالي','Next Action'), core.esc((d.pipeline && d.pipeline.nextAction) || (gate.ready ? core.T('جاهز للجنة الاستثمار / المتابعة','Ready for IC / monitoring') : core.T('حل عوائق الجاهزية','Resolve readiness blockers')))],
     ])}
     <div class="panel" style="margin-top:10px;">
-      <div class="panel-head"><h4 style="margin:0;">Decision Replay</h4></div>
-      <div class="tablewrap"><table class="db" style="font-size:12px;"><thead><tr><th>Date</th><th>Decision</th><th>Original Numbers</th><th>Original Thesis</th><th>Actual Outcome</th></tr></thead><tbody>
+      <div class="panel-head"><h4 style="margin:0;">${core.T('إعادة تشغيل القرار','Decision Replay')}</h4></div>
+      <div class="tablewrap"><table class="db" style="font-size:12px;"><thead><tr><th>${core.T('التاريخ','Date')}</th><th>${core.T('القرار','Decision')}</th><th>${core.T('الأرقام الأصلية','Original Numbers')}</th><th>${core.T('الأطروحة الأصلية','Original Thesis')}</th><th>${core.T('النتيجة الفعلية','Actual Outcome')}</th></tr></thead><tbody>
         ${icRows.map(ic=>{
           const v = (core.STORE[UW_COLLECTION]||[]).find(x=>x.data.sourceDecisionId===ic.id) || row.baseline;
           const m = v && v.data.metrics;
@@ -478,7 +478,7 @@ function renderPassport(core, row){
       </tbody></table></div>
     </div>
     <div class="panel" style="margin-top:10px;">
-      <div class="panel-head"><h4 style="margin:0;">AI Challenge Mode</h4></div>
+      <div class="panel-head"><h4 style="margin:0;">${core.T('وضع تحدي الذكاء الاصطناعي','AI Challenge Mode')}</h4></div>
       <ol style="margin:0;padding-inline-start:22px;">${challenge.map(x=>`<li>${core.esc(x)}</li>`).join('')}</ol>
     </div>
   </div>`;
