@@ -42,6 +42,35 @@ const DEC_LABEL = {
   revise:['مراجعة وإعادة عرض','Revise & Resubmit'], hold:['تعليق','Hold'], reject:['رفض','Reject'],
 };
 
+/* المسار "القياسي" للحساب — الحالة التي بُنيت لها معادلات Excel حقيقية مترابطة عبر أوراق ٠٢-١٠
+   (تمويل بتمويل بنكي واحد وفوائد فقط بلا جدول سحب، بلا ضريبة قيمة مضافة، بلا بيع على مراحل/خارطة،
+   بلا إعادة تمويل عند الخروج، بلا نسبة بيع+إيجار مختلطة لفرص الدخل). أي فرصة تخرج عن هذا المسار
+   (ميزات متقدمة مفعَّلة) تحتفظ بنفس الأرقام الدقيقة 🔒 المحسوبة من محرك compute() كما كانت دائماً —
+   لا فرق في الدقة، فقط في كون الرقم معادلة قابلة للتتبع خلية بخلية أو نتيجة محرك موثَّقة بوضوح. */
+function isStandardCalcPath(d, c){
+  if(d.vat && d.vat.enabled) return false;
+  if((d.financing.structure||'single')!=='single') return false;
+  if((d.financing.amortType||'interest_only')!=='interest_only') return false;
+  if(c.drawSchedule) return false;
+  if((d.financing.interestDuringConstruction||'cash')!=='cash') return false;
+  if(c.isPhasedSaleMode || c.isOffPlanSale) return false;
+  if(c.holdStrategy!=='exit_sale') return false;
+  if(c.applySalePctToIncome) return false;
+  if(d.strategy && d.strategy.directSale && (d.strategy.directSale.bankFinancedPct||0)>0) return false;
+  if(d.meta.oppType==='income' && d.income.gla) return false;
+  // فئات الأصول المتخصصة (فندقي/محطات وقود/صيدليات-مطاعم) لها اشتقاق NOI مختلف كلياً عن معادلة
+  // PGI×الإشغال×(1-OPEX) القياسية المبنية في 05_Revenue — تبقى 🔒 محسوبة بدل معادلة مترابطة خاطئة.
+  if(d.meta.oppType==='income' && (d.income.assetClass||'عام')!=='عام') return false;
+  // بيع أرض مخدومة فقط (بلا مبنى) — noiForYear() يُرجع صفراً بينما معادلة 05_Revenue القياسية
+  // ستحتسب إيجاراً وهمياً على GFA غير موجود فعلياً، وقيمة الخروج تُحسَب بمنطق مختلف (سعر البيع×مساحة الأرض).
+  if(d.meta.oppType==='development' && d.development && d.development.scopeType==='infra_only') return false;
+  // رسوم اختيارية إضافية (منصة إيجار / تأمين الأصل) تُخصَم داخل noiForYear() لكنها غير مُدرَجة في
+  // معادلة NOI المبسّطة في 05_Revenue — تبقى الفرصة 🔒 محسوبة لو فُعِّلت أي منهما.
+  if((d.fees.ejarFeePct||0)>0) return false;
+  if((d.fees.insuranceAnnualPct||0)>0) return false;
+  return true;
+}
+
 function median(nums){
   if(!nums.length) return null;
   const s = nums.slice().sort((a,b)=>a-b);
@@ -240,100 +269,233 @@ export async function exportUnderwritingWorkbook(core, id){
       colorize(wsLast(wb), B.kinds, S);
     }
 
+    /* ===================== حالة المسار القياسي (يقرِّر أي الأوراق التالية تُبنى بمعادلات مترابطة كاملة) ===================== */
+    const standardPath = isStandardCalcPath(d, c);
+    const ref = (sheet, row, col)=> `'${sheet}'!${xlColLetter(col||2)}${row}`;
+
     /* ===================== 02_Assumptions ===================== */
+    const A = {}; // خريطة أرقام صفوف كل مُدخل — تُستخدم من كل الأوراق التالية للربط الحقيقي بينها
     {
       const B = xlRowsBuilder(); const S = [];
       const push = (vals,kind,sem)=>{ const n=B.push(vals,kind); S[n-1]=sem||null; return n; };
       push(['جميع الافتراضات — All Assumptions',''],'title');
+      if(!standardPath) push(['⚠️ هذه الفرصة تستخدم ميزة متقدمة واحدة أو أكثر (ضريبة قيمة مضافة/بيع على مراحل أو الخارطة/إعادة تمويل عند الخروج/مديونية مركّبة...) — أوراق ٠٧-١٠ تبقى أرقاماً محسوبة 🔒 موثَّقة من محرك التطبيق بدل معادلات مترابطة خلية بخلية لهذه الفرصة تحديداً (دقتها كاملة 100% مثل أي فرصة أخرى).','']);
       push(['الأرض (Land)',''],'section');
       push(['المتغيّر','القيمة'],'header');
-      push(['مساحة الأرض (Land Area) م²', d.land.area], 'data', 'input');
-      push(['سعر متر الأرض (Land Price/m²)', d.land.price], 'data', 'input');
-      push(['معامل البناء (FAR)', d.land.far], 'data', 'input');
-      push(['عدد البدرومات (Basements)', d.land.basements||0], 'data', 'input');
-      push(['ارتفاع الدور (Floor Height) م', d.land.floorHeight||3.6], 'data', 'input');
+      A.landArea = push(['مساحة الأرض (Land Area) م²', d.land.area], 'data', 'input');
+      A.landPrice = push(['سعر متر الأرض (Land Price/m²)', d.land.price], 'data', 'input');
+      A.landFar = push(['معامل البناء (FAR)', d.land.far], 'data', 'input');
+      A.landBar = push(['نسبة البصمة/الأرض (BAR)', d.land.bar], 'data', 'input');
+      A.landBasements = push(['عدد البدرومات (Basements)', d.land.basements||0], 'data', 'input');
+      A.landFloorHeight = push(['ارتفاع الدور (Floor Height) م', d.land.floorHeight||3.6], 'data', 'input');
+      A.floorHeightPremiumPct = push(['علاوة تكلفة ارتفاع الدور الزائد', d.land.floorHeightPremiumPct??0.04], 'data', 'input');
+      A.basementCostPremiumPct = push(['علاوة تكلفة البدروم الأساسية', d.land.basementCostPremiumPct??0.30], 'data', 'input');
+      A.basementDepthEscalationPct = push(['تصاعد علاوة العمق لكل بدروم إضافي', d.land.basementDepthEscalationPct??0.07], 'data', 'input');
+      push(['معاملات التصنيف الداخلية (Classification Multipliers)',''],'section');
+      push(['المتغيّر','القيمة'],'header');
+      A.tierMult = push(['معامل الفئة (Tier Multiplier) — '+d.meta.tier, c.tierMult], 'data', 'ext');
+      A.useMult = push(['معامل نوع الاستخدام (Use-Type Multiplier) — '+(d.meta.useType||'—'), c.useInfo.mult], 'data', 'ext');
+      A.siteFactor = push(['معامل عوامل الموقع مجتمعة (Site Factors Combined)', c.siteFactor], 'data', 'ext');
       push(['التمويل (Financing)',''],'section');
       push(['المتغيّر','القيمة'],'header');
-      push(['SAIBOR', fmtPct(d.financing.saibor)], 'data', 'input');
-      push(['هامش البنك (Margin)', fmtPct(d.financing.margin)], 'data', 'input');
-      push(['نسبة التمويل (LTC)', fmtPct(d.financing.ltc)], 'data', 'input');
+      A.saibor = push(['SAIBOR', d.financing.saibor], 'data', 'input');
+      A.margin = push(['هامش البنك (Margin)', d.financing.margin], 'data', 'input');
+      A.ltc = push(['نسبة التمويل (LTC)', d.financing.ltc], 'data', 'input');
+      push(['تكلفة رأس المال المرجّح WACC (نموذج CAPM)',''],'section');
+      push(['المتغيّر','القيمة'],'header');
+      A.rf = push(['العائد الخالي من المخاطر (Rf)', d.wacc.rf], 'data', 'input');
+      A.beta = push(['بيتا (Beta)', d.wacc.beta], 'data', 'input');
+      A.mrp = push(['علاوة مخاطر السوق (MRP)', d.wacc.mrp], 'data', 'input');
+      A.crp = push(['علاوة مخاطر الدولة (CRP)', d.wacc.crp], 'data', 'input');
+      A.sp = push(['علاوة الحجم (Size Premium)', d.wacc.sp], 'data', 'input');
+      A.alpha = push(['ألفا خاصة بالمشروع', d.wacc.alpha], 'data', 'input');
+      A.marketCap = push(['معدل الرسملة السوقي (Market Cap Rate)', d.wacc.marketCap], 'data', 'input');
+      A.growth = push(['معدل النمو طويل الأمد (Growth)', d.wacc.growth], 'data', 'input');
+      push(['الرسوم (Fees)',''],'section');
+      push(['المتغيّر','القيمة'],'header');
+      A.feeMgmt = push(['رسوم إدارة الصندوق السنوية (% من متوسط Equity+Debt)', d.fees.mgmt], 'data', 'input');
+      A.feeStructuring = push(['رسوم الهيكلة (% من الأرض+التكلفة الإنشائية)', d.fees.structuring], 'data', 'input');
+      A.feeArrangement = push(['رسوم ترتيب التمويل (% من الدين)', d.fees.arrangement], 'data', 'input');
+      A.feeAcquisition = push(['رسوم الاستحواذ (% من تكلفة الأرض)', d.fees.acquisition], 'data', 'input');
+      A.feeDisposition = push(['رسوم التصرّف عند الخروج', d.fees.disposition], 'data', 'input');
+      A.feeAssetMgmt = push(['رسوم إدارة الأصول السنوية (% من TPC)', d.fees.assetMgmt], 'data', 'input');
+      A.feePropMgmt = push(['رسوم إدارة الملكية (% من صافي الدخل بعد OPEX)', d.fees.propMgmt], 'data', 'input');
+      A.feeRegAuditCustodian = push(['رسوم تنظيمية/تدقيق/أمين حفظ سنوية', d.fees.regAuditCustodian], 'data', 'input');
+      A.feeCmaSetup = push(['رسوم تأسيس (هيئة السوق المالية)', d.fees.cmaSetup], 'data', 'input');
+      A.feeDueDiligence = push(['تكلفة العناية الواجبة', d.fees.dueDiligence], 'data', 'input');
+      A.feeValuation = push(['تكلفة التقييم', d.fees.valuation], 'data', 'input');
+      push(['تكاليف الخروج (Exit Costs)',''],'section');
+      push(['المتغيّر','القيمة'],'header');
+      A.exitBroker = push(['عمولة الوساطة', d.exitCosts.broker], 'data', 'input');
+      A.exitLegal = push(['التكاليف القانونية', d.exitCosts.legal], 'data', 'input');
+      A.exitRett = push(['رسوم نقل الملكية (RETT)', d.exitCosts.rett], 'data', 'input');
+      A.exitFeeOther = push(['رسوم أخرى عند الخروج', d.exitCosts.exitFee], 'data', 'input');
+      push(['الاشتراك (Subscription)',''],'section');
+      push(['المتغيّر','القيمة'],'header');
+      A.subscriptionFee = push(['رسوم الاشتراك (% من حقوق الملكية)', d.subscription.subscriptionFee], 'data', 'input');
       push(['معايير القبول (Acceptance Criteria)',''],'section');
       push(['المتغيّر','القيمة'],'header');
-      push(['الحد الأدنى لـEquity IRR', fmtPct(d.criteria.irrMin)], 'data', 'input');
-      push(['الحد الأدنى لـDSCR', (d.criteria.dscrMin||0).toFixed(2)+'×'], 'data', 'input');
-      push(['الحد الأدنى لـMOIC', (d.criteria.moicMin||0).toFixed(2)+'×'], 'data', 'input');
+      A.irrMin = push(['الحد الأدنى لـEquity IRR', d.criteria.irrMin], 'data', 'input');
+      A.dscrMin = push(['الحد الأدنى لـDSCR', (d.criteria.dscrMin||0).toFixed(2)+'×'], 'data', 'input');
+      A.moicMin = push(['الحد الأدنى لـMOIC', (d.criteria.moicMin||0).toFixed(2)+'×'], 'data', 'input');
+      if(d.meta.oppType==='development' || d.meta.oppType==='income'){
+        push(['مدخلات البناء (Building Inputs)',''],'section');
+        push(['المتغيّر','القيمة'],'header');
+        A.buildCost = push(['تكلفة البناء/م²', d.development.buildCost], 'data', 'input');
+        A.constructionYears = push(['مدة الإنشاء (سنوات)', d.development.constructionYears], 'data', 'input');
+        A.operationYears = push(['مدة التشغيل بعد الإنشاء (سنوات)', d.development.operationYears||0], 'data', 'input');
+        A.exitCapRate = push(['معدل الرسملة عند الخروج', d.development.exitCapRate], 'data', 'input');
+        A.efficiency = push(['الكفاءة (Efficiency)', d.development.efficiency], 'data', 'input');
+        A.contingency = push(['احتياطي الطوارئ', d.development.contingency], 'data', 'input');
+        push(['توزيع تكلفة البناء (Cost Breakdown %)',''],'section');
+        push(['المتغيّر','القيمة'],'header');
+        const cb = d.development.costBreakdown||{structure:0.42,mep:0.18,finishes:0.20,external:0.08,fees:0.12};
+        A.cbStructure = push(['الهيكل الإنشائي (Structure)', cb.structure], 'data', 'input');
+        A.cbMep = push(['الأعمال الكهروميكانيكية (MEP)', cb.mep], 'data', 'input');
+        A.cbFinishes = push(['التشطيبات (Finishes)', cb.finishes], 'data', 'input');
+        A.cbExternal = push(['الأعمال الخارجية (External)', cb.external], 'data', 'input');
+        A.cbFees = push(['أتعاب استشارية/إشراف (Fees)', cb.fees], 'data', 'input');
+      }
       if(d.meta.oppType==='development'){
-        push(['التطوير (Development)',''],'section');
+        push(['الإيرادات — بيع (Development Sale)',''],'section');
         push(['المتغيّر','القيمة'],'header');
-        push(['سعر البيع المتوقع/م²', d.development.salePrice], 'data', 'input');
-        push(['تكلفة البناء/م²', d.development.buildCost], 'data', 'input');
-        push(['مدة الإنشاء (سنوات)', d.development.constructionYears], 'data', 'input');
-        push(['معدل الرسملة عند الخروج', fmtPct(d.development.exitCapRate)], 'data', 'input');
-        push(['احتياطي الطوارئ', fmtPct(d.development.contingency)], 'data', 'input');
+        A.salePrice = push(['سعر البيع المتوقع/م²', d.development.salePrice], 'data', 'input');
+        A.salePct = push(['نسبة البيع من الاستراتيجية', d.strategy&&d.strategy.salePct!=null? d.strategy.salePct : 1], 'data', 'input');
+        // الجزء المُبقى (1-نسبة البيع) — لو أقل من 100% — يُؤجَّر خلال مدة التشغيل ويُقيَّم بالرسملة عند
+        // الخروج، فتلزم نفس مدخلات الإيجار المستخدَمة لفرص الدخل، ولو لم تكن معروضة صراحة من قبل.
+        push(['— إيجار الجزء المُبقى (إن كانت نسبة البيع أقل من ١٠٠٪)',''],'section');
+        push(['المتغيّر','القيمة'],'header');
+        A.rent = push(['الإيجار السنوي/م² (للجزء المُبقى)', d.income.rent], 'data', 'input');
+        A.occupancy = push(['نسبة الإشغال (للجزء المُبقى)', d.income.occupancy], 'data', 'input');
+        A.opex = push(['نسبة OPEX (للجزء المُبقى)', d.income.opex], 'data', 'input');
       } else if(d.meta.oppType==='income'){
-        push(['الدخل التأجيري (Income)',''],'section');
+        push(['الإيرادات — إيجار (Income Rental)',''],'section');
         push(['المتغيّر','القيمة'],'header');
-        push(['الإيجار السنوي/م²', d.income.rent], 'data', 'input');
-        push(['نسبة الإشغال', fmtPct(d.income.occupancy)], 'data', 'input');
-        push(['نسبة OPEX', fmtPct(d.income.opex)], 'data', 'input');
+        A.rent = push(['الإيجار السنوي/م²', d.income.rent], 'data', 'input');
+        A.occupancy = push(['نسبة الإشغال', d.income.occupancy], 'data', 'input');
+        A.opex = push(['نسبة OPEX', d.income.opex], 'data', 'input');
       } else {
         push(['بنك الأراضي (Land Bank)',''],'section');
         push(['المتغيّر','القيمة'],'header');
-        push(['معدل النمو السنوي', d.landbank? fmtPct(d.landbank.appreciation) : '—'], 'data', 'input');
-        push(['تكلفة الحمل السنوية', d.landbank? fmtSAR(d.landbank.carryAnnual) : '—'], 'data', 'input');
-        push(['مدة الاحتفاظ (سنوات)', d.landbank? d.landbank.holdingYears : '—'], 'data', 'input');
+        A.appreciation = push(['معدل النمو السنوي', d.landbank.appreciation||0], 'data', 'input');
+        A.carryAnnual = push(['تكلفة الحمل السنوية', d.landbank.carryAnnual||0], 'data', 'input');
+        A.holdingYears = push(['مدة الاحتفاظ (سنوات)', d.landbank.holdingYears||0], 'data', 'input');
+        A.whiteLandFeePct = push(['رسم الأرض البيضاء (نسبة)', d.landbank.whiteLandFeeExempt? 0 : (d.landbank.whiteLandFeePct||0)], 'data', 'input');
+        A.interimAnnualIncome = push(['دخل مرحلي سنوي (إن وُجد)', d.landbank.interimAnnualIncome||0], 'data', 'input');
       }
       xlNewSheet(wb, '02_Assumptions', B.rows, B.kinds, { colWidths:[42,26] });
       colorize(wsLast(wb), B.kinds, S);
+      /* الخلايا أعلاه أصبحت الآن أرقاماً عشرية خامة (بعد إزالة أغلفة fmtPct النصية) حتى يصح
+         استخدامها داخل معادلات Excel حسابية حقيقية في بقية الأوراق — لكن هذا يفقدها تنسيق
+         العرض كنسبة مئوية (ستظهر "0.055" بدل "5.5%"). نطبّق هنا صراحة numFmt='0.0%' على كل
+         خلية تمثّل فعلياً نسبة مئوية (حسب تعريفها في core.js عبر F.pct)، مع استثناء A.beta
+         (معامل بيتا خام وليس نسبة) وكل الحقول النقدية/العددية الأخرى (مساحات، مبالغ ر.س،
+         سنوات، معاملات FAR/×...). */
+      const wsAssump = wsLast(wb);
+      const pctRows = [
+        A.landBar, A.floorHeightPremiumPct, A.basementCostPremiumPct, A.basementDepthEscalationPct,
+        A.saibor, A.margin, A.ltc,
+        A.rf, A.mrp, A.crp, A.sp, A.alpha, A.marketCap, A.growth,
+        A.feeMgmt, A.feeStructuring, A.feeArrangement, A.feeAcquisition, A.feeDisposition, A.feeAssetMgmt, A.feePropMgmt,
+        A.exitBroker, A.exitLegal, A.exitRett, A.exitFeeOther,
+        A.subscriptionFee, A.irrMin,
+        A.exitCapRate, A.efficiency, A.contingency,
+        A.cbStructure, A.cbMep, A.cbFinishes, A.cbExternal, A.cbFees,
+        A.salePct, A.occupancy, A.opex,
+        A.appreciation, A.whiteLandFeePct,
+      ];
+      pctRows.forEach(rn=>{ if(rn){ wsAssump.getCell(rn, 2).numFmt = '0.0%'; } });
     }
 
     /* ===================== 03_Sources & Uses ===================== */
+    const U = {};
     {
+      const AS = '02_Assumptions';
       const B = xlRowsBuilder(); const S = [];
       const push = (vals,kind,sem)=>{ const n=B.push(vals,kind); S[n-1]=sem||null; return n; };
       push(['مصادر واستخدامات الأموال — Sources & Uses',''],'title');
       push(['الاستخدامات (Uses)',''],'section');
       push(['البند','القيمة (ر.س)'],'header');
-      const rLand = push(['تكلفة الأرض (Land Cost)', Math.round(c.landCost)]);
-      const rHard = push(['التكلفة الإنشائية (Hard Cost)', Math.round(c.hardCost)]);
-      const rFixed = push(['تكاليف ثابتة (One-time Fixed)', Math.round(c.oneTimeFixed)]);
-      const rStruct = push(['رسوم الهيكلة (Structuring Fee)', Math.round(c.structuringFee)]);
-      const rAcq = push(['رسوم الاستحواذ (Acquisition Fee)', Math.round(c.acquisitionFee)]);
-      const rArr = push(['رسوم الترتيب (Arrangement Fee)', Math.round(c.arrangementFee)]);
-      const rTPC = push(['إجمالي تكلفة المشروع (TPC)', null]);
+      U.land = push(['تكلفة الأرض (Land Cost)', null], 'data', 'link');
+      U.hard = push(['التكلفة الإنشائية (Hard Cost)', null], 'data', 'link');
+      U.fixed = push(['تكاليف ثابتة (One-time Fixed)', null], 'data', 'link');
+      U.struct = push(['رسوم الهيكلة (Structuring Fee)', null], 'data', 'link');
+      U.acq = push(['رسوم الاستحواذ (Acquisition Fee)', null], 'data', 'link');
+      U.arr = push(['رسوم الترتيب (Arrangement Fee)', null], 'data', 'link');
+      if(c.vatInputTotal>0){ U.vat = push(['🔒 ضريبة القيمة المضافة على مدخلات الإنشاء (غير قابلة للمعادلة لهذه الفرصة)', Math.round(c.vatInputTotal)]); }
+      U.tpc = push(['إجمالي تكلفة المشروع (TPC)', null]);
       push(['المصادر (Sources)',''],'section');
       push(['البند','القيمة (ر.س)'],'header');
-      const rDebt = push(['الدين (Debt)', Math.round(c.debt)]);
-      const rEquity = push(['حقوق الملكية (Equity)', null]);
-      const rTotal = push(['الإجمالي (Total)', null]);
+      U.debt = push(['الدين (Debt)', null]);
+      U.equity = push(['حقوق الملكية (Equity)', null]);
+      U.total = push(['الإجمالي (Total)', null]);
       const ws = xlNewSheet(wb, '03_Sources & Uses', B.rows, B.kinds, { colWidths:[40,22] });
       colorize(ws, B.kinds, S);
-      // معادلات حقيقية: TPC = مجموع بنود الاستخدامات، Equity = TPC - Debt، Total = Debt+Equity
-      xlSetFormula(ws, rTPC, 2, `SUM(B${rLand}:B${rArr})`, '#,##0;(#,##0);"-"');
-      xlSetFormula(ws, rEquity, 2, `B${rTPC}-B${rDebt}`, '#,##0;(#,##0);"-"');
-      xlSetFormula(ws, rTotal, 2, `B${rDebt}+B${rEquity}`, '#,##0;(#,##0);"-"');
+      // تكلفة الأرض = مساحة الأرض × سعر المتر (رابط حقيقي لورقة الافتراضات)
+      xlSetFormula(ws, U.land, 2, `${ref(AS,A.landArea)}*${ref(AS,A.landPrice)}`, '#,##0;(#,##0);"-"');
+      if(d.meta.oppType==='landbank'){
+        xlSetFormula(ws, U.hard, 2, `0`, '#,##0;(#,##0);"-"');
+      } else {
+        // GFA = مساحة الأرض × FAR — بصمة المبنى = مساحة الأرض × BAR — عدد الأدوار = تقريب لأعلى(GFA/البصمة)
+        // التكلفة الإنشائية الرأسية = GFA × تكلفة البناء/م² × معامل الفئة × معامل الاستخدام × معامل الموقع × علاوة ارتفاع الدور
+        const gfaF = `${ref(AS,A.landArea)}*${ref(AS,A.landFar)}`;
+        const footprintF = `${ref(AS,A.landArea)}*${ref(AS,A.landBar)}`;
+        const heightPremF = `(1+MAX(0,${ref(AS,A.landFloorHeight)}-3.6)*${ref(AS,A.floorHeightPremiumPct)})`;
+        // ملاحظة دقيقة: معامل الفئة (tierMult) إعلامي فقط في محرك compute() — لا يدخل فعلياً في حساب
+        // التكلفة الإنشائية (راجع verticalCost/basementCostFor في core.js: كلاهما يستخدمان معامل الاستخدام
+        // والموقع فقط). لذا معامل التكلفة الفعلي هنا يستثني tierMult عمداً حتى يطابق محرك التطبيق تماماً —
+        // معامل الفئة المعروض في ورقة الافتراضات (٠٢) يبقى رقماً إعلامياً مرجعياً لا أكثر.
+        const costMultF = `${ref(AS,A.useMult)}*${ref(AS,A.siteFactor)}`;
+        const verticalCostF = `(${gfaF})*${ref(AS,A.buildCost)}*${costMultF}*${heightPremF}`;
+        // تكلفة البدرومات: مجموع تكلفة كل مستوى (البصمة × تكلفة البناء × المعاملات × علاوة المستوى المتصاعدة)
+        const basementLevels = Math.max(0, Math.round(d.land.basements||0));
+        let basementCostF = '0';
+        if(basementLevels>0){
+          const terms = [];
+          for(let lvl=1; lvl<=basementLevels; lvl++){
+            const lvlPremF = lvl===1 ? `(1+${ref(AS,A.basementCostPremiumPct)})` : `(1+${ref(AS,A.basementCostPremiumPct)}+${lvl-1}*${ref(AS,A.basementDepthEscalationPct)})`;
+            terms.push(`(${footprintF})*${ref(AS,A.buildCost)}*${costMultF}*${heightPremF}*${lvlPremF}`);
+          }
+          basementCostF = terms.join('+');
+        }
+        const infraCostF = (d.development.scopeType!=='vertical_only' && (d.development.infraCostPerSqm||0)>0)
+          ? `${ref(AS,A.landArea)}*${d.development.infraCostPerSqm}` : '0';
+        const hardCostBaseF = `(${verticalCostF})+(${basementCostF})+(${infraCostF})`;
+        xlSetFormula(ws, U.hard, 2, `(${hardCostBaseF})*(1+${ref(AS,A.contingency)})`, '#,##0;(#,##0);"-"');
+      }
+      xlSetFormula(ws, U.fixed, 2, `${ref(AS,A.feeCmaSetup)}+${ref(AS,A.feeDueDiligence)}+${ref(AS,A.feeValuation)}`, '#,##0;(#,##0);"-"');
+      xlSetFormula(ws, U.struct, 2, `${ref(AS,A.feeStructuring)}*(B${U.land}+B${U.hard})`, '#,##0;(#,##0);"-"');
+      xlSetFormula(ws, U.acq, 2, `${ref(AS,A.feeAcquisition)}*B${U.land}`, '#,##0;(#,##0);"-"');
+      const preTpcRange = U.vat ? `B${U.land}:B${U.struct}` : `B${U.land}:B${U.struct}`; // (VAT إن وُجد يُضاف لاحقاً صراحة، لا يدخل ضمن preTPC)
+      xlSetFormula(ws, U.arr, 2, `${ref(AS,A.ltc)}*SUM(${preTpcRange},B${U.acq})*${ref(AS,A.feeArrangement)}`, '#,##0;(#,##0);"-"');
+      const tpcRange = U.vat ? `B${U.land}:B${U.vat}` : `B${U.land}:B${U.arr}`;
+      xlSetFormula(ws, U.tpc, 2, `SUM(${tpcRange})`, '#,##0;(#,##0);"-"');
+      // الدين = LTC × preTPC (الأرض+الإنشاء+الثابتة+الهيكلة+الاستحواذ فقط — بدون رسوم الترتيب، لأنها نفسها % من الدين)
+      xlSetFormula(ws, U.debt, 2, `${ref(AS,A.ltc)}*SUM(${preTpcRange},B${U.acq})`, '#,##0;(#,##0);"-"');
+      xlSetFormula(ws, U.equity, 2, `B${U.tpc}-B${U.debt}`, '#,##0;(#,##0);"-"');
+      xlSetFormula(ws, U.total, 2, `B${U.debt}+B${U.equity}`, '#,##0;(#,##0);"-"');
     }
 
     /* ===================== 04_Development ===================== */
-    build04Development(core, wb, d, c);
+    const D04 = build04Development(core, wb, d, c, A, U, standardPath);
 
     /* ===================== 05_Revenue ===================== */
-    build05Revenue(core, wb, d, c);
+    const R05 = build05Revenue(core, wb, d, c, A, U, D04, standardPath);
 
     /* ===================== 06_OPEX ===================== */
-    build06Opex(core, wb, d, c);
+    const O06 = build06Opex(core, wb, d, c, A, U, R05, standardPath);
 
     /* ===================== 07_Debt ===================== */
-    build07Debt(core, wb, d, c);
+    const DB07 = build07Debt(core, wb, d, c, A, U, R05, standardPath);
 
     /* ===================== 08_Project CF / 09_Equity CF ===================== */
-    await build0809CashFlowsWithChart(core, wb, d, c);
+    const CF0809 = await build0809CashFlowsWithChart(core, wb, d, c, A, U, R05, O06, DB07, standardPath);
 
     /* ===================== 08b_Cash Flow Timing (شهري/ربع سنوي + ذروة الاحتياج) ===================== */
     build0809bCashFlowTiming(core, wb, d, c, rec.id);
 
     /* ===================== 10_Returns ===================== */
-    build10Returns(core, wb, d, c);
+    build10Returns(core, wb, d, c, CF0809);
 
     /* ===================== 11_Sensitivity ===================== */
     await build11Sensitivity(core, wb, d, c);
@@ -380,96 +542,274 @@ export async function exportUnderwritingWorkbook(core, id){
 /* آخر ورقة أُضيفت للمصنَّف — مساعد صغير لأن core.xlNewSheet لا يُرجَّع عبر متغيّر محفوظ دائماً أعلاه. */
 function wsLast(wb){ return wb.worksheets[wb.worksheets.length-1]; }
 
-function build04Development(core, wb, d, c){
-  const { fmtSAR, fmtPct, xlRowsBuilder, xlNewSheet } = core;
+function build04Development(core, wb, d, c, A, U, standardPath){
+  const { xlRowsBuilder, xlNewSheet, xlSetFormula, xlColLetter } = core;
+  const AS = '02_Assumptions';
+  const ref = (row,col)=> `'${AS}'!${xlColLetter(col||2)}${row}`;
   const B = xlRowsBuilder(); const S = [];
   const push = (vals,kind,sem)=>{ const n=B.push(vals,kind); S[n-1]=sem||null; return n; };
   push(['برنامج التطوير — Development Program',''],'title');
-  push(['البند','القيمة'],'header');
-  if(d.meta.oppType==='development'){
-    push(['سعر البيع المتوقع/م²', fmtSAR(d.development.salePrice)], 'data', 'input');
-    push(['تكلفة البناء/م²', fmtSAR(d.development.buildCost)], 'data', 'input');
-    push(['مدة الإنشاء (سنوات)', d.development.constructionYears], 'data', 'input');
-    push(['مدة التشغيل بعد الإنشاء (سنوات)', d.development.operationYears||0], 'data', 'input');
-    push(['معدل الرسملة عند الخروج', fmtPct(d.development.exitCapRate)], 'data', 'input');
-    push(['الكفاءة (Efficiency)', fmtPct(d.development.efficiency)], 'data', 'input');
-    push(['احتياطي الطوارئ (Contingency)', fmtPct(d.development.contingency)], 'data', 'input');
-    push(['المساحة الإجمالية القابلة للتأجير/البيع (GFA م²)', Math.round(c.gfa||0)]);
-    push(['التكلفة الإنشائية الأساسية (قبل الطوارئ)', Math.round(c.hardCostBase||0)]);
-    push(['🔒 التكلفة الإنشائية الكلية (Hard Cost)', Math.round(c.hardCost||0)]);
-  } else {
-    push(['— لا ينطبق (الفرصة ليست من نوع تطوير)', 'N/A — not a Development opportunity']);
+  const D = {};
+  if(d.meta.oppType==='landbank'){
+    push(['البند','القيمة'],'header');
+    push(['— لا ينطبق (الفرصة ليست من نوع تطوير/دخل)', 'N/A — not a Development/Income opportunity']);
+    const ws = xlNewSheet(wb, '04_Development', B.rows, B.kinds, { colWidths:[42,26] });
+    colorize(ws, B.kinds, S);
+    return D;
   }
-  const ws = xlNewSheet(wb, '04_Development', B.rows, B.kinds, { colWidths:[42,26] });
+  push(['البند','القيمة'],'header');
+  D.gfa = push(['🟢 المساحة الإجمالية القابلة للتأجير/البيع (GFA = مساحة الأرض × FAR) م²', null], 'data', 'link');
+  D.footprint = push(['🟢 بصمة المبنى (Footprint = مساحة الأرض × BAR) م²', null], 'data', 'link');
+  D.floors = push(['🟢 عدد الأدوار المطلوب (تقريب لأعلى GFA/البصمة)', null], 'data', 'link');
+  D.heightPrem = push(['🟢 معامل علاوة ارتفاع الدور', null], 'data', 'link');
+  D.masterMult = push(['🟢 المعامل المجمّع إعلامي (فئة × استخدام × موقع) — لا يدخل في حساب التكلفة', null], 'data', 'link');
+  D.costMult = push(['🟢 معامل التكلفة الفعلي (استخدام × موقع فقط — معامل الفئة إعلامي في محرك التطبيق)', null], 'data', 'link');
+  push(['','']);
+  push(['توزيع التكلفة الإنشائية الرأسية (Vertical Cost Breakdown)',''],'section');
+  push(['البند','القيمة (ر.س)'],'header');
+  D.vertical = push(['🟢 التكلفة الإنشائية الرأسية (Vertical Cost) — قبل الطوارئ', null], 'data', 'link');
+  D.structure = push(['— منها: الهيكل الإنشائي (Structure)', null], 'data', 'link');
+  D.mep = push(['— منها: الأعمال الكهروميكانيكية (MEP)', null], 'data', 'link');
+  D.finishes = push(['— منها: التشطيبات (Finishes)', null], 'data', 'link');
+  D.external = push(['— منها: الأعمال الخارجية (External)', null], 'data', 'link');
+  D.fees = push(['— منها: أتعاب استشارية/إشراف (Fees)', null], 'data', 'link');
+  D.basement = push(['🟢 تكلفة البدرومات (Basement Cost)', null], 'data', 'link');
+  D.infra = push(['🟢 تكلفة البنية التحتية (Infrastructure Cost)', null], 'data', 'link');
+  D.hardBase = push(['🟢 التكلفة الإنشائية الأساسية (قبل الطوارئ)', null], 'data', 'link');
+  D.contingencyAmt = push(['🟢 احتياطي الطوارئ (مبلغ)', null], 'data', 'link');
+  D.hard = push(['🟢 التكلفة الإنشائية الكلية (Hard Cost)', null], 'data', 'link');
+
+  const ws = xlNewSheet(wb, '04_Development', B.rows, B.kinds, { colWidths:[46,26] });
   colorize(ws, B.kinds, S);
+
+  const gfaF = `${ref(A.landArea)}*${ref(A.landFar)}`;
+  const footprintF = `${ref(A.landArea)}*${ref(A.landBar)}`;
+  const heightPremF = `1+MAX(0,${ref(A.landFloorHeight)}-3.6)*${ref(A.floorHeightPremiumPct)}`;
+  const masterMultF = `${ref(A.tierMult)}*${ref(A.useMult)}*${ref(A.siteFactor)}`;
+  // معامل التكلفة الفعلي المستخدَم في كل معادلات التكلفة الإنشائية أدناه — يستثني معامل الفئة (tierMult)
+  // عمداً: محرك compute() في core.js لا يُدخل tierMult في حساب verticalCost/basementCostFor إطلاقاً (معامل
+  // الفئة إعلامي بحت هناك أيضاً)، فيبقى هذا التمييز مطابقاً تماماً لسلوك التطبيق الفعلي.
+  const costMultF = `${ref(A.useMult)}*${ref(A.siteFactor)}`;
+  xlSetFormula(ws, D.gfa, 2, gfaF, '#,##0');
+  xlSetFormula(ws, D.footprint, 2, footprintF, '#,##0');
+  xlSetFormula(ws, D.floors, 2, `ROUNDUP(B${D.gfa}/B${D.footprint},0)`, '0');
+  xlSetFormula(ws, D.heightPrem, 2, heightPremF, '0.000');
+  xlSetFormula(ws, D.masterMult, 2, masterMultF, '0.000');
+  xlSetFormula(ws, D.costMult, 2, costMultF, '0.000');
+
+  const scopeType = d.development.scopeType||'both';
+  const verticalF = scopeType==='infra_only' ? '0' : `B${D.gfa}*${ref(A.buildCost)}*B${D.costMult}*B${D.heightPrem}`;
+  xlSetFormula(ws, D.vertical, 2, verticalF, '#,##0;(#,##0);"-"');
+  xlSetFormula(ws, D.structure, 2, `B${D.vertical}*${ref(A.cbStructure)}`, '#,##0;(#,##0);"-"');
+  xlSetFormula(ws, D.mep, 2, `B${D.vertical}*${ref(A.cbMep)}`, '#,##0;(#,##0);"-"');
+  xlSetFormula(ws, D.finishes, 2, `B${D.vertical}*${ref(A.cbFinishes)}`, '#,##0;(#,##0);"-"');
+  xlSetFormula(ws, D.external, 2, `B${D.vertical}*${ref(A.cbExternal)}`, '#,##0;(#,##0);"-"');
+  xlSetFormula(ws, D.fees, 2, `B${D.vertical}*${ref(A.cbFees)}`, '#,##0;(#,##0);"-"');
+
+  const basementLevels = Math.max(0, Math.round(d.land.basements||0));
+  let basementF = '0';
+  if(scopeType!=='infra_only' && basementLevels>0){
+    const terms = [];
+    for(let lvl=1; lvl<=basementLevels; lvl++){
+      const lvlPremF = lvl===1 ? `(1+${ref(A.basementCostPremiumPct)})` : `(1+${ref(A.basementCostPremiumPct)}+${lvl-1}*${ref(A.basementDepthEscalationPct)})`;
+      terms.push(`B${D.footprint}*${ref(A.buildCost)}*B${D.costMult}*B${D.heightPrem}*${lvlPremF}`);
+    }
+    basementF = terms.join('+');
+  }
+  xlSetFormula(ws, D.basement, 2, basementF, '#,##0;(#,##0);"-"');
+  const infraF = (scopeType!=='vertical_only' && (d.development.infraCostPerSqm||0)>0) ? `${ref(A.landArea)}*${d.development.infraCostPerSqm}` : '0';
+  xlSetFormula(ws, D.infra, 2, infraF, '#,##0;(#,##0);"-"');
+  xlSetFormula(ws, D.hardBase, 2, `B${D.vertical}+B${D.basement}+B${D.infra}`, '#,##0;(#,##0);"-"');
+  xlSetFormula(ws, D.contingencyAmt, 2, `B${D.hardBase}*${ref(A.contingency)}`, '#,##0;(#,##0);"-"');
+  xlSetFormula(ws, D.hard, 2, `B${D.hardBase}+B${D.contingencyAmt}`, '#,##0;(#,##0);"-"');
+  return D;
 }
 
-function build05Revenue(core, wb, d, c){
-  const { fmtSAR, fmtPct, xlRowsBuilder, xlNewSheet } = core;
+function build05Revenue(core, wb, d, c, A, U, D04, standardPath){
+  const { fmtSAR, fmtPct, xlRowsBuilder, xlNewSheet, xlSetFormula, xlColLetter } = core;
+  const AS = '02_Assumptions';
+  const ref = (row,col)=> `'${AS}'!${xlColLetter(col||2)}${row}`;
   const B = xlRowsBuilder(); const S = [];
   const push = (vals,kind,sem)=>{ const n=B.push(vals,kind); S[n-1]=sem||null; return n; };
   push(['الإيرادات — Revenue',''],'title');
   push(['البند','القيمة'],'header');
-  if(d.meta.oppType==='income'){
-    push(['الإيجار السنوي/م²', fmtSAR(d.income.rent)], 'data', 'input');
-    push(['نسبة الإشغال (Occupancy)', fmtPct(d.income.occupancy)], 'data', 'input');
-    push(['متوسط العمر المتبقي للعقود (WALE)', d.income.wale!=null? d.income.wale+' سنة':'—'], 'data', 'input');
-    push(['تركّز أكبر مستأجر', d.income.tenantConc!=null? fmtPct(d.income.tenantConc):'—'], 'data', 'input');
-    push(['🔒 صافي الدخل التشغيلي (سنة ١ مستقر)', Math.round(c.stabilizedNOIyr1||0)]);
-    push(['🔒 عائد التكلفة (Yield on Cost)', fmtPct(c.yieldOnCost)]);
-  } else if(d.meta.oppType==='development'){
-    push(['سعر البيع المتوقع/م² (من ورقة 04)', fmtSAR(d.development.salePrice)], 'data', 'link');
-    push(['نسبة البيع من الاستراتيجية', d.strategy&&d.strategy.salePct!=null? fmtPct(d.strategy.salePct):'—'], 'data', 'input');
-  } else {
+  const R = {};
+  if(d.meta.oppType==='landbank'){
     push(['معدل نمو قيمة الأرض السنوي', d.landbank? fmtPct(d.landbank.appreciation):'—'], 'data', 'input');
     push(['دخل مرحلي (إن وُجد)', d.landbank&&d.landbank.interimAnnualIncome? fmtSAR(d.landbank.interimAnnualIncome):'—'], 'data', 'input');
+    const ws = xlNewSheet(wb, '05_Revenue', B.rows, B.kinds, { colWidths:[42,26] });
+    colorize(ws, B.kinds, S);
+    return R;
   }
-  const ws = xlNewSheet(wb, '05_Revenue', B.rows, B.kinds, { colWidths:[42,26] });
+  if(d.meta.oppType==='income'){
+    push(['متوسط العمر المتبقي للعقود (WALE)', d.income.wale!=null? d.income.wale+' سنة':'—'], 'data', 'input');
+    push(['تركّز أكبر مستأجر', d.income.tenantConc!=null? fmtPct(d.income.tenantConc):'—'], 'data', 'input');
+  } else {
+    push(['سعر البيع المتوقع/م² (من ورقة 02)', fmtSAR(d.development.salePrice)], 'data', 'link');
+    push(['نسبة البيع من الاستراتيجية', d.strategy&&d.strategy.salePct!=null? fmtPct(d.strategy.salePct):'—'], 'data', 'input');
+  }
+  push(['','']);
+  push([d.meta.oppType==='income' ? 'اشتقاق صافي الدخل التشغيلي السنوي (خلال التشغيل)' : 'اشتقاق صافي الدخل التشغيلي للجزء المُبقى مؤجَّراً (خلال التشغيل)', ''],'section');
+  push(['البند','القيمة'],'header');
+  R.gla = push(['🟢 المساحة القابلة للتأجير (GLA = GFA × الكفاءة)', null], 'data', 'link');
+  const effOccLabel = d.meta.oppType==='income' ? 'نسبة الإشغال الفعلية' : 'نسبة الإشغال الفعلية (× (1-نسبة البيع))';
+  R.effOcc = push(['🟢 '+effOccLabel, null], 'data', 'link');
+  R.pgi = push(['🟢 الإيراد الإجمالي المحتمل (PGI = GLA × الإيجار)', null], 'data', 'link');
+  R.egi = push(['🟢 الإيراد الإجمالي الفعلي (EGI = PGI × الإشغال الفعلية)', null], 'data', 'link');
+  R.opexAmt = push(['🟢 المصاريف التشغيلية (OPEX = EGI × نسبة OPEX)', null], 'data', 'link');
+  R.noi = push(['🟢 صافي الدخل التشغيلي (NOI = (EGI-OPEX)×(1-رسوم إدارة الملكية))', null], 'data', 'link');
+  R.yoc = push(['🟢 عائد التكلفة (Yield on Cost = NOI ÷ TPC)', null], 'data', 'link');
+  const ws = xlNewSheet(wb, '05_Revenue', B.rows, B.kinds, { colWidths:[46,26] });
   colorize(ws, B.kinds, S);
+
+  if(!standardPath){
+    xlSetFormula(ws, R.gla, 2, `'04_Development'!B${D04.gfa}*${ref(A.efficiency)}`, '#,##0');
+    ws.getCell(R.effOcc,2).value = '—'; ws.getCell(R.pgi,2).value = '—'; ws.getCell(R.egi,2).value = '—'; ws.getCell(R.opexAmt,2).value = '—';
+    ws.getCell(R.noi,2).value = Math.round(c.stabilizedNOIyr1||0);
+    ws.getCell(R.yoc,2).value = fmtPct(c.yieldOnCost);
+    return R;
+  }
+  xlSetFormula(ws, R.gla, 2, `'04_Development'!B${D04.gfa}*${ref(A.efficiency)}`, '#,##0');
+  const effOccF = d.meta.oppType==='income' ? `${ref(A.occupancy)}` : `${ref(A.occupancy)}*(1-${ref(A.salePct)})`;
+  xlSetFormula(ws, R.effOcc, 2, effOccF, '0.0%');
+  xlSetFormula(ws, R.pgi, 2, `B${R.gla}*${ref(A.rent)}`, '#,##0;(#,##0);"-"');
+  xlSetFormula(ws, R.egi, 2, `B${R.pgi}*B${R.effOcc}`, '#,##0;(#,##0);"-"');
+  xlSetFormula(ws, R.opexAmt, 2, `B${R.egi}*${ref(A.opex)}`, '#,##0;(#,##0);"-"');
+  xlSetFormula(ws, R.noi, 2, `(B${R.egi}-B${R.opexAmt})*(1-${ref(A.feePropMgmt)})`, '#,##0;(#,##0);"-"');
+  xlSetFormula(ws, R.yoc, 2, `B${R.noi}/'03_Sources & Uses'!B${U.tpc}`, '0.0%');
+  return R;
 }
 
-function build06Opex(core, wb, d, c){
-  const { fmtSAR, fmtPct, xlRowsBuilder, xlNewSheet } = core;
+function build06Opex(core, wb, d, c, A, U, R05, standardPath){
+  const { fmtPct, xlRowsBuilder, xlNewSheet, xlSetFormula, xlColLetter } = core;
+  const AS = '02_Assumptions'; const SU = '03_Sources & Uses';
+  const ref = (row,col)=> `'${AS}'!${xlColLetter(col||2)}${row}`;
   const B = xlRowsBuilder(); const S = [];
   const push = (vals,kind,sem)=>{ const n=B.push(vals,kind); S[n-1]=sem||null; return n; };
   push(['المصروفات التشغيلية — OPEX',''],'title');
   push(['البند','القيمة'],'header');
+  const O = {};
   if(d.meta.oppType==='income'){
-    push(['نسبة المصاريف التشغيلية (OPEX Ratio)', fmtPct(d.income.opex)], 'data', 'input');
-    push(['🔒 صافي الدخل التشغيلي بعد OPEX (سنة ١)', Math.round(c.stabilizedNOIyr1||0)]);
+    O.noi = push(['🟢 صافي الدخل التشغيلي بعد OPEX (سنة ١ من ورقة 05)', null], 'data', 'link');
   }
-  push(['🔒 رسوم إدارة الصندوق التراكمية (Mgmt Fee)', Math.round(c.mgmtFeeTotal||0)]);
-  push(['🔒 رسوم إدارة الأصول التراكمية (Asset Mgmt Fee)', Math.round(c.assetMgmtTotal||0)]);
-  push(['🔒 رسوم تنظيمية/تدقيق/أمين حفظ', Math.round(c.regAuditCustodianTotal||0)]);
-  push(['🔒 إجمالي رسوم الصندوق (Fund-Side Fees)', Math.round(c.fundSideFees||0)]);
-  push(['🔒 نسبة إجمالي الرسوم من TPC', fmtPct(c.feesPctOfTPC)]);
+  // مدة الصندوق الكلية — تُستخدم لتراكم رسوم الصندوق السنوية على كامل العمر
+  const totalYearsF = d.meta.oppType==='landbank' ? `${ref(A.holdingYears)}`
+    : `MAX(1,${ref(A.constructionYears)}+${ref(A.operationYears)})`;
+  O.mgmtFeeTotal = push(['🟢 رسوم إدارة الصندوق التراكمية (Mgmt Fee)', null], 'data', 'link');
+  O.assetMgmtTotal = push(['🟢 رسوم إدارة الأصول التراكمية (Asset Mgmt Fee)', null], 'data', 'link');
+  O.regAuditCustodianTotal = push(['🟢 رسوم تنظيمية/تدقيق/أمين حفظ (تراكمية)', null], 'data', 'link');
+  O.fundSideFees = push(['🟢 إجمالي رسوم الصندوق (Fund-Side Fees)', null], 'data', 'link');
+  O.feesPctOfTPC = push(['🟢 نسبة إجمالي الرسوم من TPC', null], 'data', 'link');
   const ws = xlNewSheet(wb, '06_OPEX', B.rows, B.kinds, { colWidths:[42,26] });
   colorize(ws, B.kinds, S);
+  if(d.meta.oppType==='income'){
+    xlSetFormula(ws, O.noi, 2, `'05_Revenue'!B${R05.noi}`, '#,##0;(#,##0);"-"');
+  }
+  xlSetFormula(ws, O.mgmtFeeTotal, 2, `${ref(A.feeMgmt)}*(${SU_ref(SU,U.equity)}+${SU_ref(SU,U.debt)})/2*(${totalYearsF})`, '#,##0;(#,##0);"-"');
+  xlSetFormula(ws, O.assetMgmtTotal, 2, `${ref(A.feeAssetMgmt)}*${SU_ref(SU,U.tpc)}*(${totalYearsF})`, '#,##0;(#,##0);"-"');
+  xlSetFormula(ws, O.regAuditCustodianTotal, 2, `${ref(A.feeRegAuditCustodian)}*(${totalYearsF})`, '#,##0;(#,##0);"-"');
+  xlSetFormula(ws, O.fundSideFees, 2, `${SU_ref(SU,U.struct)}+${SU_ref(SU,U.arr)}+B${O.mgmtFeeTotal}+B${O.assetMgmtTotal}+B${O.regAuditCustodianTotal}+${SU_ref(SU,U.fixed)}+${SU_ref(SU,U.acq)}`, '#,##0;(#,##0);"-"');
+  xlSetFormula(ws, O.feesPctOfTPC, 2, `B${O.fundSideFees}/${SU_ref(SU,U.tpc)}`, '0.0%');
+  return O;
 }
+function SU_ref(sheetName,row){ return `'${sheetName}'!B${row}`; }
 
-function build07Debt(core, wb, d, c){
-  const { fmtSAR, fmtPct, xlRowsBuilder, xlNewSheet, xlSetFormula } = core;
+function build07Debt(core, wb, d, c, A, U, R05, standardPath){
+  const { fmtSAR, fmtPct, xlRowsBuilder, xlNewSheet, xlSetFormula, xlColLetter } = core;
+  const AS = '02_Assumptions'; const SU = '03_Sources & Uses';
+  const ref = (row,col)=> `'${AS}'!${xlColLetter(col||2)}${row}`;
   const B = xlRowsBuilder(); const S = [];
   const push = (vals,kind,sem)=>{ const n=B.push(vals,kind); S[n-1]=sem||null; return n; };
   push(['التمويل والديون — Debt',''],'title');
-  push(['البند','القيمة'],'header');
-  push(['SAIBOR', fmtPct(d.financing.saibor)], 'data', 'input');
-  push(['هامش البنك (Margin)', fmtPct(d.financing.margin)], 'data', 'input');
-  push(['نسبة التمويل (LTC)', fmtPct(d.financing.ltc)], 'data', 'input');
-  push(['🔒 إجمالي الدين (Total Debt)', Math.round(c.debt||0)]);
-  push(['🔒 DSCR (أدنى)', c.dscrMin!=null?c.dscrMin.toFixed(2)+'×':'—']);
-  push(['🔒 DSCR (متوسط)', c.dscrAvg!=null?c.dscrAvg.toFixed(2)+'×':'—']);
-  const rows = (c.pnlRows||[]).filter(r=>r.debtService>0);
-  if(rows.length){
-    push(['','']);
-    push(['جدول خدمة الدين السنوي (Annual Debt Service)',''],'section');
-    push(['السنة','الفائدة','سداد الأصل','خدمة الدين','DSCR'],'header');
-    rows.forEach(r=>{
-      push([r.yr, Math.round(r.interestExpense), Math.round(r.principalPayment), Math.round(r.debtService), r.debtService>0?(r.noi/r.debtService).toFixed(2)+'×':'—']);
-    });
+  const DB = {};
+
+  if(!standardPath){
+    push(['البند','القيمة'],'header');
+    push(['SAIBOR', fmtPct(d.financing.saibor)], 'data', 'input');
+    push(['هامش البنك (Margin)', fmtPct(d.financing.margin)], 'data', 'input');
+    push(['نسبة التمويل (LTC)', fmtPct(d.financing.ltc)], 'data', 'input');
+    push(['🔒 إجمالي الدين (Total Debt)', Math.round(c.debt||0)]);
+    push(['🔒 DSCR (أدنى)', c.dscrMin!=null?c.dscrMin.toFixed(2)+'×':'—']);
+    push(['🔒 DSCR (متوسط)', c.dscrAvg!=null?c.dscrAvg.toFixed(2)+'×':'—']);
+    const rows = (c.pnlRows||[]).filter(r=>r.debtService>0);
+    if(rows.length){
+      push(['','']);
+      push(['جدول خدمة الدين السنوي (Annual Debt Service)',''],'section');
+      push(['السنة','الفائدة','سداد الأصل','خدمة الدين','DSCR'],'header');
+      rows.forEach(r=>{
+        push([r.yr, Math.round(r.interestExpense), Math.round(r.principalPayment), Math.round(r.debtService), r.debtService>0?(r.noi/r.debtService).toFixed(2)+'×':'—']);
+      });
+    }
+    const ws = xlNewSheet(wb, '07_Debt', B.rows, B.kinds, { colWidths:[42,18,18,18,14] });
+    colorize(ws, B.kinds, S);
+    return DB;
   }
-  const ws = xlNewSheet(wb, '07_Debt', B.rows, B.kinds, { colWidths:[42,18,18,18,14] });
+
+  // ---- المسار القياسي: معادلات حقيقية مترابطة (فوائد فقط، بلا جدول سحب، بلا استهلاك أصل) ----
+  push(['البند','القيمة'],'header');
+  DB.saibor = push(['🟢 SAIBOR (من ٠٢_الافتراضات)', null], 'data', 'link');
+  DB.margin = push(['🟢 هامش البنك (Margin)', null], 'data', 'link');
+  DB.rate = push(['🟢 معدل الفائدة الكلي (SAIBOR+Margin)', null], 'data', 'link');
+  DB.ltc = push(['🟢 نسبة التمويل (LTC)', null], 'data', 'link');
+  DB.totalDebt = push(['🟢 إجمالي الدين (Total Debt، من ٠٣_المصادر والاستخدامات)', null], 'data', 'link');
+  DB.dscrMin = push(['🟢 DSCR (أدنى، من الجدول أدناه)', null], 'data', 'link');
+  DB.dscrAvg = push(['🟢 DSCR (متوسط، من الجدول أدناه)', null], 'data', 'link');
+  push(['','']);
+  push(['جدول خدمة الدين السنوي (Annual Debt Service — فوائد فقط، بلا استهلاك أصل)',''],'section');
+  push(['السنة','صافي الدخل التشغيلي (NOI)','الفائدة','سداد الأصل','خدمة الدين','DSCR'],'header');
+
+  const totalYears = Math.round(c.totalYears||0);
+  const constructionYears = Math.round(c.constructionYears||0);
+  const isLandbank = d.meta.oppType==='landbank';
+  DB.yearRows = [];
+  for(let yr=1; yr<=totalYears; yr++){
+    const inConstruction = !isLandbank && yr<=constructionYears;
+    const rn = push([yr, null, null, 0, null, null]);
+    DB.yearRows.push({ yr, row:rn, inConstruction });
+  }
+  DB.firstYearRow = DB.yearRows.length? DB.yearRows[0].row : null;
+  DB.lastYearRow = DB.yearRows.length? DB.yearRows[DB.yearRows.length-1].row : null;
+
+  const ws = xlNewSheet(wb, '07_Debt', B.rows, B.kinds, { colWidths:[10,22,18,16,18,12] });
   colorize(ws, B.kinds, S);
+
+  xlSetFormula(ws, DB.saibor, 2, ref(A.saibor), '0.0%');
+  xlSetFormula(ws, DB.margin, 2, ref(A.margin), '0.0%');
+  xlSetFormula(ws, DB.rate, 2, `${ref(A.saibor)}+${ref(A.margin)}`, '0.0%');
+  xlSetFormula(ws, DB.ltc, 2, ref(A.ltc), '0.0%');
+  xlSetFormula(ws, DB.totalDebt, 2, SU_ref(SU,U.debt), '#,##0;(#,##0);"-"');
+
+  DB.yearRows.forEach(({yr,row,inConstruction})=>{
+    // صافي الدخل التشغيلي (NOI) لهذه السنة
+    let noiF;
+    if(isLandbank){
+      noiF = `-${ref(A.carryAnnual)}-${SU_ref(SU,U.land)}*${ref(A.whiteLandFeePct)}+${ref(A.interimAnnualIncome)}`;
+    } else if(inConstruction){
+      noiF = null; // صفر حرفي — لا إيراد تشغيلي خلال الإنشاء
+    } else {
+      noiF = `'05_Revenue'!B${R05.noi}`;
+    }
+    if(noiF) xlSetFormula(ws, row, 2, noiF, '#,##0;(#,##0);"-"');
+    else { ws.getCell(row,2).value = 0; ws.getCell(row,2).numFmt = '#,##0;(#,##0);"-"'; }
+    // الفائدة = إجمالي الدين × معدل الفائدة (ثابتة كل سنة — لا استهلاك أصل، لا جدول سحب)
+    xlSetFormula(ws, row, 3, `B${DB.totalDebt}*B${DB.rate}`, '#,##0;(#,##0);"-"');
+    // خدمة الدين = الفائدة + سداد الأصل (سداد الأصل = 0 دوماً في هذا المسار)
+    xlSetFormula(ws, row, 5, `C${row}+D${row}`, '#,##0;(#,##0);"-"');
+    // DSCR — يُحتسب فقط لسنوات التشغيل الفعلية لفرص الدخل/التطوير (لا معنى له لبنك الأراضي ولا لسنوات الإنشاء)
+    if(isLandbank || inConstruction){
+      ws.getCell(row,6).value = '—';
+    } else {
+      xlSetFormula(ws, row, 6, `IF(E${row}>0,B${row}/E${row},IF(B${row}>0,99,"—"))`, '0.00"×"');
+    }
+  });
+
+  if(DB.firstYearRow){
+    xlSetFormula(ws, DB.dscrMin, 2, `IFERROR(MIN(F${DB.firstYearRow}:F${DB.lastYearRow}),"—")`, '0.00"×"');
+    xlSetFormula(ws, DB.dscrAvg, 2, `IFERROR(AVERAGE(F${DB.firstYearRow}:F${DB.lastYearRow}),"—")`, '0.00"×"');
+  } else {
+    ws.getCell(DB.dscrMin,2).value = '—'; ws.getCell(DB.dscrAvg,2).value = '—';
+  }
+  return DB;
 }
 
 function build0809CashFlows(core, wb, d, c){
@@ -488,27 +828,130 @@ function build0809CashFlows(core, wb, d, c){
     const ws = xlNewSheet(wb, '08_Project CF', B.rows, B.kinds, { colWidths:[46,26] });
     xlSetFormula(ws, rIRR, 2, `IRR(B${firstRow}:B${lastRow})`, '0.0%');
     xlSetFormula(ws, rNPV, 2, `B${firstRow}+NPV(${c.WACC},B${firstRow+1}:B${lastRow})`, '#,##0;(#,##0);"-"');
-    return ws;
+    return { ws, rIRR, rNPV };
   }
 }
 
-async function build0809CashFlowsWithChart(core, wb, d, c){
-  const ws08 = build0809CashFlows(core, wb, d, c);
-  const ws09Rows = [];
-  // 09_Equity CF
-  const { xlRowsBuilder, xlNewSheet, xlSetFormula } = core;
-  const B = xlRowsBuilder();
-  B.push(['التدفقات النقدية لحقوق الملكية — Equity Cash Flow',''],'title');
-  B.push(['السنة','تدفق حقوق الملكية (ر.س)'],'header');
-  const firstRow = B.rows.length+1;
-  c.equityCF.forEach((v,i)=> B.push([i, Math.round(v)]));
-  const lastRow = B.rows.length;
-  B.push(['','']);
-  const rIRR = B.push(['🔒 Equity IRR (معادلة IRR على الصفوف أعلاه)', null], 'note');
-  const rMOIC = B.push(['🔒 MOIC (مجموع التوزيعات الموجبة ÷ |التدفق الأول|)', null], 'note');
-  const ws09 = xlNewSheet(wb, '09_Equity CF', B.rows, B.kinds, { colWidths:[46,26] });
-  xlSetFormula(ws09, rIRR, 2, `IRR(B${firstRow}:B${lastRow})`, '0.0%');
-  xlSetFormula(ws09, rMOIC, 2, `SUMIF(B${firstRow}:B${lastRow},">0")/ABS(B${firstRow})`, '0.00"×"');
+/* المسار القياسي لأوراق ٠٨/٠٩ — معادلات حقيقية مترابطة سنة-بسنة (بدل أرقام جامدة من c.projectCF/
+   c.equityCF)، مبنية من نفس جبر compute() بالضبط لكن كخلايا Excel: قسم "تفاصيل سنة الخروج" في
+   ٠٨_Project CF يُحتسَب مرة واحدة (قيمة الخروج/تكاليف الخروج/سداد الدين) بحسب نوع الفرصة، ثم يُشار
+   إليه من صف السنة الأخيرة في كلا الشيتين — يمنع أي ازدواج أو تعارض بين ٠٨ و٠٩. */
+function build0809CashFlowsStandard(core, wb, d, c, A, U, R05, DB07){
+  const { xlRowsBuilder, xlNewSheet, xlSetFormula, xlColLetter } = core;
+  const AS = '02_Assumptions'; const SU = '03_Sources & Uses';
+  const ref = (row,col)=> `'${AS}'!${xlColLetter(col||2)}${row}`;
+  const totalYears = Math.round(c.totalYears||0);
+  const oppType = d.meta.oppType;
+  const isLandbank = oppType==='landbank';
+
+  /* ---- 08_Project CF ---- */
+  const B8 = xlRowsBuilder(); const S8 = [];
+  const push8 = (vals,kind,sem)=>{ const n=B8.push(vals,kind); S8[n-1]=sem||null; return n; };
+  push8(['التدفقات النقدية للمشروع — Project Cash Flow',''],'title');
+  push8(['تفاصيل سنة الخروج (Exit Year Detail)',''],'section');
+  push8(['البند','القيمة'],'header');
+  const EX = {};
+  EX.value = push8(['🟢 قيمة الخروج (Exit Value)', null], 'data', 'link');
+  EX.costPct = push8(['🟢 نسبة تكاليف الخروج (وساطة+قانونية+RETT+أخرى+تصرّف)', null], 'data', 'link');
+  EX.costs = push8(['🟢 تكاليف الخروج (مبلغ)', null], 'data', 'link');
+  EX.debtPayoff = push8(['🟢 سداد الدين المتبقي عند الخروج (Debt Payoff)', null], 'data', 'link');
+  push8(['','']);
+  push8(['السنة','تدفق المشروع (ر.س)'],'header');
+  const firstRow8 = B8.rows.length+1;
+  const yrRows8 = [];
+  for(let yr=0; yr<=totalYears; yr++){ yrRows8.push(push8([yr, null])); }
+  const lastRow8 = B8.rows.length;
+  push8(['','']);
+  const rIRR8 = push8(['🔒 Project IRR (معادلة IRR على الصفوف أعلاه)', null], 'note');
+  const rNPV8 = push8(['🔒 NPV @ WACC ('+(c.WACC*100).toFixed(1)+'%)', null], 'note');
+  const ws08 = xlNewSheet(wb, '08_Project CF', B8.rows, B8.kinds, { colWidths:[46,26] });
+  colorize(ws08, B8.kinds, S8);
+
+  let exitValueF;
+  if(isLandbank){
+    exitValueF = `${SU_ref(SU,U.land)}*(1+${ref(A.appreciation)})^${totalYears}`;
+  } else if(oppType==='development'){
+    const saleValueF = `'05_Revenue'!B${R05.gla}*${ref(A.salePrice)}*${ref(A.salePct)}`;
+    const rentedValueF = `'05_Revenue'!B${R05.gla}*(1-${ref(A.salePct)})*${ref(A.rent)}*${ref(A.occupancy)}*(1-${ref(A.opex)})*(1-${ref(A.feePropMgmt)})/MAX(0.02,${ref(A.exitCapRate)})`;
+    exitValueF = `(${saleValueF})+(${rentedValueF})`;
+  } else { // income
+    exitValueF = `('05_Revenue'!B${R05.noi}*(1+${ref(A.growth)})^${totalYears})/MAX(0.02,${ref(A.marketCap)})`;
+  }
+  xlSetFormula(ws08, EX.value, 2, exitValueF, '#,##0;(#,##0);"-"');
+  const costPctF = `${ref(A.exitBroker)}+${ref(A.exitLegal)}+${ref(A.exitRett)}+${ref(A.exitFeeOther)}+${ref(A.feeDisposition)}`;
+  xlSetFormula(ws08, EX.costPct, 2, costPctF, '0.0%');
+  xlSetFormula(ws08, EX.costs, 2, `B${EX.value}*B${EX.costPct}`, '#,##0;(#,##0);"-"');
+  xlSetFormula(ws08, EX.debtPayoff, 2, SU_ref(SU,U.debt), '#,##0;(#,##0);"-"');
+
+  yrRows8.forEach((rn, yr)=>{
+    if(yr===0){ xlSetFormula(ws08, rn, 2, `-${SU_ref(SU,U.tpc)}`, '#,##0;(#,##0);"-"'); return; }
+    const dbRow = DB07.yearRows[yr-1].row;
+    if(yr===totalYears) xlSetFormula(ws08, rn, 2, `'07_Debt'!B${dbRow}+B${EX.value}-B${EX.costs}`, '#,##0;(#,##0);"-"');
+    else xlSetFormula(ws08, rn, 2, `'07_Debt'!B${dbRow}`, '#,##0;(#,##0);"-"');
+  });
+  xlSetFormula(ws08, rIRR8, 2, `IRR(B${firstRow8}:B${lastRow8})`, '0.0%');
+  xlSetFormula(ws08, rNPV8, 2, `B${firstRow8}+NPV(${c.WACC},B${firstRow8+1}:B${lastRow8})`, '#,##0;(#,##0);"-"');
+
+  /* ---- 09_Equity CF ---- */
+  const B9 = xlRowsBuilder(); const S9 = [];
+  const push9 = (vals,kind,sem)=>{ const n=B9.push(vals,kind); S9[n-1]=sem||null; return n; };
+  push9(['التدفقات النقدية لحقوق الملكية — Equity Cash Flow',''],'title');
+  push9(['السنة','تدفق حقوق الملكية (ر.س)'],'header');
+  const firstRow9 = B9.rows.length+1;
+  const yrRows9 = [];
+  for(let yr=0; yr<=totalYears; yr++){ yrRows9.push(push9([yr, null])); }
+  const lastRow9 = B9.rows.length;
+  push9(['','']);
+  const rIRR9 = push9(['🔒 Equity IRR (معادلة IRR على الصفوف أعلاه)', null], 'note');
+  const rMOIC9 = push9(['🔒 MOIC (مجموع التوزيعات الموجبة ÷ |التدفق الأول|)', null], 'note');
+  const ws09 = xlNewSheet(wb, '09_Equity CF', B9.rows, B9.kinds, { colWidths:[46,26] });
+  colorize(ws09, B9.kinds, S9);
+
+  const annualFundFeeF = `${ref(A.feeMgmt)}*(${SU_ref(SU,U.equity)}+${SU_ref(SU,U.debt)})/2+${ref(A.feeAssetMgmt)}*${SU_ref(SU,U.tpc)}+${ref(A.feeRegAuditCustodian)}`;
+  yrRows9.forEach((rn, yr)=>{
+    if(yr===0){ xlSetFormula(ws09, rn, 2, `-${SU_ref(SU,U.equity)}*(1+${ref(A.subscriptionFee)})`, '#,##0;(#,##0);"-"'); return; }
+    const dbRow = DB07.yearRows[yr-1].row;
+    const netOpF = `'07_Debt'!B${dbRow}-'07_Debt'!E${dbRow}-(${annualFundFeeF})`;
+    if(yr===totalYears) xlSetFormula(ws09, rn, 2, `${netOpF}+'08_Project CF'!B${EX.value}-'08_Project CF'!B${EX.costs}-'08_Project CF'!B${EX.debtPayoff}`, '#,##0;(#,##0);"-"');
+    else xlSetFormula(ws09, rn, 2, netOpF, '#,##0;(#,##0);"-"');
+  });
+  xlSetFormula(ws09, rIRR9, 2, `IRR(B${firstRow9}:B${lastRow9})`, '0.0%');
+  // المقام = إجمالي رأس المال المُستثمَر فعلياً (contributedEquity + investorSideFees في compute()) —
+  // مجموع القيم المطلقة لكل التدفقات السالبة عبر كل السنوات (لا التدفق الأول فقط — قد تُوجَد نداءات
+  // رأسمالية إضافية خلال سنوات الإنشاء) زائد رسوم الاشتراك مرة إضافية (نفس ازدواج compute() المتعمَّد).
+  const moicDenomF9 = `-SUMIF(B${firstRow9}:B${lastRow9},"<0")+${ref(A.subscriptionFee)}*${SU_ref(SU,U.equity)}`;
+  xlSetFormula(ws09, rMOIC9, 2, `SUMIF(B${firstRow9}:B${lastRow9},">0")/(${moicDenomF9})`, '0.00"×"');
+
+  return { ws09, lastRow9, rIRR8, rNPV8, rIRR9, rMOIC9 };
+}
+
+async function build0809CashFlowsWithChart(core, wb, d, c, A, U, R05, O06, DB07, standardPath){
+  const AS2 = '02_Assumptions'; const SU2 = '03_Sources & Uses';
+  let ws09, lastRowForChart, rIRR8, rNPV8, rIRR9, rMOIC9;
+  if(standardPath){
+    const res = build0809CashFlowsStandard(core, wb, d, c, A, U, R05, DB07);
+    ws09 = res.ws09; lastRowForChart = res.lastRow9;
+    rIRR8 = res.rIRR8; rNPV8 = res.rNPV8; rIRR9 = res.rIRR9; rMOIC9 = res.rMOIC9;
+  } else {
+    const res08 = build0809CashFlows(core, wb, d, c);
+    rIRR8 = res08.rIRR; rNPV8 = res08.rNPV;
+    const { xlRowsBuilder, xlNewSheet, xlSetFormula } = core;
+    const B = xlRowsBuilder();
+    B.push(['التدفقات النقدية لحقوق الملكية — Equity Cash Flow',''],'title');
+    B.push(['السنة','تدفق حقوق الملكية (ر.س)'],'header');
+    const firstRow = B.rows.length+1;
+    c.equityCF.forEach((v,i)=> B.push([i, Math.round(v)]));
+    const lastRow = B.rows.length;
+    B.push(['','']);
+    const rIRR = B.push(['🔒 Equity IRR (معادلة IRR على الصفوف أعلاه)', null], 'note');
+    const rMOIC = B.push(['🔒 MOIC (مجموع التوزيعات الموجبة ÷ إجمالي رأس المال المُستثمَر)', null], 'note');
+    ws09 = xlNewSheet(wb, '09_Equity CF', B.rows, B.kinds, { colWidths:[46,26] });
+    xlSetFormula(ws09, rIRR, 2, `IRR(B${firstRow}:B${lastRow})`, '0.0%');
+    const moicDenomF = `-SUMIF(B${firstRow}:B${lastRow},"<0")+'${AS2}'!B${A.subscriptionFee}*'${SU2}'!B${U.equity}`;
+    xlSetFormula(ws09, rMOIC, 2, `SUMIF(B${firstRow}:B${lastRow},">0")/(${moicDenomF})`, '0.00"×"');
+    lastRowForChart = lastRow;
+    rIRR9 = rIRR; rMOIC9 = rMOIC;
+  }
 
   const years = c.equityCF.map((v,i)=>i);
   await addChartImage(wb, ws09, { type:'bar',
@@ -517,7 +960,9 @@ async function build0809CashFlowsWithChart(core, wb, d, c){
       { label:'Equity CF', data:c.equityCF.map(v=>Math.round(v)), backgroundColor:XL_CHART_COLORS.gold },
     ] },
     options:Object.assign({}, XL_CHART_BASE, { plugins:{ title:{ display:true, text:'Project vs Equity Cash Flow by Year', color:XL_CHART_COLORS.ink, font:{ size:13, weight:'bold' } }, legend:{ position:'bottom', labels:{ color:XL_CHART_COLORS.ink, font:XL_CHART_FONT } } } })
-  }, 520, 280, 0, lastRow+3);
+  }, 520, 280, 0, lastRowForChart+3);
+
+  return { rIRR8, rNPV8, rIRR9, rMOIC9 };
 }
 
 /* دقة زمنية شهرية/ربع سنوية + ذروة الاحتياج النقدي الفعلي + صافي النقدي المطلوب من
@@ -561,25 +1006,33 @@ function build0809bCashFlowTiming(core, wb, d, c, oppId){
   colorize(ws, B.kinds, S);
 }
 
-function build10Returns(core, wb, d, c){
-  const { fmtSAR, fmtPct, xlRowsBuilder, xlNewSheet } = core;
+function build10Returns(core, wb, d, c, CF0809){
+  const { fmtSAR, fmtPct, xlRowsBuilder, xlNewSheet, xlSetFormula } = core;
   const B = xlRowsBuilder(); const S = [];
   const push = (vals,kind,sem)=>{ const n=B.push(vals,kind); S[n-1]=sem||null; return n; };
   push(['العوائد — Returns',''],'title');
   push(['المؤشر','القيمة'],'header');
-  push(['🟢 Equity IRR (من 09_Equity CF)', fmtPct(c.equityIRR)], 'data', 'link');
-  push(['🟢 Project IRR (من 08_Project CF)', fmtPct(c.projectIRR)], 'data', 'link');
-  push(['🟢 MOIC (من 09_Equity CF)', c.MOIC.toFixed(2)+'×'], 'data', 'link');
+  const rEquityIRR = push(['🟢 Equity IRR (من 09_Equity CF)', null], 'data', 'link');
+  const rProjectIRR = push(['🟢 Project IRR (من 08_Project CF)', null], 'data', 'link');
+  const rMOIC = push(['🟢 MOIC (من 09_Equity CF)', null], 'data', 'link');
+  const rNPVProject = push(['🟢 NPV (Project @ WACC، من 08_Project CF)', null], 'data', 'link');
   push(['DPI', isFinite(c.DPI)?c.DPI.toFixed(2)+'×':'—']);
   push(['RVPI', isFinite(c.RVPI)?c.RVPI.toFixed(2)+'×':'—']);
   push(['TVPI', isFinite(c.TVPI)?c.TVPI.toFixed(2)+'×':'—']);
-  push(['NPV (Project @ WACC)', fmtSAR(c.npvProject)]);
   push(['NPV (Equity @ Ke)', fmtSAR(c.npvEquity)]);
   push(['ROI (عائد نقدي على مدى العمر)', fmtPct(c.ROI)]);
   push(['فترة استرداد رأس المال', c.paybackPeriod!=null? c.paybackPeriod.toFixed(1)+' سنة':'لم يُسترد بالكامل']);
   push(['القيمة الصافية التقديرية (NAV)', fmtSAR(c.NAV)]);
   const ws = xlNewSheet(wb, '10_Returns', B.rows, B.kinds, { colWidths:[42,26] });
   colorize(ws, B.kinds, S);
+  if(CF0809 && CF0809.rIRR9!=null) xlSetFormula(ws, rEquityIRR, 2, `'09_Equity CF'!B${CF0809.rIRR9}`, '0.0%');
+  else ws.getCell(rEquityIRR,2).value = fmtPct(c.equityIRR);
+  if(CF0809 && CF0809.rIRR8!=null) xlSetFormula(ws, rProjectIRR, 2, `'08_Project CF'!B${CF0809.rIRR8}`, '0.0%');
+  else ws.getCell(rProjectIRR,2).value = fmtPct(c.projectIRR);
+  if(CF0809 && CF0809.rMOIC9!=null) xlSetFormula(ws, rMOIC, 2, `'09_Equity CF'!B${CF0809.rMOIC9}`, '0.00"×"');
+  else ws.getCell(rMOIC,2).value = c.MOIC.toFixed(2)+'×';
+  if(CF0809 && CF0809.rNPV8!=null) xlSetFormula(ws, rNPVProject, 2, `'08_Project CF'!B${CF0809.rNPV8}`, '#,##0;(#,##0);"-"');
+  else ws.getCell(rNPVProject,2).value = fmtSAR(c.npvProject);
 }
 
 async function build11Sensitivity(core, wb, d, c){
