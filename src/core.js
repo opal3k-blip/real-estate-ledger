@@ -2648,11 +2648,19 @@ function renderBenchmarkPanel(k){
         <div class="barrow">
           <div class="lbl">
             <span>${esc(r.ut)}</span>
-            <span class="num mono">${T('فعلي','Actual')} ${fmtPct(r.avgActual)} · ${T('مرجعي','Benchmark')} ${fmtPct(r.ref)} · <b style="color:${good?'var(--good)':'var(--bad)'};">${good?'+':''}${(r.delta*100).toFixed(1)} ${T('نقطة','pts')}</b></span>
+            <span class="num mono">${T('فعلي','Actual')} ${fmtPct(r.avgActual)}</span>
           </div>
           <div class="track" style="position:relative;">
             <div class="fill" style="width:${Math.min(100,(r.avgActual/maxV)*100)}%; background:${good?'var(--good)':'var(--bad)'};"></div>
             <div style="position:absolute; top:-2px; bottom:-2px; width:2px; background:var(--ink); right:${100-Math.min(100,(r.ref/maxV)*100)}%;" title="${T('المرجعي','Benchmark')}: ${fmtPct(r.ref)}"></div>
+          </div>
+          <div class="lbl" style="margin-top:2px;">
+            <span style="font-size:10.5px; color:var(--ink-faint);">${T('مرجعي','Benchmark')}</span>
+            <span class="num mono" style="font-size:10.5px; color:var(--ink-faint);">${fmtPct(r.ref)}</span>
+          </div>
+          <div class="lbl">
+            <span style="font-size:10.5px; color:var(--ink-faint);">${T('الفارق عن المرجعي','Delta vs. Benchmark')}</span>
+            <span class="num mono" style="font-size:10.5px;"><b style="color:${good?'var(--good)':'var(--bad)'};">${good?'+':''}${(r.delta*100).toFixed(1)} ${T('نقطة','pts')}</b></span>
           </div>
         </div>`;
       }).join('')}
@@ -2946,8 +2954,9 @@ function checkRow(c){
 
 function barRow(label,val,total,color){
   const pct = total>0? Math.max(0,Math.min(100,(val/total)*100)) : 0;
-  return `<div class="barrow"><div class="lbl"><span>${label}</span><span class="num mono">${fmtSAR(val)} · ${pct.toFixed(0)}%</span></div>
-    <div class="track"><div class="fill" style="width:${pct}%; background:${color};"></div></div></div>`;
+  return `<div class="barrow"><div class="lbl"><span>${label}</span><span class="num mono">${fmtSAR(val)}</span></div>
+    <div class="track"><div class="fill" style="width:${pct}%; background:${color};"></div></div>
+    <div class="lbl" style="margin-top:2px;"><span></span><span class="num mono" style="font-size:10.5px; color:var(--ink-faint);">${fmtPct(pct/100)}</span></div></div>`;
 }
 
 function renderDetail(id){
