@@ -9,42 +9,42 @@
 @import url('https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
 
 :root{
-  /* لوحة ألوان مُعاد تصميمها لتنسجم مع هوية أوبال البصرية (رمادي غرافيت + تركواز عميق راقٍ) بدل الأخضر الترابي السابق. */
+  /* هوية بصرية مُنعشة: زمردي عميق + ذهبي دافئ — طابع فاخر يليق بمنصة استثمار عقاري، بدل الرمادي الغرافيتي السابق. */
   color-scheme: light; /* بدون هذا، المتصفح يرسم أدوات التحكم الأصلية (قوائم select المنسدلة تحديداً) بلوحة
     ألوان افتراضية مستقلة عن متغيرات CSS هنا فتتعارض أحياناً معها — النتيجة نص أبيض على خلفية بيضاء (أو العكس)
     غير مرئي إطلاقاً داخل قائمة select مفتوحة (مثال: قائمة "القرار" في بوابة اعتماد لجنة الاستثمار). */
-  --paper:#F5F5F3; --surface:#FFFFFF; --surface-2:#ECEBE7; --surface-3:#E1E0DA;
-  --ink:#1B1D22; --ink-soft:#565A63; --ink-faint:#888C95; --border:#DCDAD3;
-  --accent:#1F5F6B; --accent-ink:#FFFFFF; --accent-soft:#E3EEF0; --accent-soft-ink:#164A54;
-  --gold:#A8823A; --gold-soft:#F2E8D2;
-  --good:#1F7A52; --good-soft:#DEF0E5;
-  --warn:#A6741F; --warn-soft:#F5EAD3;
-  --bad:#B33A2C; --bad-soft:#F8E1DC;
-  --shadow: 0 1px 2px rgba(20,22,28,.06), 0 8px 24px -12px rgba(20,22,28,.18);
+  --paper:#F8F6EF; --surface:#FFFFFF; --surface-2:#EFEAD8; --surface-3:#E3DAB8;
+  --ink:#152420; --ink-soft:#4B5C52; --ink-faint:#8A9890; --border:#DED2A6;
+  --accent:#0E6B4A; --accent-ink:#FFFFFF; --accent-soft:#DCEEE2; --accent-soft-ink:#0A4A33;
+  --gold:#B9862E; --gold-soft:#F4E7C6;
+  --good:#2E9A5C; --good-soft:#DFF2E5;
+  --warn:#B4791E; --warn-soft:#F6E8CE;
+  --bad:#B23B2C; --bad-soft:#F8E1DB;
+  --shadow: 0 1px 2px rgba(21,36,32,.07), 0 8px 24px -12px rgba(21,36,32,.20);
   --radius: 12px;
 }
 @media (prefers-color-scheme: dark){
   :root:not([data-theme="light"]){
     color-scheme: dark;
-    --paper:#14161B; --surface:#1B1E25; --surface-2:#21252D; --surface-3:#2A2F39;
-    --ink:#ECEDEF; --ink-soft:#A8ACB5; --ink-faint:#767B85; --border:#2F3440;
-    --accent:#54BFCB; --accent-ink:#06181B; --accent-soft:#1B2E32; --accent-soft-ink:#82D5DE;
-    --gold:#D9B978; --gold-soft:#2C260F;
-    --good:#4FC988; --good-soft:#173125;
-    --warn:#E3B25B; --warn-soft:#2E2611;
-    --bad:#E38176; --bad-soft:#301917;
+    --paper:#0F1815; --surface:#16211C; --surface-2:#1C2921; --surface-3:#243228;
+    --ink:#EDEFE9; --ink-soft:#A9B6AC; --ink-faint:#748078; --border:#2C3B31;
+    --accent:#3FCB8F; --accent-ink:#062015; --accent-soft:#173829; --accent-soft-ink:#84E6B4;
+    --gold:#E0B563; --gold-soft:#332711;
+    --good:#4FCB86; --good-soft:#17301F;
+    --warn:#E7B85E; --warn-soft:#332711;
+    --bad:#E48577; --bad-soft:#301915;
     --shadow: 0 1px 2px rgba(0,0,0,.4), 0 12px 28px -14px rgba(0,0,0,.6);
   }
 }
 :root[data-theme="dark"]{
   color-scheme: dark;
-  --paper:#14161B; --surface:#1B1E25; --surface-2:#21252D; --surface-3:#2A2F39;
-  --ink:#ECEDEF; --ink-soft:#A8ACB5; --ink-faint:#767B85; --border:#2F3440;
-  --accent:#54BFCB; --accent-ink:#06181B; --accent-soft:#1B2E32; --accent-soft-ink:#82D5DE;
-  --gold:#D9B978; --gold-soft:#2C260F;
-  --good:#4FC988; --good-soft:#173125;
-  --warn:#E3B25B; --warn-soft:#2E2611;
-  --bad:#E38176; --bad-soft:#301917;
+  --paper:#0F1815; --surface:#16211C; --surface-2:#1C2921; --surface-3:#243228;
+  --ink:#EDEFE9; --ink-soft:#A9B6AC; --ink-faint:#748078; --border:#2C3B31;
+  --accent:#3FCB8F; --accent-ink:#062015; --accent-soft:#173829; --accent-soft-ink:#84E6B4;
+  --gold:#E0B563; --gold-soft:#332711;
+  --good:#4FCB86; --good-soft:#17301F;
+  --warn:#E7B85E; --warn-soft:#332711;
+  --bad:#E48577; --bad-soft:#301915;
   --shadow: 0 1px 2px rgba(0,0,0,.4), 0 12px 28px -14px rgba(0,0,0,.6);
 }
 :root[data-theme="light"]{ color-scheme: light; }
@@ -74,10 +74,12 @@ button{font-family:inherit;}
 }
 .brand{ display:flex; align-items:center; gap:12px; }
 .brand .mark{
-  width:42px;height:42px;border-radius:10px;background:var(--surface-2);
+  width:42px;height:42px;border-radius:10px;
+  background:linear-gradient(135deg,var(--accent),var(--gold));
   display:flex;align-items:center;justify-content:center;color:var(--accent-ink);font-weight:700;font-size:19px;
   font-family:'Amiri',serif; flex:none; overflow:hidden; padding:4px; box-shadow:inset 0 0 0 1px var(--border);
 }
+.topbar{ border-top:3px solid transparent; border-image:linear-gradient(90deg,var(--accent),var(--gold)) 1; }
 .brand .mark img{ width:100%; height:100%; object-fit:contain; }
 .opal-footer{
   margin-top:28px; padding:18px 20px; text-align:center; color:var(--ink-faint); font-size:11.5px;
@@ -98,7 +100,7 @@ button{font-family:inherit;}
 .btn:focus-visible, .field input:focus-visible, .field select:focus-visible, .field textarea:focus-visible, a:focus-visible{
   outline:2px solid var(--accent); outline-offset:2px;
 }
-.btn-primary{ background:var(--accent); border-color:var(--accent); color:var(--accent-ink); }
+.btn-primary{ background:linear-gradient(135deg,var(--accent),var(--accent-soft-ink)); border-color:var(--accent); color:var(--accent-ink); }
 .btn-ghost{ background:transparent; border-color:transparent; }
 .btn-danger{ background:var(--bad-soft); border-color:var(--bad-soft); color:var(--bad); }
 .btn-sm{ padding:6px 11px; font-size:12.5px; border-radius:7px; }
@@ -131,7 +133,7 @@ button{font-family:inherit;}
   transition:transform .15s ease, box-shadow .15s ease;
 }
 .dash-hero-card:hover{ transform:translateY(-3px); box-shadow:0 6px 14px rgba(20,28,22,.12), 0 18px 34px -16px rgba(20,28,22,.28); }
-.dash-hero-card::before{ content:""; position:absolute; inset:0 0 auto 0; height:4px; background:var(--accent-color, var(--accent)); }
+.dash-hero-card::before{ content:""; position:absolute; inset:0 0 auto 0; height:4px; background:var(--accent-color, linear-gradient(90deg,var(--accent),var(--gold))); }
 .dash-hero-card .icon{ font-size:18px; margin-bottom:8px; display:block; }
 .dash-hero-card .l{ font-size:11.5px; color:var(--ink-faint); font-weight:600; margin-bottom:6px; }
 .dash-hero-card .v{ font-size:24px; font-weight:800; font-family:'Aptos','Segoe UI',Arial,sans-serif; direction:ltr; text-align:center; color:var(--ink); }
