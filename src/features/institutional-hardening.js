@@ -1,10 +1,12 @@
 /* Institutional Hardening 2 — governance, IC decision ledger, variance, financing/VAT transparency. */
 const IC_COLLECTION='icDecisions';
 
-function pct(v){ return v==null||!isFinite(v)?'—':(v*100).toFixed(1)+'%'; }
+let _ihCoreRef=null;
+function pct(v){ if(v==null||!isFinite(v)) return '—'; const n=(v*100).toFixed(1); return (_ihCoreRef&&_ihCoreRef.LANG==='en')? n+'%' : '%'+n; }
 function num(v){ return v==null||!isFinite(v)?'—':Number(v).toLocaleString('en-US',{maximumFractionDigits:0}); }
 
 export function registerInstitutionalHardening(core){
+  _ihCoreRef = core;
   core.registerDataCollection(IC_COLLECTION);
   core.registerOpportunitySchemaExtender(()=>({
     capitalAllocation:{targetEquity:null,maxAllocation:null,priority:'normal',committeeNote:''},

@@ -353,7 +353,7 @@ function fmtSAR(v){
   return sign+s+' '+T('ر.س','SAR');
 }
 function fmtNum(v,dec){ if(v==null||!isFinite(v)) return '—'; return v.toLocaleString('en-US',{maximumFractionDigits:dec==null?0:dec, minimumFractionDigits:dec==null?0:dec}); }
-function fmtPct(v,dec){ if(v==null||!isFinite(v)) return '—'; return (v*100).toFixed(dec==null?1:dec)+'%'; }
+function fmtPct(v,dec){ if(v==null||!isFinite(v)) return '—'; const n=(v*100).toFixed(dec==null?1:dec); return LANG==='en' ? n+'%' : '%'+n; }
 function esc(s){ return (s==null?'':String(s)).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function todayStr(){ return new Date().toISOString().slice(0,10); }
 /* التقويم الهجري — يعتمد على دعم المتصفح المدمج (Intl) بدون أي مكتبة خارجية؛ يعود بسلسلة فاضية بأمان لو غير مدعوم */
@@ -3098,7 +3098,7 @@ ${T('بدلاً من بيع الأصل في نهاية المدة، يقوم ا�
             ${c.isOffPlanSale? `<div class="k">${T('نمط البيع','Sale Mode')}</div><div class="v">${T('بيع على الخارطة (وافي)','Off-Plan Sale (WAFI)')} (${c.offPlanSchedule.length} ${T('دفعات','installments')})</div>`:''}
             ${c.infraCostAmt>0? `<div class="k">${T('تكلفة البنية التحتية','Infrastructure Cost')}</div><div class="v">${fmtSAR(c.infraCostAmt)}</div>`:''}
             ${(c.heightPremiumMult>1 && d.meta.oppType!=='landbank')? `<div class="k">${T('علاوة تكلفة ارتفاع الدور','Floor Height Cost Premium')}</div><div class="v">+${fmtPct(c.heightPremiumMult-1)} ${T('على تكلفة البناء/م²','on build cost/sqm')}</div>`:''}
-            ${c.basementCostAmt>0? `<div class="k">${T('البدرومات — عدد المستويات / المساحة الإجمالية','Basements — Levels / Total Area')}</div><div class="v">${c.basementLevels} ${T('بدروم','levels')} / ${fmtNum(c.basementArea)} ${T('م²','sqm')}</div>
+            ${c.basementCostAmt>0? `<div class="k">${T('عدد مستويات البدرومات','Basement Levels')}</div><div class="v">${c.basementLevels} ${T('بدروم','levels')}</div><div class="k">${T('المساحة الإجمالية للبدرومات','Total Basement Area')}</div><div class="v">${fmtNum(c.basementArea)} ${T('م²','sqm')}</div>
             <div class="k">${T('علاوة تكلفة البدرومات (متوسطة)','Basement Cost Premium (avg)')}</div><div class="v">+${fmtPct(c.basementPremiumAvgPct)}</div>
             <div class="k">${T('إجمالي تكلفة البدرومات','Total Basement Cost')}</div><div class="v">${fmtSAR(c.basementCostAmt)}</div>`:''}
           </div>

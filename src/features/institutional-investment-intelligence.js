@@ -19,7 +19,8 @@ const ACTUALS_COLLECTION = 'assetActuals';
 
 function clamp(v, lo, hi){ return Math.max(lo, Math.min(hi, v)); }
 function safeNum(v, fallback=null){ const n = Number(v); return isFinite(n) ? n : fallback; }
-function pctPoint(v){ return v==null || !isFinite(v) ? '—' : (v*100).toFixed(1)+'%'; }
+let _iiiCoreRef=null;
+function pctPoint(v){ if(v==null || !isFinite(v)) return '—'; const n=(v*100).toFixed(1); return (_iiiCoreRef&&_iiiCoreRef.LANG==='en')? n+'%' : '%'+n; }
 function ratio(v){ return v==null || !isFinite(v) ? '—' : Number(v).toFixed(2)+'×'; }
 function median(vals){
   const a = vals.filter(v=>v!=null && isFinite(v)).sort((x,y)=>x-y);
@@ -484,6 +485,7 @@ function renderPassport(core, row){
 }
 
 export function registerInstitutionalInvestmentIntelligence(core){
+  _iiiCoreRef = core;
   core.registerTopbarButton(()=>`<button class="btn btn-sm" data-action="institutional-intelligence-open">🧠 ${core.T('محرك الذكاء الاستثماري المؤسسي','Institutional Investment Intelligence')}</button>`);
   core.registerMainView('institutional-intelligence', ()=>renderInstitutionalInvestmentIntelligenceDashboard(core));
   core.registerDetailSection((d, c, rec)=>{

@@ -61,7 +61,7 @@ export function registerDataQuality(core){
     const rec = core.opportunities.find(o=>o.id===oppId);
     if(!rec) return '';
     const stats = dataQualityStats(core, d);
-    const pctStr = (stats.pct*100).toFixed(0)+'%';
+    const pctStr = core.LANG==='en' ? (stats.pct*100).toFixed(0)+'%' : '%'+(stats.pct*100).toFixed(0);
     const color = stats.criticalMissing.length>0 ? 'var(--bad)' : (stats.pct>=0.9? 'var(--good)' : 'var(--gold)');
 
     return `

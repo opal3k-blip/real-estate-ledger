@@ -94,7 +94,7 @@ export function registerDueDiligence(core){
     const items = (d.dd && d.dd.items) || defaultItemsDict();
     const stats = ddStats(items);
     const canEdit = core.canEditOpp(rec);
-    const pctStr = (stats.pct*100).toFixed(0)+'%';
+    const pctStr = core.LANG==='en' ? (stats.pct*100).toFixed(0)+'%' : '%'+(stats.pct*100).toFixed(0);
 
     const rowsForCategory = (catKey)=> DEFAULT_DD_ITEMS.filter(it=>it.category===catKey).map(it=>{
       const v = items[it.key] || {};
