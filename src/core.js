@@ -3012,8 +3012,8 @@ function renderDetail(id){
       <h3><span class="n">💡</span> ${T('أثر الزكاة الشرعية على عائد المستثمر (تقدير توضيحي)','Zakat Impact on Investor Return (Illustrative Estimate)')}</h3>
       <p style="color:var(--ink-faint); font-size:13px; margin:0 0 12px;">${T('تقدير مبسّط فقط — نسبة سنوية ثابتة مفترضة على رأس المال المستثمر، وليس احتساباً زكوياً معتمداً على وعاء زكاة فعلي (يعتمد على تفاصيل الأصول والمطلوبات ونوع الصندوق). لا ينطبق بالضرورة على مستثمر أجنبي يخضع لضريبة استقطاع مختلفة. راجع مستشاراً شرعياً/زكوياً معتمداً قبل الاعتماد على هذا الرقم.','A simplified estimate only — a flat assumed annual rate on invested capital, not an accredited Zakat calculation based on an actual Zakat base (which depends on asset/liability details and fund type). Does not necessarily apply to a foreign investor subject to a different withholding tax. Consult an accredited Zakat/Sharia advisor before relying on this figure.')}</p>
       <div class="kv">
-        <div class="k">Equity IRR ${T('بعد تقدير الزكاة','after estimated Zakat')}</div><div class="v">${c.equityIRR!=null? fmtPct(c.equityIRR) : '—'} ← <b>${c.equityIRRAfterZakat!=null? fmtPct(c.equityIRRAfterZakat) : '—'}</b></div>
-        <div class="k">MOIC ${T('بعد تقدير الزكاة','after estimated Zakat')}</div><div class="v">${c.MOIC.toFixed(2)}× ← <b>${c.MOICAfterZakat!=null? c.MOICAfterZakat.toFixed(2)+'×' : '—'}</b></div>
+        <div class="k">Equity IRR ${T('بعد تقدير الزكاة','after estimated Zakat')}</div><div class="v"><span class="bidi-number">${c.equityIRR!=null? fmtPct(c.equityIRR) : '—'}</span> ← <b><span class="bidi-number">${c.equityIRRAfterZakat!=null? fmtPct(c.equityIRRAfterZakat) : '—'}</span></b></div>
+        <div class="k">MOIC ${T('بعد تقدير الزكاة','after estimated Zakat')}</div><div class="v"><span class="bidi-number">${c.MOIC.toFixed(2)}×</span> ← <b><span class="bidi-number">${c.MOICAfterZakat!=null? c.MOICAfterZakat.toFixed(2)+'×' : '—'}</span></b></div>
         <div class="k">${T('إجمالي الزكاة التقديرية على مدى العمر','Total Estimated Zakat Over Hold Period')}</div><div class="v">${fmtSAR(c.totalZakatEstimate)}</div>
       </div>
     </div>`:''}
@@ -3057,7 +3057,7 @@ ${T('هذا الأصل يُحتفظ به إلى ما لا نهاية ولا يُ
         <div class="k">Equity IRR — ${T('نقدي محقق فقط','realized cash only')} (Cash-Only)</div><div class="v">${fmtPct(c.equityIRRCashOnly)}</div>
         <div class="k">MOIC — ${T('نقدي محقق فقط','realized cash only')} (Cash-Only)</div><div class="v">${c.MOICCashOnly.toFixed(2)}×</div>
         <div class="k">${T('إجمالي التوزيعات النقدية المحققة','Total Realized Cash Distributions')}</div><div class="v">${fmtSAR(c.totalDistribCashOnly)}</div>
-        <div class="k">${T('دورة إعادة التمويل','Refinance Cycle')}</div><div class="v">${T('كل','Every')} ${fmtNum(d.income.refinance.intervalYears)} ${T('سنوات — LTV إعادة التمويل','years — refinance LTV')} ${fmtPct(d.income.refinance.refiLtv)}</div>
+        <div class="k">${T('دورة إعادة التمويل','Refinance Cycle')}</div><div class="v">${T('كل','Every')} <span class="bidi-number">${fmtNum(d.income.refinance.intervalYears)}</span> ${T('سنوات — LTV إعادة التمويل','years — refinance LTV')} <span class="bidi-number">${fmtPct(d.income.refinance.refiLtv)}</span></div>
       </div>
     </div>`:''}
     ${c.holdStrategy==='refinance_close'? `
@@ -3080,7 +3080,7 @@ ${T('بدلاً من بيع الأصل في نهاية المدة، يقوم ا�
           <h3><span class="n">1</span> ${T('ملخص الأرض والبناء','Land & Building Summary')} (Land & Building Summary)</h3>
           <div class="kv">
             <div class="k">${T('مساحة الأرض','Land Area')}</div><div class="v">${fmtNum(d.land.area)} ${T('م²','sqm')}</div>
-            <div class="k">${T('سعر الشراء / التكلفة الإجمالية','Purchase Price / Total Cost')}</div><div class="v">${fmtNum(d.land.price)} ${T('ر.س/م²','SAR/sqm')} — ${fmtSAR(c.landCost)}</div>
+            <div class="k">${T('سعر الشراء / التكلفة الإجمالية','Purchase Price / Total Cost')}</div><div class="v"><span class="bidi-number">${fmtNum(d.land.price)} ${T('ر.س/م²','SAR/sqm')}</span> — <span class="bidi-number">${fmtSAR(c.landCost)}</span></div>
             <div class="k">GFA (${T('حق البناء الإجمالي','Gross Floor Area')})</div><div class="v">${fmtNum(c.gfa)} ${T('م²','sqm')}</div>
             <div class="k">${T('بصمة المبنى / الأدوار اللازمة','Building Footprint / Floors Needed')}</div><div class="v">${fmtNum(c.footprint)} ${T('م²','sqm')} / ${c.floorsNeeded} ${T('دور','floors')}</div>
             <div class="k">${T('الارتفاع الإجمالي','Total Height')}</div><div class="v">${fmtNum(c.buildingHeight,1)} ${T('م','m')}</div>
@@ -3093,7 +3093,7 @@ ${T('بدلاً من بيع الأصل في نهاية المدة، يقوم ا�
             ${c.infraCostAmt>0? `<div class="k">${T('تكلفة البنية التحتية','Infrastructure Cost')}</div><div class="v">${fmtSAR(c.infraCostAmt)}</div>`:''}
             ${(c.heightPremiumMult>1 && d.meta.oppType!=='landbank')? `<div class="k">${T('علاوة تكلفة ارتفاع الدور','Floor Height Cost Premium')}</div><div class="v">+${fmtPct(c.heightPremiumMult-1)} ${T('على تكلفة البناء/م²','on build cost/sqm')}</div>`:''}
             ${c.basementCostAmt>0? `<div class="k">${T('البدرومات — عدد المستويات / المساحة الإجمالية','Basements — Levels / Total Area')}</div><div class="v">${c.basementLevels} ${T('بدروم','levels')} / ${fmtNum(c.basementArea)} ${T('م²','sqm')}</div>
-            <div class="k">${T('علاوة تكلفة البدرومات (متوسطة)','Basement Cost Premium (avg)')}</div><div class="v">+${fmtPct(c.basementPremiumAvgPct)} ${T('— إجمالي','— total')}: ${fmtSAR(c.basementCostAmt)}</div>`:''}
+            <div class="k">${T('علاوة تكلفة البدرومات (متوسطة)','Basement Cost Premium (avg)')}</div><div class="v">+<span class="bidi-number">${fmtPct(c.basementPremiumAvgPct)}</span> ${T('— إجمالي','— total')}: <span class="bidi-number">${fmtSAR(c.basementCostAmt)}</span></div>`:''}
           </div>
           ${(d.land.bonusAreaPct||0)>0? (()=>{
             const bonusArea = c.gfa * d.land.bonusAreaPct;
@@ -3213,7 +3213,7 @@ ${T('بدلاً من بيع الأصل في نهاية المدة، يقوم ا�
         <div class="section">
           <h3><span class="n">7</span> ${T('إجمالي الرسوم','Fee Summary')} (Fee Summary)</h3>
           <div class="kv">
-            <div class="k">${T('رسوم إدارة الصندوق (منظور الصندوق)','Fund Management Fees (fund side)')}</div><div class="v">${fmtSAR(c.fundSideFees)} — ${fmtPct(c.feesPctOfTPC)} ${T('من','of')} TPC</div>
+            <div class="k">${T('رسوم إدارة الصندوق (منظور الصندوق)','Fund Management Fees (fund side)')}</div><div class="v"><span class="bidi-number">${fmtSAR(c.fundSideFees)}</span> — <span class="bidi-number">${fmtPct(c.feesPctOfTPC)}</span> ${T('من','of')} TPC</div>
             <div class="k">${T('رسوم الاشتراك (منظور المستثمر)','Subscription Fees (investor side)')}</div><div class="v">${fmtSAR(c.investorSideFees)}</div>
             ${c.totalEjarFee>0? `<div class="k">${T('رسوم منصة "إيجار" (إجمالي مدة الاحتفاظ)','Ejar Platform Fees (total over hold period)')}</div><div class="v">${fmtSAR(c.totalEjarFee)}</div>` : ''}
             ${c.totalInsurance>0? `<div class="k">${T('تأمين الأصل (إجمالي مدة الاحتفاظ)','Asset Insurance (total over hold period)')}</div><div class="v">${fmtSAR(c.totalInsurance)}</div>` : ''}
@@ -3299,7 +3299,7 @@ ${T('بدلاً من بيع الأصل في نهاية المدة، يقوم ا�
             <div class="k">${T('MOIC — قبل رسوم الصندوق','MOIC — Gross of Fund Fees')}</div><div class="v">${rb.moicGrossOfFees.toFixed(2)}×</div>
             <div class="k">${T('أثر رسوم الصندوق على MOIC','Fund Fee Drag on MOIC')}</div><div class="v" style="color:var(--bad);">${rb.feeDragMOIC.toFixed(2)}×</div>
             <div class="k">${T('MOIC الصافي','MOIC — Net')}</div><div class="v">${rb.moicNet.toFixed(2)}×</div>
-            <div class="k">${T('نسبة الرافعة (LTC) / حقوق الملكية','Leverage (LTC) / Equity')}</div><div class="v">${fmtPct(rb.ltc,0)} — ${fmtSAR(rb.equity)}</div>
+            <div class="k">${T('نسبة الرافعة (LTC) / حقوق الملكية','Leverage (LTC) / Equity')}</div><div class="v"><span class="bidi-number">${fmtPct(rb.ltc,0)}</span> — <span class="bidi-number">${fmtSAR(rb.equity)}</span></div>
           </div>
           <p class="note" style="margin-top:10px;">${T('ملاحظة منهجية: "أثر الرافعة" و"أثر الرسوم" مُقدَّران بإعادة حساب الفرصة نفسها بمعزل عن رسوم الصندوق فقط (نفس نسبة التمويل والدين) — وليسا تفكيكاً محاسبياً مثالياً تماماً، لأن تأثيري الرافعة والرسوم يتفاعلان مع بعضهما في أي جسر عائد حقيقي.','Methodology note: the "leverage effect" and "fee drag" are estimated by re-running the same opportunity with only fund fees zeroed out (same debt/LTC) — not a perfectly additive accounting decomposition, since leverage and fees genuinely interact in any real return bridge.')}</p>`; })()}
         </div>
@@ -3414,7 +3414,7 @@ ${T('بدلاً من بيع الأصل في نهاية المدة، يقوم ا�
                 LTC ${fmtPct(b.ltc)}${b.landD!==0? ' · '+T('تعديل سعر الأرض','land price adj.')+' '+(b.landD>0?'+':'')+(b.landD*100).toFixed(0)+'%':''}${b.priceD!==0? ' · '+T('تعديل','adj.')+' '+(d.meta.oppType==='development'?T('سعر البيع','sale price'):T('الإيجار','rent'))+' +'+(b.priceD*100).toFixed(0)+'%':''}
               </div>
               <div class="k">${T('الأثر على Equity IRR','Impact on Equity IRR')}</div><div class="v">${fmtPct(opt.base.equityIRR)} ← <b style="color:var(--good);">${fmtPct(b.irr)}</b> (${upliftPts>0?'+':''}${upliftPts} ${T('نقطة','pts')})</div>
-              <div class="k">${T('MOIC الناتج / DSCR الناتج','Resulting MOIC / DSCR')}</div><div class="v">${b.moic.toFixed(2)}× / ${b.dscr!=null?b.dscr.toFixed(2)+'×':'—'}</div>
+              <div class="k">${T('MOIC الناتج / DSCR الناتج','Resulting MOIC / DSCR')}</div><div class="v"><span class="bidi-number">${b.moic.toFixed(2)}×</span> / <span class="bidi-number">${b.dscr!=null?b.dscr.toFixed(2)+'×':'—'}</span></div>
             </div>
             ${canEditOpp(rec)? `<button type="button" class="btn btn-sm btn-primary" data-action="apply-optimizer" data-id="${rec.id}" style="margin-top:10px;">✅ ${T('تطبيق هذه التركيبة على الفرصة الآن','Apply this combination to the opportunity now')}</button>
             <p class="note" style="margin-top:6px; font-size:11px;">${T('يعدّل نسبة التمويل وسعر الأرض/الإيجار أو سعر البيع في بيانات الفرصة مباشرة ويعيد حساب كل المؤشرات — راجع القيم الجديدة بعد التطبيق، ويمكن التراجع بتعديلها يدوياً من زر "تعديل".','Updates the financing ratio and land price/rent or sale price directly in the opportunity data and recalculates every metric — review the new values after applying; you can revert by editing them manually via the "Edit" button.')}</p>` : ''}
@@ -3432,10 +3432,10 @@ ${T('بدلاً من بيع الأصل في نهاية المدة، يقوم ا�
             ${d.meta.oppType==='development' ? `
             <div class="k">${T('استراتيجية الخروج','Exit Strategy')}</div><div class="v" style="font-family:inherit; font-size:12.5px; direction:rtl; unicode-bidi:plaintext;">${esc(d.strategy.exitStrategy)}</div>
             <div class="k">${T('نسبة البيع','Sale Percentage')}</div><div class="v">${fmtPct(c.salePct)}</div>
-            ${c.isDirectSaleSplit? `<div class="k">${T('مشترون بتمويل بنكي','Bank-Financed Buyers')}</div><div class="v">${fmtPct(d.strategy.directSale.bankFinancedPct)} — ${T('تأخير تحصيل','collection lag')} ${d.strategy.directSale.collectionLagYears} ${T('سنة (حتى سنة','yr(s) — into year')} ${c.directSaleDeferredYear}</div>` : ''}` : d.meta.oppType==='income' ? `
+            ${c.isDirectSaleSplit? `<div class="k">${T('مشترون بتمويل بنكي','Bank-Financed Buyers')}</div><div class="v"><span class="bidi-number">${fmtPct(d.strategy.directSale.bankFinancedPct)}</span> — ${T('تأخير تحصيل','collection lag')} <span class="bidi-number">${d.strategy.directSale.collectionLagYears}</span> ${T('سنة (حتى سنة','yr(s) — into year')} <span class="bidi-number">${c.directSaleDeferredYear}</span></div>` : ''}` : d.meta.oppType==='income' ? `
             <div class="k">${T('استراتيجية الاحتفاظ والخروج','Hold & Exit Strategy')}</div><div class="v" style="font-family:inherit; font-size:12.5px;">${d.income.holdStrategy==='refinance_close'?T('إعادة تمويل لإغلاق الصندوق','Refinance to Close'):d.income.holdStrategy==='perpetual_hold'?T('احتفاظ دائم بدخل مستمر','Perpetual Hold'):T('بيع عند نهاية المدة','Exit via Sale')}</div>
             ${c.applySalePctToIncome? `<div class="k">${T('نسبة البيع (استراتيجية مختلطة)','Sale Percentage (mixed strategy)')}</div><div class="v">${fmtPct(c.salePct)}</div>` : ''}
-            ${c.isDirectSaleSplit? `<div class="k">${T('مشترون بتمويل بنكي','Bank-Financed Buyers')}</div><div class="v">${fmtPct(d.strategy.directSale.bankFinancedPct)} — ${T('تأخير تحصيل','collection lag')} ${d.strategy.directSale.collectionLagYears} ${T('سنة (حتى سنة','yr(s) — into year')} ${c.directSaleDeferredYear}</div>` : ''}` : `
+            ${c.isDirectSaleSplit? `<div class="k">${T('مشترون بتمويل بنكي','Bank-Financed Buyers')}</div><div class="v"><span class="bidi-number">${fmtPct(d.strategy.directSale.bankFinancedPct)}</span> — ${T('تأخير تحصيل','collection lag')} <span class="bidi-number">${d.strategy.directSale.collectionLagYears}</span> ${T('سنة (حتى سنة','yr(s) — into year')} <span class="bidi-number">${c.directSaleDeferredYear}</span></div>` : ''}` : `
             ${d.landbank.interimAnnualIncome>0? `<div class="k">${T('دخل تأجيري مؤقت سنوي','Annual Interim Lease Income')}</div><div class="v">${fmtSAR(d.landbank.interimAnnualIncome)}</div>` : ''}
             <div class="k">${T('رسوم الأراضي البيضاء','White Land Fee')}</div><div class="v" style="font-family:inherit; font-size:12.5px;">${d.landbank.whiteLandFeeExempt? T('معفاة','Exempt') : fmtPct(d.landbank.whiteLandFeePct,2)+' '+T('سنوياً من قيمة الأرض','yearly of land value')}</div>`}
             <div class="k">${T('مدة الصندوق','Fund Term')}</div><div class="v">${c.totalYears} ${T('سنة','yrs')}</div>
@@ -4073,7 +4073,7 @@ function renderFundDetail(fundId){
       <div class="k">${T('الحجم المستهدف','Target Size')}</div><div class="v">${fmtSAR(fund.data.targetSize)}</div>
       <div class="k">${T('إجمالي الالتزامات','Total Committed')}</div><div class="v">${fmtSAR(s.committed)}</div>
       <div class="k">${T('منها: نقدي / عيني','Of which: Cash / In-Kind')}</div><div class="v">💵 ${fmtSAR(cashCommitted)} &nbsp;/&nbsp; 🏗️ ${fmtSAR(inKindCommitted)}</div>
-      <div class="k">${T('إجمالي المسحوب (Called)','Total Called')}</div><div class="v">${fmtSAR(s.called)} (${s.calledPct!=null?fmtPct(s.calledPct):'—'})</div>
+      <div class="k">${T('إجمالي المسحوب (Called)','Total Called')}</div><div class="v"><span class="bidi-number">${fmtSAR(s.called)}</span> (<span class="bidi-number">${s.calledPct!=null?fmtPct(s.calledPct):'—'}</span>)</div>
       <div class="k">${T('رأس المال المسدَّد','Paid-in Capital')}</div><div class="v">${fmtSAR(s.paidIn)}</div>
       <div class="k">${T('التوزيعات المصروفة','Distributions Paid')}</div><div class="v">${fmtSAR(s.distPaid)}</div>
       <div class="k">DPI</div><div class="v">${s.dpi!=null? s.dpi.toFixed(2)+'×':'—'}</div>
