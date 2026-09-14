@@ -346,9 +346,12 @@ function n(v,d){ v = parseFloat(v); return isFinite(v)? v : (d==null?0:d); }
 function fmtSAR(v){
   if(v==null || !isFinite(v)) return '—';
   const sign = v<0? '-':''; v = Math.abs(v);
+  if(v>=1e6){
+    const n = (v/1e6).toFixed(2);
+    return LANG==='en' ? sign+n+' M '+T('ر.س','SAR') : T('مليون ريال سعودي','SAR Million')+' '+sign+n;
+  }
   let s;
-  if(v>=1e6) s = (v/1e6).toFixed(2)+'M';
-  else if(v>=1e3) s = Math.round(v).toLocaleString('en-US');
+  if(v>=1e3) s = Math.round(v).toLocaleString('en-US');
   else s = v.toFixed(0);
   return LANG==='en' ? sign+s+' '+T('ر.س','SAR') : T('ر.س','SAR')+' '+sign+s;
 }
