@@ -8,9 +8,9 @@
    خطة_التقارير_والمهام_القادمة.md § ٣) بدل عشرات شرائح البيانات. تصدير جديد
    ومستقل تماماً (لا يلمس core.js)، يُعيد استخدام نفس مكتبة PptxGenJS المحمَّلة
    أصلاً عالمياً (window.PptxGenJS، نفس ما تستخدمه exportOpportunityPptx)
-   ونفس لوحة الألوان المستخدمة هناك (أخضر أوبال 0E6B4C / نص رمادي 4C5850 /
-   خلفية بطاقات F3F4F0 / حدود D6DACF / نتائج جيدة-تحذير-سيئة 1E8A56-9C6A0A-
-   AE2E22)، وكل بيانات الشرائح مُعادة استخدامها من دوال محسوبة مسبقاً (compute/
+   ونفس لوحة الألوان المستخدمة هناك (بنفسجي أوبال 5B4FE8 / نص رمادي 5B5170 /
+   خلفية بطاقات E8E4FB / حدود D9CFEA / نتائج جيدة-تحذير-سيئة 1FA67E-C98A2E-
+   C23B5B)، وكل بيانات الشرائح مُعادة استخدامها من دوال محسوبة مسبقاً (compute/
    sensitivityRows/RISK_CATEGORIES/matchBenchmarks+aggregateBench/
    maxAcquisitionPrice/dealStrengthsAndNegotiationPoints) — صفر حسابات مالية
    جديدة، صفر تعديل على core.js.
@@ -57,13 +57,14 @@ export async function exportICPresentation(core, id){
   const rec = core.opportunities.find(o=>o.id===id);
   if(!rec) return;
   const d = core.withDefaults(rec.data), c = core.compute(d);
-  const { fmtSAR, fmtPct, fmtNum } = core;
+  const { fmtSARplain, fmtPct, fmtNum } = core;
   try{
     const Ctor = window.PptxGenJS || (window.pptxgenjs && window.pptxgenjs.default);
     const pres = new Ctor();
     pres.defineLayout({ name:'WIDE', width:13.33, height:7.5 });
     pres.layout = 'WIDE';
     pres.theme = { headFontFace:'Sakkal Majalla', bodyFontFace:'Sakkal Majalla' };
+    pres.rtlMode = true;
 
     const narrative = generateAnalystNarrative(core, d, c);
     const reportDates = core.reportDateMeta(d);
@@ -74,12 +75,12 @@ export async function exportICPresentation(core, id){
     const vlbl = c.verdict==='good'?'قابلة للعرض على لجنة الاستثمار':c.verdict==='warn'?'تحت المراجعة':'دون معايير القبول';
     const vcolor = c.verdict==='good'?PAL.good:c.verdict==='warn'?PAL.warn:PAL.bad;
 
-    const H = (s, txt, y)=> s.addText(txt, { x:0.5, y:y!=null?y:0.35, w:12.3, h:0.6, fontSize:22, bold:true, color:PAL.green, align:'right' });
+    const H = (s, txt, y)=> s.addText(txt, { x:0.5, y:y!=null?y:0.35, w:12.3, h:0.6, fontSize:22, bold:true, color:PAL.green, align:'right', rtlMode:true, fontFace:'Sakkal Majalla' });
     const kpiRow = (s, items, y, w)=>{
       let kx = 0.5; const boxW = w || (12.3/items.length - 0.1);
       items.forEach(([l,v])=>{
         s.addText([{text:v+'\n',options:{fontSize:18,bold:true,color:PAL.green}},{text:l,options:{fontSize:10,color:PAL.text}}],
-          { x:kx, y:y, w:boxW, h:1.05, align:'center', valign:'middle', fill:{color:PAL.card}, line:{color:PAL.border,width:1} });
+          { x:kx, y:y, w:boxW, h:1.05, align:'center', valign:'middle', fill:{color:PAL.card}, line:{color:PAL.border,width:1}, rtlMode:true, fontFace:'Sakkal Majalla' });
         kx += boxW + 0.12;
       });
     };
@@ -87,16 +88,16 @@ export async function exportICPresentation(core, id){
     /* ===================== 1) Investment Opportunity ===================== */
     {
       const s = pres.addSlide();
-      s.addText(d.meta.name||'فرصة استثمارية', { x:0.5,y:0.5,w:12.3,h:1, fontSize:30, bold:true, color:PAL.green, align:'right' });
-      s.addText(`${d.meta.city} · ${d.meta.neighborhood||'—'} · ${d.meta.tier}  |  ${ti.ic} ${core.T(ti.t,ti.en)}  |  ${rec.id}`, { x:0.5,y:1.5,w:12.3,h:0.5, fontSize:14, color:PAL.text, align:'right' });
+      s.addText(d.meta.name||'فرصة استثمارية', { x:0.5,y:0.5,w:12.3,h:1, fontSize:30, bold:true, color:PAL.green, align:'right', rtlMode:true, fontFace:'Sakkal Majalla' });
+      s.addText(`${d.meta.city} · ${d.meta.neighborhood||'—'} · ${d.meta.tier}  |  ${core.T(ti.t,ti.en)}  |  ${rec.id}`, { x:0.5,y:1.5,w:12.3,h:0.5, fontSize:14, color:PAL.text, align:'right', rtlMode:true, fontFace:'Sakkal Majalla' });
       s.addText(`${core.T('تاريخ سريان البيانات','As-of Date')}: ${reportDates.asOfText}  |  ${core.T('تم إنشاؤه في','Generated on')}: ${reportDates.generatedText}`,
-        { x:0.5, y:1.95, w:12.3, h:0.35, fontSize:10.5, color:PAL.text, align:'right' });
-      s.addText('التوصية: ' + vlbl, { x:0.5,y:2.3,w:12.3,h:0.45, fontSize:18, bold:true, color:vcolor, align:'right' });
+        { x:0.5, y:1.95, w:12.3, h:0.35, fontSize:10.5, color:PAL.text, align:'right', rtlMode:true, fontFace:'Sakkal Majalla' });
+      s.addText('التوصية: ' + vlbl, { x:0.5,y:2.3,w:12.3,h:0.45, fontSize:18, bold:true, color:vcolor, align:'right', rtlMode:true, fontFace:'Sakkal Majalla' });
       s.addText(`${core.T('الدرجة الاستثمارية المركّبة','Composite Investment Score')}: ${narrative.scoreRes.composite.toFixed(0)}/100 (${core.T(narrative.band.ar,narrative.band.en)})  |  ${core.T('ثقة القرار','Decision Confidence')}: ${decisionConfidence.score.toFixed(0)}/100 (${core.T(decisionConfidence.band.ar,decisionConfidence.band.en)})`,
-        { x:0.5, y:2.7, w:12.3, h:0.35, fontSize:11, color:PAL.ink, align:'right' });
+        { x:0.5, y:2.7, w:12.3, h:0.35, fontSize:11, color:PAL.ink, align:'right', rtlMode:true, fontFace:'Sakkal Majalla' });
       kpiRow(s, [
-        ['حجم الاستثمار (TPC)', fmtSAR(c.TPC)],
-        ['حقوق الملكية المطلوبة', fmtSAR(c.equity)],
+        ['حجم الاستثمار (TPC)', fmtSARplain(c.TPC)],
+        ['حقوق الملكية المطلوبة', fmtSARplain(c.equity)],
         ['Equity IRR', fmtPct(c.equityIRR,1)],
         ['MOIC', c.MOIC.toFixed(2)+'×'],
       ], 3.15);
@@ -115,7 +116,7 @@ export async function exportICPresentation(core, id){
       const mapRes = maxAcquisitionPrice(core, d, targetIRR);
       const whyPrice = mapRes.infeasible
         ? 'السعر الحالي يحتاج مراجعة جوهرية — لا يوجد سعر أرض يحقق العائد المستهدف عند الافتراضات الحالية.'
-        : `السعر المُدخَل (${fmtSAR(d.land.price)}/م²) يبدو ${d.land.price<=mapRes.maxPrice?'ضمن':'أعلى من'} الحد الأقصى المحسوب لتحقيق ${fmtPct(targetIRR)} (${fmtSAR(mapRes.maxPrice)}/م²).`;
+        : `السعر المُدخَل (${fmtSARplain(d.land.price)}/م²) يبدو ${d.land.price<=mapRes.maxPrice?'ضمن':'أعلى من'} الحد الأقصى المحسوب لتحقيق ${fmtPct(targetIRR)} (${fmtSARplain(mapRes.maxPrice)}/م²).`;
       const boxes = [
         ['لماذا الاستثمار؟ (Why Invest?)', whyInvest],
         ['لماذا الآن؟ (Why Now?)', whyNow],
@@ -124,7 +125,7 @@ export async function exportICPresentation(core, id){
       let bx = 0.5;
       boxes.forEach(([t,body])=>{
         s.addText([{text:t+'\n\n',options:{fontSize:13,bold:true,color:PAL.green}},{text:body,options:{fontSize:11,color:PAL.ink}}],
-          { x:bx, y:1.3, w:3.97, h:4.8, valign:'top', align:'right', fill:{color:PAL.card}, line:{color:PAL.border,width:1}, margin:0.15 });
+          { x:bx, y:1.3, w:3.97, h:4.8, valign:'top', align:'right', fill:{color:PAL.card}, line:{color:PAL.border,width:1}, margin:0.15, rtlMode:true, fontFace:'Sakkal Majalla' });
         bx += 4.13;
       });
     }
@@ -140,7 +141,7 @@ export async function exportICPresentation(core, id){
         {text:'مساحة الأرض: ', options:{bold:true}}, {text:fmtNum(d.land.area)+' م²\n'},
         {text:'معامل البناء (FAR): ', options:{bold:true}}, {text:fmtNum(d.land.far)+'\n'},
         {text:'نوع الفرصة: ', options:{bold:true}}, {text:core.T(ti.t,ti.en)},
-      ], { x:0.5,y:1.3,w:12.3,h:5, fontSize:16, align:'right', color:PAL.ink, lineSpacing:32 });
+      ], { x:0.5,y:1.3,w:12.3,h:5, fontSize:16, align:'right', color:PAL.ink, lineSpacing:32, rtlMode:true, fontFace:'Sakkal Majalla' });
     }
 
     /* ===================== 4) Business Plan ===================== */
@@ -154,7 +155,7 @@ export async function exportICPresentation(core, id){
         : ['الاستحواذ (Acquisition)', 'الحمل والانتظار (Carry/Hold)', 'تغيير التصنيف/التطوير (Rezoning)', 'البيع (Disposition)'];
       let sx = 0.5;
       stages.forEach((label,i)=>{
-        s.addText(label, { x:sx, y:2.8, w:2.75, h:1.2, align:'center', valign:'middle', fontSize:13, bold:true, color:PAL.green, fill:{color:PAL.card}, line:{color:PAL.border,width:1.5} });
+        s.addText(label, { x:sx, y:2.8, w:2.75, h:1.2, align:'center', valign:'middle', fontSize:13, bold:true, color:PAL.green, fill:{color:PAL.card}, line:{color:PAL.border,width:1.5}, rtlMode:true, fontFace:'Sakkal Majalla' });
         if(i<stages.length-1) s.addText('←', { x:sx+2.78, y:2.9, w:0.35, h:1, align:'center', valign:'middle', fontSize:22, color:PAL.border });
         sx += 3.13;
       });
@@ -165,10 +166,10 @@ export async function exportICPresentation(core, id){
       const s = pres.addSlide();
       H(s, 'الملخص المالي — Financial Summary');
       kpiRow(s, [
-        ['TPC', fmtSAR(c.TPC)],
-        ['حقوق الملكية', fmtSAR(c.equity)],
-        ['الدين', fmtSAR(c.debt)],
-        ['NPV', fmtSAR(c.npvProject)],
+        ['TPC', fmtSARplain(c.TPC)],
+        ['حقوق الملكية', fmtSARplain(c.equity)],
+        ['الدين', fmtSARplain(c.debt)],
+        ['NPV', fmtSARplain(c.npvProject)],
       ], 1.3);
       kpiRow(s, [
         ['Equity IRR', fmtPct(c.equityIRR,1)],
@@ -207,9 +208,9 @@ export async function exportICPresentation(core, id){
       const a = cashFlowTimingAnalysis(core, d, c, rec.id);
       const peakLabel = a.peakCashNeed.yearIndex===0 ? 'بداية المشروع (Day 0)' : `سنة ${a.peakCashNeed.yearIndex} — شهر ${a.peakCashNeed.monthInYear}`;
       kpiRow(s, [
-        ['🔴 ذروة الاحتياج النقدي', fmtSAR(a.peakCashNeed.amount)],
+        ['ذروة الاحتياج النقدي', fmtSARplain(a.peakCashNeed.amount)],
         ['متى يحدث', peakLabel],
-        ['صافي النقدي من المستثمرين النقديين', fmtSAR(a.netCashRequiredFromCashInvestors)],
+        ['صافي النقدي من المستثمرين النقديين', fmtSARplain(a.netCashRequiredFromCashInvestors)],
       ], 1.3, 4.0);
       const years = c.projectCF.map((v,i)=>String(i));
       s.addChart(pres.ChartType.bar, [
@@ -232,14 +233,14 @@ export async function exportICPresentation(core, id){
       const cfYears = c.projectCF.length;
       const shownYears = Math.min(cfYears, CF_TABLE_MAX_ROWS);
       for(let i=0;i<shownYears;i++){
-        rows.push([ String(i), fmtSAR(c.projectCF[i]), fmtSAR(c.equityCF[i]) ]);
+        rows.push([ String(i), fmtSARplain(c.projectCF[i]), fmtSARplain(c.equityCF[i]) ]);
       }
       if(cfYears>shownYears){
         rows.push([
           {text:`+${cfYears-shownYears} سنة إضافية — التفاصيل الكاملة في الرسم البياني أعلاه ودفتر الاكتتاب`, options:{colspan:3, italic:true, color:PAL.text, fontSize:9}},
         ]);
       }
-      s.addTable(rows, { x:0.5,y:5.35,w:12.3,h:1.8, fontSize:10.5, border:{type:'solid',color:PAL.border,pt:0.5}, align:'center' });
+      s.addTable(rows, { x:0.5,y:5.35,w:12.3,h:1.8, fontSize:10.5, border:{type:'solid',color:PAL.border,pt:0.5}, align:'center', rtlMode:true, fontFace:'Sakkal Majalla' });
     }
 
     /* ===================== 7) Sensitivity ===================== */
@@ -259,7 +260,7 @@ export async function exportICPresentation(core, id){
         {text:'مرتفع', options:{bold:true, fill:{color:PAL.card}}},
       ]];
       sensRows.forEach(r=> rows.push([ r.label, fmtPct(r.down,1), fmtPct(r.base,1), fmtPct(r.up,1) ]));
-      s.addTable(rows, { x:0.5,y:4.65,w:12.3,h:2.5, fontSize:10.5, border:{type:'solid',color:PAL.border,pt:0.5}, align:'center' });
+      s.addTable(rows, { x:0.5,y:4.65,w:12.3,h:2.5, fontSize:10.5, border:{type:'solid',color:PAL.border,pt:0.5}, align:'center', rtlMode:true, fontFace:'Sakkal Majalla' });
     }
 
     /* ===================== 8) Risk Matrix ===================== */
@@ -283,7 +284,7 @@ export async function exportICPresentation(core, id){
         {text:'التخفيف', options:{bold:true, fill:{color:PAL.card}}},
       ]];
       ranked.forEach(r=> rows.push([ r.label, `${r.p} × ${r.i}`, {text:core.T(r.band.ar,r.band.en), options:{color:'#'+(r.band.color||'#333').replace('#','')}}, r.mitigation ]));
-      s.addTable(rows, { x:0.5,y:4.15,w:12.3,h:3.0, fontSize:10.5, border:{type:'solid',color:PAL.border,pt:0.5}, align:'center' });
+      s.addTable(rows, { x:0.5,y:4.15,w:12.3,h:3.0, fontSize:10.5, border:{type:'solid',color:PAL.border,pt:0.5}, align:'center', rtlMode:true, fontFace:'Sakkal Majalla' });
     }
 
     /* ===================== 9) Market Evidence ===================== */
@@ -296,8 +297,8 @@ export async function exportICPresentation(core, id){
       const { rows: benchRows, scope } = matchBenchmarks(core, d.meta.city, d.meta.oppType);
       const bench = benchRows.length? aggregateBench(benchRows) : null;
       kpiRow(s, [
-        ['وسيط سعر المقارنات/م²', med!=null?fmtSAR(med):'—'],
-        ['سعر الفرصة الحالي/م²', fmtSAR(d.land.price)],
+        ['وسيط سعر المقارنات/م²', med!=null?fmtSARplain(med):'—'],
+        ['سعر الفرصة الحالي/م²', fmtSARplain(d.land.price)],
         ['Cap Rate المرجعي', bench&&bench.capRateMin!=null?`${fmtPct(bench.capRateMin)}–${bench.capRateMax!=null?fmtPct(bench.capRateMax):'—'}`:'—'],
         ['عدد المقارنات المسجَّلة', String(comps.length)],
       ], 1.3);
@@ -311,8 +312,8 @@ export async function exportICPresentation(core, id){
           {text:'السعر/م²', options:{bold:true, fill:{color:PAL.card}}},
           {text:'التاريخ', options:{bold:true, fill:{color:PAL.card}}},
         ]];
-        comps.slice(0,6).forEach(cm=> rows.push([ cm.neighborhood||'—', cm.propertyType||'—', cm.landSize>0?fmtSAR(cm.price/cm.landSize):'—', cm.date||'—' ]));
-        s.addTable(rows, { x:6.4,y:2.55,w:6.4, fontSize:10.5, border:{type:'solid',color:PAL.border,pt:0.5}, align:'center' });
+        comps.slice(0,6).forEach(cm=> rows.push([ cm.neighborhood||'—', cm.propertyType||'—', cm.landSize>0?fmtSARplain(cm.price/cm.landSize):'—', cm.date||'—' ]));
+        s.addTable(rows, { x:6.4,y:2.55,w:6.4, fontSize:10.5, border:{type:'solid',color:PAL.border,pt:0.5}, align:'center', rtlMode:true, fontFace:'Sakkal Majalla' });
       }
     }
 
@@ -320,16 +321,15 @@ export async function exportICPresentation(core, id){
     {
       const s = pres.addSlide();
       H(s, 'قرار لجنة الاستثمار — Investment Committee Decision');
-      const decIcon = c.verdict==='good'?'🟢':c.verdict==='warn'?'🟡':'🔴';
       const decText = latest? {approve:'اعتماد',approve_conditions:'اعتماد بشروط',revise:'مراجعة وإعادة عرض',hold:'تعليق',reject:'رفض'}[latest.decision] : (c.verdict==='good'?'اعتماد (مقترح)':c.verdict==='warn'?'اعتماد بشروط (مقترح)':'رفض (مقترح)');
-      s.addText(decIcon+' '+decText, { x:0.5,y:1.4,w:12.3,h:1, fontSize:30, bold:true, color:vcolor, align:'center' });
+      s.addText(decText, { x:0.5,y:1.4,w:12.3,h:1, fontSize:30, bold:true, color:vcolor, align:'center', rtlMode:true, fontFace:'Sakkal Majalla' });
       const conds = latest && latest.conditions && latest.conditions.length? latest.conditions : [];
       if(conds.length){
         const rows = [[{text:'الشرط',options:{bold:true,fill:{color:PAL.card}}},{text:'المسؤول',options:{bold:true,fill:{color:PAL.card}}},{text:'الموعد النهائي',options:{bold:true,fill:{color:PAL.card}}}]];
         conds.forEach(cn=> rows.push([ cn.text||'—', cn.owner||'—', cn.dueDate||'—' ]));
-        s.addTable(rows, { x:0.5,y:2.8,w:12.3, fontSize:12, border:{type:'solid',color:PAL.border,pt:0.5}, align:'center' });
+        s.addTable(rows, { x:0.5,y:2.8,w:12.3, fontSize:12, border:{type:'solid',color:PAL.border,pt:0.5}, align:'center', rtlMode:true, fontFace:'Sakkal Majalla' });
       } else {
-        s.addText('لا توجد شروط مسبقة مسجَّلة.', { x:0.5,y:2.8,w:12.3,h:0.6, fontSize:13, color:PAL.text, align:'center' });
+        s.addText('لا توجد شروط مسبقة مسجَّلة.', { x:0.5,y:2.8,w:12.3,h:0.6, fontSize:13, color:PAL.text, align:'center', rtlMode:true, fontFace:'Sakkal Majalla' });
       }
     }
 
@@ -342,10 +342,10 @@ export async function exportICPresentation(core, id){
       const mapRes = maxAcquisitionPrice(core, d, targetIRR);
       const walkAway = neg.walkAwayPrice!=null? neg.walkAwayPrice : mapRes.maxPrice;
       kpiRow(s, [
-        ['سعر طلب البائع', neg.askingPrice!=null?fmtSAR(neg.askingPrice):'—'],
-        ['السعر المستهدف', neg.targetPrice!=null?fmtSAR(neg.targetPrice):'—'],
-        ['الحد الأقصى للاستحواذ', mapRes.infeasible?'—':fmtSAR(mapRes.maxPrice)],
-        ['سعر الانسحاب', walkAway!=null?fmtSAR(walkAway):'—'],
+        ['سعر طلب البائع', neg.askingPrice!=null?fmtSARplain(neg.askingPrice):'—'],
+        ['السعر المستهدف', neg.targetPrice!=null?fmtSARplain(neg.targetPrice):'—'],
+        ['الحد الأقصى للاستحواذ', mapRes.infeasible?'—':fmtSARplain(mapRes.maxPrice)],
+        ['سعر الانسحاب', walkAway!=null?fmtSARplain(walkAway):'—'],
       ], 1.6);
     }
 
@@ -361,9 +361,9 @@ export async function exportICPresentation(core, id){
         {text:'Yield on Cost: ', options:{bold:true}}, {text:(d.meta.oppType!=='landbank'?fmtPct(c.yieldOnCost):'—')+'\n'},
         {text:'ROI: ', options:{bold:true}}, {text:fmtPct(c.ROI)+'    '},
         {text:'فترة الاسترداد: ', options:{bold:true}}, {text:(c.paybackPeriod!=null?c.paybackPeriod.toFixed(1)+' سنة':'—')+'\n'},
-      ], { x:0.5,y:1.4,w:12.3,h:3, fontSize:14, align:'right', color:PAL.ink, lineSpacing:34 });
+      ], { x:0.5,y:1.4,w:12.3,h:3, fontSize:14, align:'right', color:PAL.ink, lineSpacing:34, rtlMode:true, fontFace:'Sakkal Majalla' });
       s.addText(`هذا العرض أُعِدَّ آلياً من بيانات مستكشف الفرص العقارية كما هي في تاريخ سريان البيانات ${reportDates.asOfText}. الأرقام تقديرية/قائمة على النموذج الحالي ولا تُغني عن تقييم مستقل معتمد أو مراجعة متخصصة قبل أي قرار استثماري نهائي.`,
-        { x:0.5,y:5.0,w:12.3,h:1, fontSize:10, color:PAL.text, align:'right', italic:true });
+        { x:0.5,y:5.0,w:12.3,h:1, fontSize:10, color:PAL.text, align:'right', italic:true, rtlMode:true, fontFace:'Sakkal Majalla' });
     }
 
     pres.writeFile({ fileName: `${rec.id}-IC-Presentation.pptx` });

@@ -185,6 +185,19 @@ export async function exportUnderwritingWorkbook(core, id){
       push(['قرار اللجنة الأحدث (Latest IC Decision)', latest? core.T(DEC_LABEL[latest.decision][0],DEC_LABEL[latest.decision][1]) : 'لم يُتخَذ بعد']);
       push(['ملاحظة الحوكمة (Interpretation)', core.T('Investment Score = جاذبية الصفقة، وDecision Confidence = قوة التوثيق والتحقق الداعمَين للقرار.','Investment Score = deal attractiveness; Decision Confidence = strength of the supporting documentation and verification.')]);
       const ws = xlNewSheet(wb, '00_IC Dashboard', B.rows, B.kinds, { colWidths:[52,30] });
+      /* دليل الألوان (الصفوف ٨-١١): بعد إزالة الرموز التعبيرية (🔵⚫🟢🟡 — غير مدعومة في خط
+         Sakkal Majalla فتظهر كمربع فيه علامة استفهام) من نص الخلية، نطبّق نفس تلوين colorize()
+         الحقيقي المُستخدَم فعلياً في بقية الورقة مباشرة على خلايا الدليل نفسها، ليبقى الدليل تفسيرياً
+         بصرياً حقيقياً (لون الخلية) بدل رمز نصي. */
+      [8,9,10,11].forEach(rn=>{
+        const cell = ws.getCell(rn,1);
+        if(rn===8){ cell.font = Object.assign({}, cell.font, { color:{argb:SEM.INPUT} }); }
+        else if(rn===10){ cell.font = Object.assign({}, cell.font, { color:{argb:SEM.LINK} }); }
+        else if(rn===11){
+          cell.font = Object.assign({}, cell.font, { color:{argb:SEM.EXT_FONT} });
+          cell.fill = { type:'pattern', pattern:'solid', fgColor:{argb:SEM.EXT_FILL} };
+        }
+      });
       const dashRow = B.rows.length + 2;
       await addChartImage(wb, ws, { type:'doughnut',
         data:{ labels:['Debt','Equity'], datasets:[{ data:[Math.round(c.debt), Math.round(c.equity)], backgroundColor:[XL_CHART_COLORS.gold, XL_CHART_COLORS.accent] }] },
