@@ -346,14 +346,9 @@ function n(v,d){ v = parseFloat(v); return isFinite(v)? v : (d==null?0:d); }
 function fmtSAR(v){
   if(v==null || !isFinite(v)) return '—';
   const sign = v<0? '-':''; v = Math.abs(v);
-  if(v>=1e6){
-    const n = (v/1e6).toFixed(2);
-    return LANG==='en' ? sign+n+' M '+T('ر.س','SAR') : T('مليون ريال سعودي','SAR Million')+' '+sign+n;
-  }
-  let s;
-  if(v>=1e3) s = Math.round(v).toLocaleString('en-US');
-  else s = v.toFixed(0);
-  return LANG==='en' ? sign+s+' '+T('ر.س','SAR') : T('ر.س','SAR')+' '+sign+s;
+  const s = v.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+  if(LANG==='en') return sign+s+' '+T('ر.س','SAR');
+  return '\u202B\u2066'+sign+s+'\u2069 '+T('ر.س','SAR')+'\u202C';
 }
 function fmtNum(v,dec){ if(v==null||!isFinite(v)) return '—'; return v.toLocaleString('en-US',{maximumFractionDigits:dec==null?0:dec, minimumFractionDigits:dec==null?0:dec}); }
 function fmtPct(v,dec){ if(v==null||!isFinite(v)) return '—'; const n=(v*100).toFixed(dec==null?1:dec); return LANG==='en' ? n+'%' : '%'+n; }
@@ -3097,12 +3092,12 @@ ${T('بدلاً من بيع الأصل في نهاية المدة، يقوم ا�
           <h3><span class="n">1</span> ${T('ملخص الأرض والبناء','Land & Building Summary')} (Land & Building Summary)</h3>
           <div class="kv">
             <div class="k">${T('مساحة الأرض','Land Area')}</div><div class="v">${fmtNum(d.land.area)} ${T('م²','sqm')}</div>
-            <div class="k">${T('سعر الشراء','Purchase Price')}</div><div class="v">${LANG==='en'? fmtNum(d.land.price)+' '+T('ر.س/م²','SAR/sqm') : T('ر.س/م²','SAR/sqm')+' '+fmtNum(d.land.price)}</div>
+            <div class="k">${T('سعر الشراء','Purchase Price')}</div><div class="v">${LANG==='en'? fmtNum(d.land.price)+' '+T('ر.س/م²','SAR/sqm') : '\u202B\u2066'+fmtNum(d.land.price)+'\u2069 '+T('ر.س/م²','SAR/sqm')+'\u202C'}</div>
             <div class="k">${T('التكلفة الإجمالية','Total Cost')}</div><div class="v">${fmtSAR(c.landCost)}</div>
             <div class="k">GFA (${T('حق البناء الإجمالي','Gross Floor Area')})</div><div class="v">${fmtNum(c.gfa)} ${T('م²','sqm')}</div>
             <div class="k">${T('بصمة المبنى / الأدوار اللازمة','Building Footprint / Floors Needed')}</div><div class="v">${fmtNum(c.footprint)} ${T('م²','sqm')} / ${c.floorsNeeded} ${T('دور','floors')}</div>
             <div class="k">${T('الارتفاع الإجمالي','Total Height')}</div><div class="v">${fmtNum(c.buildingHeight,1)} ${T('م','m')}</div>
-            <div class="k">${T('تكلفة الأرض لكل م² GFA','Land Cost per sqm GFA')}</div><div class="v">${LANG==='en'? fmtNum(c.landCostPerGFA)+' '+T('ر.س/م²','SAR/sqm') : T('ر.س/م²','SAR/sqm')+' '+fmtNum(c.landCostPerGFA)}</div>
+            <div class="k">${T('تكلفة الأرض لكل م² GFA','Land Cost per sqm GFA')}</div><div class="v">${LANG==='en'? fmtNum(c.landCostPerGFA)+' '+T('ر.س/م²','SAR/sqm') : '\u202B\u2066'+fmtNum(c.landCostPerGFA)+'\u2069 '+T('ر.س/م²','SAR/sqm')+'\u202C'}</div>
             <div class="k">${T('معامل الموقع المجمّع (Site Factor)','Combined Site Factor')}</div><div class="v">×${c.siteFactor.toFixed(3)}</div>
             <div class="k">${T('المعامل المركّب الكلي (Master Multiplier)','Overall Master Multiplier')}</div><div class="v">×${c.masterMultiplier.toFixed(3)}</div>
             ${c.scopeType!=='both'? `<div class="k">${T('نطاق التطوير (Development Scope)','Development Scope')}</div><div class="v">${c.scopeType==='infra_only'?T('بنية تحتية فقط (Infrastructure Only)','Infrastructure Only'):T('بنية فوقية فقط (Vertical Only)','Vertical Only')}</div>`:''}
