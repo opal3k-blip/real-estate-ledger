@@ -84,8 +84,8 @@ async function addChartImage(wb, ws, config, width, height, tlCol, tlRow){
     ws.addImage(imageId, { tl:{ col:tlCol, row:tlRow }, ext:{ width, height } });
   }catch(e){ console.error('تعذّر إدراج صورة الرسم البياني في Excel:', e); }
 }
-const XL_CHART_COLORS = { accent:'#1F5F6B', gold:'#A8823A', good:'#1F7A52', goodSoft:'rgba(31,122,82,0.55)', warn:'#A6741F', warnSoft:'rgba(166,116,31,0.55)', bad:'#B33A2C', badSoft:'rgba(179,58,44,0.55)', ink:'#1B1D22', grid:'rgba(20,22,28,0.12)' };
-const XL_CHART_FONT = { family:'Arial', size:11 };
+const XL_CHART_COLORS = { accent:'#5B4FE8', gold:'#D6558B', good:'#1FA67E', goodSoft:'rgba(31,166,126,0.55)', warn:'#C98A2E', warnSoft:'rgba(201,138,46,0.55)', bad:'#C23B5B', badSoft:'rgba(194,59,91,0.55)', ink:'#241B36', grid:'rgba(36,27,54,0.12)' };
+const XL_CHART_FONT = { family:"'Aptos','Segoe UI',Arial,sans-serif", size:11 };
 const XL_CHART_BASE = { plugins:{ legend:{ labels:{ color:XL_CHART_COLORS.ink, font:XL_CHART_FONT } } },
   scales:{ x:{ ticks:{ color:XL_CHART_COLORS.ink, font:XL_CHART_FONT }, grid:{ color:XL_CHART_COLORS.grid } }, y:{ ticks:{ color:XL_CHART_COLORS.ink, font:XL_CHART_FONT }, grid:{ color:XL_CHART_COLORS.grid } } } };
 

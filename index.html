@@ -384,7 +384,7 @@ html[dir="ltr"] .kv{
 @media print{
   *{ -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; color-adjust:exact !important; }
   .topbar, .kpis.portfolio, .dash-hero, .dash-section, .panel, .badge-row, .small-btns, .overlay, .db-toolbar, .opal-footer, button{ display:none !important; }
-  html,body{ background:#fff; color:#1B1D22; font-family:'Sakkal Majalla','Amiri','Arial',serif; font-size:12px; line-height:1.5; }
+  html,body{ background:#fff; color:#241B36; font-family:'Sakkal Majalla','Amiri','Arial',serif; font-size:12px; line-height:1.5; }
   .app{ padding:0; max-width:none; }
   .memo{ gap:0; }
   /* أرقام/نصوص إنجليزية داخل التقرير المطبوع تبقى بخط لاتيني احترافي واضح، بدل الاعتماد على خط عربي لعرض أرقام */
@@ -393,53 +393,53 @@ html[dir="ltr"] .kv{
   /* شريط علوي متكرر في كل صفحة (اسم الشركة + عنوان التقرير) — position:fixed يتكرر تلقائياً بمعظم المتصفحات عند الطباعة */
   .print-run-header{
     display:flex; align-items:center; justify-content:space-between; position:fixed; top:0; left:0; right:0;
-    font-size:8.5px; color:#9195A0; border-bottom:.5px solid #E3E1DA; padding-bottom:3px;
+    font-size:8.5px; color:#948AA8; border-bottom:.5px solid #D9CFEA; padding-bottom:3px;
   }
 
   /* letterhead (شعار + اسم الشركة، عنصر DOM حتى تُعرض صورة الشعار فعلياً) — غلاف التقرير، صفحة أولى فقط */
   .print-letterhead{
     display:flex; align-items:center; justify-content:center; gap:14px;
-    border-bottom:3px solid #1F5F6B; padding-bottom:14px; margin-bottom:18px;
+    border-bottom:3px solid #5B4FE8; padding-bottom:14px; margin-bottom:18px;
   }
   .print-letterhead-logo{ height:42px; max-width:130px; object-fit:contain; }
   .print-letterhead-text{ text-align:center; }
-  .print-letterhead-company{ font-size:14.5px; font-weight:700; color:#1B1D22; margin-bottom:3px; letter-spacing:.01em; }
-  .print-letterhead-app{ font-family:'Sakkal Majalla','Amiri',serif; font-size:11px; letter-spacing:.07em; color:#1F5F6B; font-weight:700; }
-  .print-letterhead-date{ font-size:9.5px; color:#565A63; margin-top:3px; }
+  .print-letterhead-company{ font-size:14.5px; font-weight:700; color:#241B36; margin-bottom:3px; letter-spacing:.01em; }
+  .print-letterhead-app{ font-family:'Sakkal Majalla','Amiri',serif; font-size:11px; letter-spacing:.07em; color:#5B4FE8; font-weight:700; }
+  .print-letterhead-date{ font-size:9.5px; color:#5B5170; margin-top:3px; }
 
   .memo-hero{
-    border:none; border-bottom:2px solid #1F5F6B; background:linear-gradient(180deg,#F2F7F8,transparent);
+    border:none; border-bottom:2px solid #5B4FE8; background:linear-gradient(180deg,#EFEAF8,transparent);
     border-radius:0; padding:12px 4px 16px; margin-bottom:18px; break-after:avoid;
   }
-  .memo-hero h2{ font-size:23px; margin:8px 0 6px; color:#1B1D22; font-weight:800; }
-  .memo-hero .eyebrow{ color:#1F5F6B; font-weight:800; }
-  .memo-hero .meta{ color:#565A63; }
+  .memo-hero h2{ font-size:23px; margin:8px 0 6px; color:#241B36; font-weight:800; }
+  .memo-hero .eyebrow{ color:#5B4FE8; font-weight:800; }
+  .memo-hero .meta{ color:#5B5170; }
   .verdict-banner{ border:1px solid rgba(0,0,0,.15) !important; font-weight:700; }
 
   .section{
-    border:1px solid #DCDAD3; border-radius:6px; break-inside:avoid; margin-bottom:13px;
+    border:1px solid #D9CFEA; border-radius:6px; break-inside:avoid; margin-bottom:13px;
     box-shadow:none;
   }
   .section h3{
-    background:linear-gradient(90deg,#F2F7F8,#fff); border-inline-start:3.5px solid #1F5F6B;
+    background:linear-gradient(90deg,#EFEAF8,#fff); border-inline-start:3.5px solid #5B4FE8;
     border-radius:6px 6px 0 0; padding-inline-start:12px !important; font-weight:800; letter-spacing:.01em;
   }
   .kpis{ break-inside:avoid; grid-template-columns:repeat(3,1fr) !important; gap:9px; }
-  .kpi{ border:1px solid #E3E6DE; border-inline-start-width:3px; padding:10px 12px; box-shadow:none; }
+  .kpi{ border:1px solid #D9CFEA; border-inline-start-width:3px; padding:10px 12px; box-shadow:none; }
   .kpi .l{ font-size:10px; }
   .kpi .v{ font-size:18px; }
   table.report, table.db{ break-inside:auto; width:100% !important; min-width:0 !important; }
   table.report tr, table.db tr{ break-inside:avoid; }
-  table.report th, table.db th{ background:#F2F7F8 !important; border-bottom:1.5px solid #1F5F6B !important; }
-  table.report tbody tr:nth-child(even) td, table.db tbody tr:nth-child(even) td{ background:#FAFAF8; }
+  table.report th, table.db th{ background:#EFEAF8 !important; border-bottom:1.5px solid #5B4FE8 !important; }
+  table.report tbody tr:nth-child(even) td, table.db tbody tr:nth-child(even) td{ background:#F7F5FC; }
   canvas{ break-inside:avoid; max-height:200px !important; }
   .tag, .verdict-good, .verdict-warn, .verdict-bad{ border:.5px solid rgba(0,0,0,.12); }
 
   /* footer disclaimer + العلامة التجارية */
   .memo::after{
     content: "أوبال القابضة — مستكشف الفرص العقارية — أرقام تقديرية لأغراض دراسة الجدوى الأولية وليست عرضاً ملزماً. Opal Holding — Opal Real Estate Opportunity Explorer — figures are estimates for preliminary feasibility study purposes only and do not constitute a binding offer.";
-    display:block; text-align:center; font-size:9px; color:#888C95; margin-top:20px;
-    border-top:1px solid #DCDAD3; padding-top:9px;
+    display:block; text-align:center; font-size:9px; color:#948AA8; margin-top:20px;
+    border-top:1px solid #D9CFEA; padding-top:9px;
   }
   a[href]:after{ content:""; }
 }

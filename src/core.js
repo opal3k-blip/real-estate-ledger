@@ -4897,8 +4897,8 @@ document.addEventListener('click', async (e)=>{
    كل صفحة مطبوعة، إعداد طباعة (اتجاه/تكبير لعرض الصفحة)، خطوط حدود، تظليل
    متعرّج (Zebra)، وتنسيق أرقام حقيقي (فواصل الآلاف/النسب) — بدل خلايا نصّية عادية.
    ========================================================================= */
-const XL = { navy:'FF13343B', teal:'FF1F5F6B', tealLight:'FFDCEEEF', tealPale:'FFF3FAFA',
-  white:'FFFFFFFF', border:'FFC7D6D7', teal2:'FF1F5F6B', font:'Arial' };
+const XL = { navy:'FF5B4FE8', teal:'FFD6558B', tealLight:'FFFBE4EE', tealPale:'FFE8E4FB',
+  white:'FFFFFFFF', border:'FFD9CFEA', teal2:'FFD6558B', font:'Sakkal Majalla', fontNum:'Aptos' };
 function xlBorderAll(){ const b={style:'thin',color:{argb:XL.border}}; return {top:b,bottom:b,left:b,right:b}; }
 function xlColLetter(n){ let s=''; while(n>0){ const m=(n-1)%26; s=String.fromCharCode(65+m)+s; n=Math.floor((n-1)/26); } return s; }
 function xlRowsBuilder(){
@@ -4970,7 +4970,7 @@ function xlNewSheet(wb, name, rows, kinds, opts={}){
     for(let c2=1;c2<=span;c2++){
       const cell = excelRow.getCell(c2);
       const v = r[c2-1];
-      cell.font = { name:XL.font, size:10 };
+      cell.font = { name:(typeof v==='number' || v instanceof Date) ? XL.fontNum : XL.font, size:10 };
       cell.border = xlBorderAll();
       cell.alignment = { horizontal:c2===1?'right':'center', vertical:'middle', rtl:true, wrapText:true };
       if(zebra) cell.fill = { type:'pattern', pattern:'solid', fgColor:{argb:XL.tealPale} };
@@ -4991,7 +4991,7 @@ function xlSetFormula(ws, row, col, formula, numFmt){
   const cell = ws.getCell(row, col);
   cell.value = { formula };
   cell.numFmt = numFmt || '#,##0;(#,##0);"-"';
-  cell.font = { name:XL.font, size:10 };
+  cell.font = { name:XL.fontNum, size:10 };
   cell.alignment = { horizontal:'center', vertical:'middle' };
   cell.border = xlBorderAll();
 }
@@ -5496,12 +5496,13 @@ function exportOpportunityPptx(id){
     const pres = new Ctor();
     pres.defineLayout({ name:'WIDE', width:13.33, height:7.5 });
     pres.layout = 'WIDE';
+    pres.theme = { headFontFace:'Sakkal Majalla', bodyFontFace:'Sakkal Majalla' };
 
     const s1 = pres.addSlide();
-    s1.addText(d.meta.name||'فرصة استثمارية', { x:0.5,y:0.5,w:12.3,h:1, fontSize:28, bold:true, color:'0E6B4C', align:'right' });
-    s1.addText(`${d.meta.city} · ${d.meta.neighborhood||'—'} · ${d.meta.tier}  |  ${rec.id}`, { x:0.5,y:1.4,w:12.3,h:0.5, fontSize:14, color:'4C5850', align:'right' });
+    s1.addText(d.meta.name||'فرصة استثمارية', { x:0.5,y:0.5,w:12.3,h:1, fontSize:28, bold:true, color:'5B4FE8', align:'right' });
+    s1.addText(`${d.meta.city} · ${d.meta.neighborhood||'—'} · ${d.meta.tier}  |  ${rec.id}`, { x:0.5,y:1.4,w:12.3,h:0.5, fontSize:14, color:'5B5170', align:'right' });
     const vlbl = c.verdict==='good'?'التوصية: قابلة للعرض على لجنة الاستثمار':c.verdict==='warn'?'التوصية: تحت المراجعة':'التوصية: دون معايير القبول';
-    s1.addText(vlbl, { x:0.5,y:2.0,w:12.3,h:0.5, fontSize:16, bold:true, color: c.verdict==='good'?'1E8A56':c.verdict==='warn'?'9C6A0A':'AE2E22', align:'right' });
+    s1.addText(vlbl, { x:0.5,y:2.0,w:12.3,h:0.5, fontSize:16, bold:true, color: c.verdict==='good'?'1FA67E':c.verdict==='warn'?'C98A2E':'C23B5B', align:'right' });
 
     const kpis = [
       ['Equity IRR', fmtPct(c.equityIRR,2)],
@@ -5513,8 +5514,8 @@ function exportOpportunityPptx(id){
     ];
     let kx = 0.5;
     kpis.forEach(([l,v])=>{
-      s1.addText([{text:v+'\n',options:{fontSize:20,bold:true,color:'0E6B4C'}},{text:l,options:{fontSize:11,color:'4C5850'}}],
-        { x:kx,y:2.8,w:1.95,h:1.1, align:'center', valign:'middle', fill:{color:'F3F4F0'}, line:{color:'D6DACF',width:1} });
+      s1.addText([{text:v+'\n',options:{fontSize:20,bold:true,color:'5B4FE8'}},{text:l,options:{fontSize:11,color:'5B5170'}}],
+        { x:kx,y:2.8,w:1.95,h:1.1, align:'center', valign:'middle', fill:{color:'E8E4FB'}, line:{color:'D9CFEA',width:1} });
       kx += 2.0;
     });
 
@@ -5523,25 +5524,25 @@ function exportOpportunityPptx(id){
       {text:'التكلفة الإنشائية: ', options:{bold:true}}, {text:fmtSAR(c.hardCost)+'\n'},
       {text:'إجمالي تكلفة المشروع: ', options:{bold:true}}, {text:fmtSAR(c.TPC)+'\n'},
       {text:'صافي الدخل التشغيلي: ', options:{bold:true}}, {text:fmtSAR(c.stabilizedNOIyr1)},
-    ], { x:0.5,y:4.2,w:12.3,h:2, fontSize:14, align:'right', color:'152019' });
+    ], { x:0.5,y:4.2,w:12.3,h:2, fontSize:14, align:'right', color:'241B36' });
 
     const s2 = pres.addSlide();
-    s2.addText('التدفقات النقدية السنوية', { x:0.5,y:0.4,w:12.3,h:0.6, fontSize:22, bold:true, color:'0E6B4C', align:'right' });
+    s2.addText('التدفقات النقدية السنوية', { x:0.5,y:0.4,w:12.3,h:0.6, fontSize:22, bold:true, color:'5B4FE8', align:'right' });
     const rows = [[
-      {text:'تدفق حقوق الملكية', options:{bold:true, fill:{color:'E3EFE7'}}},
-      {text:'تدفق المشروع', options:{bold:true, fill:{color:'E3EFE7'}}},
-      {text:'السنة', options:{bold:true, fill:{color:'E3EFE7'}}},
+      {text:'تدفق حقوق الملكية', options:{bold:true, fill:{color:'E8E4FB'}}},
+      {text:'تدفق المشروع', options:{bold:true, fill:{color:'E8E4FB'}}},
+      {text:'السنة', options:{bold:true, fill:{color:'E8E4FB'}}},
     ]];
     for(let i=0;i<c.projectCF.length;i++){
       rows.push([ fmtSAR(c.equityCF[i]), fmtSAR(c.projectCF[i]), String(i) ]);
     }
-    s2.addTable(rows, { x:0.5,y:1.1,w:12.3, fontSize:11, autoPage:true, border:{type:'solid',color:'D6DACF',pt:0.5} });
+    s2.addTable(rows, { x:0.5,y:1.1,w:12.3, fontSize:11, autoPage:true, border:{type:'solid',color:'D9CFEA',pt:0.5} });
 
     if(d.constructionFinancing){
       const cfin = d.constructionFinancing;
       const s3 = pres.addSlide();
-      s3.addText('التمويل الفعلي — على تكلفة الإنشاء فقط', { x:0.5,y:0.4,w:12.3,h:0.6, fontSize:22, bold:true, color:'0E6B4C', align:'right' });
-      s3.addText(cfin.note||'', { x:0.5,y:1.0,w:12.3,h:0.5, fontSize:13, color:'4C5850', align:'right' });
+      s3.addText('التمويل الفعلي — على تكلفة الإنشاء فقط', { x:0.5,y:0.4,w:12.3,h:0.6, fontSize:22, bold:true, color:'5B4FE8', align:'right' });
+      s3.addText(cfin.note||'', { x:0.5,y:1.0,w:12.3,h:0.5, fontSize:13, color:'5B5170', align:'right' });
       const finKpis = [
         ['القرض البنكي', fmtSAR(cfin.bankLoan)],
         ['النقد المطلوب من المالك', fmtSAR(cfin.cashRequiredFromOwnerOrInvestors)],
@@ -5550,8 +5551,8 @@ function exportOpportunityPptx(id){
       ];
       let fx = 0.5;
       finKpis.forEach(([l,v])=>{
-        s3.addText([{text:v+'\n',options:{fontSize:20,bold:true,color:'0E6B4C'}},{text:l,options:{fontSize:11,color:'4C5850'}}],
-          { x:fx,y:1.7,w:2.95,h:1.1, align:'center', valign:'middle', fill:{color:'F3F4F0'}, line:{color:'D6DACF',width:1} });
+        s3.addText([{text:v+'\n',options:{fontSize:20,bold:true,color:'5B4FE8'}},{text:l,options:{fontSize:11,color:'5B5170'}}],
+          { x:fx,y:1.7,w:2.95,h:1.1, align:'center', valign:'middle', fill:{color:'E8E4FB'}, line:{color:'D9CFEA',width:1} });
         fx += 3.0;
       });
       const finRows = [
@@ -5561,7 +5562,7 @@ function exportOpportunityPptx(id){
       if(cfin.ownerActualIRR!=null){ finRows.push({text:'Owner Actual Equity IRR (10 سنوات)', options:{bold:true}}, {text:fmtPct(cfin.ownerActualIRR,1)+'\n'}); }
       if(cfin.ownerActualMOIC!=null){ finRows.push({text:'Owner Actual MOIC', options:{bold:true}}, {text:cfin.ownerActualMOIC.toFixed(2)+'x\n'}); }
       finRows.push({text:'قيمة الأرض (للعلم فقط، غير مموَّلة)', options:{bold:true}}, {text:fmtSAR(cfin.landValueInformationalOnly)});
-      s3.addText(finRows, { x:0.5,y:3.1,w:12.3,h:3, fontSize:14, align:'right', color:'152019' });
+      s3.addText(finRows, { x:0.5,y:3.1,w:12.3,h:3, fontSize:14, align:'right', color:'241B36' });
     }
 
     pres.writeFile({ fileName: `${rec.id}.pptx` });

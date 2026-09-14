@@ -26,7 +26,7 @@ import { maxAcquisitionPrice } from './max-acquisition-price.js';
 import { cashFlowTimingAnalysis } from './cash-flow-timing.js';
 
 const COMPARABLES_COLLECTION = 'comparables';
-const PAL = { green:'0E6B4C', text:'4C5850', ink:'152019', card:'F3F4F0', border:'D6DACF', good:'1E8A56', warn:'9C6A0A', bad:'AE2E22' };
+const PAL = { green:'5B4FE8', text:'5B5170', ink:'241B36', card:'E8E4FB', border:'D9CFEA', good:'1FA67E', warn:'C98A2E', bad:'C23B5B' };
 
 function median(nums){
   if(!nums.length) return null;
@@ -63,6 +63,7 @@ export async function exportICPresentation(core, id){
     const pres = new Ctor();
     pres.defineLayout({ name:'WIDE', width:13.33, height:7.5 });
     pres.layout = 'WIDE';
+    pres.theme = { headFontFace:'Sakkal Majalla', bodyFontFace:'Sakkal Majalla' };
 
     const narrative = generateAnalystNarrative(core, d, c);
     const reportDates = core.reportDateMeta(d);
