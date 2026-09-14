@@ -352,6 +352,7 @@ function fmtSAR(v){
 }
 function fmtNum(v,dec){ if(v==null||!isFinite(v)) return '—'; return v.toLocaleString('en-US',{maximumFractionDigits:dec==null?0:dec, minimumFractionDigits:dec==null?0:dec}); }
 function fmtPct(v,dec){ if(v==null||!isFinite(v)) return '—'; const n=(v*100).toFixed(dec==null?1:dec); return LANG==='en' ? n+'%' : '%'+n; }
+function fmtUnit(numStr, unitAr, unitEn){ const unit = T(unitAr, unitEn); if(LANG==='en') return numStr+' '+unit; return '\u202B\u2066'+numStr+'\u2069 '+unit+'\u202C'; }
 function esc(s){ return (s==null?'':String(s)).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function todayStr(){ return new Date().toISOString().slice(0,10); }
 /* التقويم الهجري — يعتمد على دعم المتصفح المدمج (Intl) بدون أي مكتبة خارجية؛ يعود بسلسلة فاضية بأمان لو غير مدعوم */
@@ -2532,7 +2533,7 @@ function liveMetricsHtml(d){
   const c = compute(d);
   return `<div class="lg">
     <div class="li">${T('تكلفة الأرض','Land cost')}<b>${fmtSAR(c.landCost)}</b></div>
-    <div class="li">GFA<b>${fmtNum(c.gfa)} ${T('م²','sqm')}</b></div>
+    <div class="li">GFA<b>${fmtUnit(fmtNum(c.gfa),'م²','sqm')}</b></div>
     <div class="li">${T('إجمالي تكلفة المشروع','Total project cost')} (TPC)<b>${fmtSAR(c.TPC)}</b></div>
     <div class="li">${T('حقوق الملكية','Equity')}<b>${fmtSAR(c.equity)}</b></div>
     <div class="li">WACC<b>${fmtPct(c.WACC)}</b></div>
@@ -3091,12 +3092,13 @@ ${T('بدلاً من بيع الأصل في نهاية المدة، يقوم ا�
         <div class="section">
           <h3><span class="n">1</span> ${T('ملخص الأرض والبناء','Land & Building Summary')} (Land & Building Summary)</h3>
           <div class="kv">
-            <div class="k">${T('مساحة الأرض','Land Area')}</div><div class="v">${fmtNum(d.land.area)} ${T('م²','sqm')}</div>
+            <div class="k">${T('مساحة الأرض','Land Area')}</div><div class="v">${fmtUnit(fmtNum(d.land.area),'م²','sqm')}</div>
             <div class="k">${T('سعر الشراء','Purchase Price')}</div><div class="v">${LANG==='en'? fmtNum(d.land.price)+' '+T('ر.س/م²','SAR/sqm') : '\u202B\u2066'+fmtNum(d.land.price)+'\u2069 '+T('ر.س/م²','SAR/sqm')+'\u202C'}</div>
             <div class="k">${T('التكلفة الإجمالية','Total Cost')}</div><div class="v">${fmtSAR(c.landCost)}</div>
-            <div class="k">GFA (${T('حق البناء الإجمالي','Gross Floor Area')})</div><div class="v">${fmtNum(c.gfa)} ${T('م²','sqm')}</div>
-            <div class="k">${T('بصمة المبنى / الأدوار اللازمة','Building Footprint / Floors Needed')}</div><div class="v">${fmtNum(c.footprint)} ${T('م²','sqm')} / ${c.floorsNeeded} ${T('دور','floors')}</div>
-            <div class="k">${T('الارتفاع الإجمالي','Total Height')}</div><div class="v">${fmtNum(c.buildingHeight,1)} ${T('م','m')}</div>
+            <div class="k">GFA (${T('حق البناء الإجمالي','Gross Floor Area')})</div><div class="v">${fmtUnit(fmtNum(c.gfa),'م²','sqm')}</div>
+            <div class="k">${T('بصمة المبنى','Building Footprint')}</div><div class="v">${fmtUnit(fmtNum(c.footprint),'م²','sqm')}</div>
+            <div class="k">${T('الأدوار اللازمة','Floors Needed')}</div><div class="v">${fmtUnit(fmtNum(c.floorsNeeded),'دور','floors')}</div>
+            <div class="k">${T('الارتفاع الإجمالي','Total Height')}</div><div class="v">${fmtUnit(fmtNum(c.buildingHeight,1),'م','m')}</div>
             <div class="k">${T('تكلفة الأرض لكل م² GFA','Land Cost per sqm GFA')}</div><div class="v">${LANG==='en'? fmtNum(c.landCostPerGFA)+' '+T('ر.س/م²','SAR/sqm') : '\u202B\u2066'+fmtNum(c.landCostPerGFA)+'\u2069 '+T('ر.س/م²','SAR/sqm')+'\u202C'}</div>
             <div class="k">${T('معامل الموقع المجمّع (Site Factor)','Combined Site Factor')}</div><div class="v">×${c.siteFactor.toFixed(3)}</div>
             <div class="k">${T('المعامل المركّب الكلي (Master Multiplier)','Overall Master Multiplier')}</div><div class="v">×${c.masterMultiplier.toFixed(3)}</div>
@@ -3105,7 +3107,7 @@ ${T('بدلاً من بيع الأصل في نهاية المدة، يقوم ا�
             ${c.isOffPlanSale? `<div class="k">${T('نمط البيع','Sale Mode')}</div><div class="v">${T('بيع على الخارطة (وافي)','Off-Plan Sale (WAFI)')} (${c.offPlanSchedule.length} ${T('دفعات','installments')})</div>`:''}
             ${c.infraCostAmt>0? `<div class="k">${T('تكلفة البنية التحتية','Infrastructure Cost')}</div><div class="v">${fmtSAR(c.infraCostAmt)}</div>`:''}
             ${(c.heightPremiumMult>1 && d.meta.oppType!=='landbank')? `<div class="k">${T('علاوة تكلفة ارتفاع الدور','Floor Height Cost Premium')}</div><div class="v">+${fmtPct(c.heightPremiumMult-1)} ${T('على تكلفة البناء/م²','on build cost/sqm')}</div>`:''}
-            ${c.basementCostAmt>0? `<div class="k">${T('عدد مستويات البدرومات','Basement Levels')}</div><div class="v">${c.basementLevels} ${T('بدروم','levels')}</div><div class="k">${T('المساحة الإجمالية للبدرومات','Total Basement Area')}</div><div class="v">${fmtNum(c.basementArea)} ${T('م²','sqm')}</div>
+            ${c.basementCostAmt>0? `<div class="k">${T('عدد مستويات البدرومات','Basement Levels')}</div><div class="v">${fmtUnit(fmtNum(c.basementLevels),'بدروم','levels')}</div><div class="k">${T('المساحة الإجمالية للبدرومات','Total Basement Area')}</div><div class="v">${fmtUnit(fmtNum(c.basementArea),'م²','sqm')}</div>
             <div class="k">${T('علاوة تكلفة البدرومات (متوسطة)','Basement Cost Premium (avg)')}</div><div class="v">+${fmtPct(c.basementPremiumAvgPct)}</div>
             <div class="k">${T('إجمالي تكلفة البدرومات','Total Basement Cost')}</div><div class="v">${fmtSAR(c.basementCostAmt)}</div>`:''}
           </div>
