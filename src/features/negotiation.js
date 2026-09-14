@@ -49,7 +49,9 @@ export function registerNegotiation(core){
 
     const priceRow = (label, val, opts)=>{
       opts = opts||{};
-      return `<div class="k">${label}</div><div class="v">${val==null? '—' : `${core.fmtSAR(val)}/م²${opts.irr!=null? ` <span style="color:var(--ink-faint); font-size:11px;">(Equity IRR ${core.fmtPct(opts.irr)})</span>`:''}`}</div>`;
+      const priceHtml = `<div class="k">${label}</div><div class="v">${val==null? '—' : `${core.fmtSAR(val)}/م²`}</div>`;
+      const irrHtml = (val!=null && opts.irr!=null)? `<div class="k">Equity IRR (${label})</div><div class="v">${core.fmtPct(opts.irr)}</div>` : '';
+      return priceHtml + irrHtml;
     };
 
     return `

@@ -79,9 +79,12 @@ export function registerMaxAcquisitionPrice(core){
       <p class="note" style="color:var(--bad);">🚫 ${core.T('حتى بأرض مجانية (سعر = صفر)، الفرصة لا تحقق الحد الأدنى لـ Equity IRR','Even at zero land cost, the opportunity does not reach the minimum Equity IRR')} (${core.fmtPct(targetIRR)}) — ${core.T('المشكلة ليست في سعر الأرض؛ راجع الافتراضات الأساسية (التكلفة/الإيراد/التمويل).','the issue is not the land price; review the core assumptions (cost/revenue/financing).')}</p>
       ` : `
       <div class="kv" style="margin-bottom:10px;">
-        <div class="k">${core.T('السعر الحالي المُدخَل','Current Entered Price')}</div><div class="v">${core.fmtSAR(res.currentPrice)}/م² <span style="color:var(--ink-faint); font-size:11px;">(Equity IRR ${core.fmtPct(res.currentIRR)})</span></div>
-        <div class="k">${core.T('الحد الأقصى المسموح به','Maximum Payable')}</div><div class="v"><b style="color:${canPay?'var(--good)':'var(--bad)'}; font-size:15px;">${core.fmtSAR(res.maxPrice)}/م²</b> <span style="color:var(--ink-faint); font-size:11px;">${core.T('حتى تتحقق','to reach')} Equity IRR ≥ ${core.fmtPct(targetIRR)}</span></div>
-        <div class="k">${core.T('الهامش المتبقي','Remaining Headroom')}</div><div class="v" style="color:${gap>=0?'var(--good)':'var(--bad)'};">${gap>=0?'+':''}${core.fmtSAR(gap)}/م² (${core.fmtPct(gapPct,1)})</div>
+        <div class="k">${core.T('السعر الحالي المُدخَل','Current Entered Price')}</div><div class="v">${core.fmtSAR(res.currentPrice)}/م²</div>
+        <div class="k">Equity IRR (${core.T('عند السعر الحالي','at current price')})</div><div class="v">${core.fmtPct(res.currentIRR)}</div>
+        <div class="k">${core.T('الحد الأقصى المسموح به','Maximum Payable')}</div><div class="v"><b style="color:${canPay?'var(--good)':'var(--bad)'}; font-size:15px;">${core.fmtSAR(res.maxPrice)}/م²</b></div>
+        <div class="k">${core.T('العائد المستهدف (الحد الأدنى)','Target Return (Minimum)')}</div><div class="v">Equity IRR ≥ ${core.fmtPct(targetIRR)}</div>
+        <div class="k">${core.T('الهامش المتبقي','Remaining Headroom')}</div><div class="v" style="color:${gap>=0?'var(--good)':'var(--bad)'};">${gap>=0?'+':''}${core.fmtSAR(gap)}/م²</div>
+        <div class="k">${core.T('الهامش كنسبة من السعر الحالي','Headroom as % of Current Price')}</div><div class="v" style="color:${gap>=0?'var(--good)':'var(--bad)'};">${gap>=0?'+':''}${core.fmtPct(gapPct,1)}</div>
       </div>
       <p class="note">${gap>=0
         ? core.T('السعر الحالي ضمن الحد المسموح — لا يزال هناك هامش تفاوضي متاح للبائع دون المساس بالعائد المستهدف.','Current price is within the payable limit — there is still negotiation headroom before hitting the target return.')
