@@ -186,7 +186,7 @@ export function registerPortfolio(core){
       <div class="panel-head"><h3>${core.T('الدين والتغطية','Debt & Coverage')}</h3></div>
       <div class="kv">
         <div class="k">${core.T('إجمالي الدين (الأصول المرتبطة)','Total Debt (linked assets)')}</div><div class="v">${core.fmtSAR(s.debtSum)}</div>
-        <div class="k">LTV</div><div class="v">${s.ltv!=null? core.fmtPct(s.ltv): '—'}</div>
+        <div class="k">${core.T('نسبة القرض إلى القيمة (LTV)','LTV')}</div><div class="v">${s.ltv!=null? core.fmtPct(s.ltv): '—'}</div>
         <div class="k">DSCR (${core.T('متوسط مرجَّح','weighted avg')})</div><div class="v">${s.dscrAvg!=null? s.dscrAvg.toFixed(2)+'×':'—'}</div>
         <div class="k">DSCR (${core.T('الأدنى في المحفظة','portfolio minimum')})</div><div class="v" style="${s.dscrMinOverall!=null && s.dscrMinOverall<1.2 ? 'color:var(--bad); font-weight:700;':''}">${s.dscrMinOverall!=null? s.dscrMinOverall.toFixed(2)+'×':'—'}</div>
       </div>

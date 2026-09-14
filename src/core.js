@@ -3054,7 +3054,7 @@ ${T('المؤشرات أعلاه (Equity IRR / Project IRR / MOIC) محسوبة 
         <div class="k">${T('DSCR على تمويل الإنشاء','DSCR on Construction Financing')}</div><div class="v">${(d.constructionFinancing.dscr||0).toFixed(2)}×</div>
         <div class="k">${T('العائد النقدي السنوي (Cash-on-Cash)','Annual Cash Yield (Cash-on-Cash)')}</div><div class="v">${fmtPct(d.constructionFinancing.cashOnCashYieldPct)}</div>
         ${d.constructionFinancing.ownerActualIRR!=null? `<div class="k">Owner Actual Equity IRR (10 ${T('سنوات، بدون بيع','years, no sale')})</div><div class="v" style="font-weight:700;">${fmtPct(d.constructionFinancing.ownerActualIRR)}</div>`:''}
-        ${d.constructionFinancing.ownerActualMOIC!=null? `<div class="k">Owner Actual MOIC</div><div class="v">${d.constructionFinancing.ownerActualMOIC.toFixed(2)}×</div>`:''}
+        ${d.constructionFinancing.ownerActualMOIC!=null? `<div class="k">${T('مضاعف رأس المال الفعلي للمالك (MOIC)','Owner Actual MOIC')}</div><div class="v">${d.constructionFinancing.ownerActualMOIC.toFixed(2)}×</div>`:''}
         <div class="k">${T('قيمة الأرض (للعلم فقط، غير مموَّلة)','Land Value (informational only, not financed)')}</div><div class="v">${fmtSAR(d.constructionFinancing.landValueInformationalOnly)}</div>
       </div>
       ${d.constructionFinancing.sourceFile? `<p class="note" style="margin-top:8px; font-size:12px;">${T('المرجع الرسمي للمعادلات الكاملة','Official reference for the full formulas')}: ${esc(d.constructionFinancing.sourceFile)}</p>`:''}
@@ -3133,7 +3133,7 @@ ${T('بدلاً من بيع الأصل في نهاية المدة، يقوم ا�
             <div class="k">ADR (${T('متوسط سعر الغرفة','average room rate')})</div><div class="v">${fmtSAR(d.income.hospitality.adr)}</div>
             <div class="k">${T('عدد الغرف (Keys)','Number of Rooms (Keys)')}</div><div class="v">${fmtNum(d.income.hospitality.keys)}</div>
             <div class="k">${T('نسبة الإشغال الفندقي','Hotel Occupancy Rate')}</div><div class="v">${fmtPct(d.income.occupancy)}</div>
-            <div class="k">RevPAR</div><div class="v">${fmtSAR(d.income.hospitality.adr*d.income.occupancy)}</div>
+            <div class="k">${T('الإيراد لكل غرفة متاحة (RevPAR)','RevPAR')}</div><div class="v">${fmtSAR(d.income.hospitality.adr*d.income.occupancy)}</div>
             <div class="k">GOP ${T('هامش','Margin')}</div><div class="v">${fmtPct(d.income.hospitality.gopMargin)}</div>`:''}
             ${(c.assetClass==='gas_station'||c.assetClass==='qsr_pharmacy')? `
             <div class="k">${T('الفئة الائتمانية للمستأجر','Tenant Credit Tier')}</div><div class="v">${esc(d.income.nnn.tenantCreditTier)} — ${T('نطاق Cap Rate مقترح','suggested Cap Rate range')}: ${CREDIT_TIERS[d.income.nnn.tenantCreditTier]||'—'}</div>
@@ -3220,9 +3220,9 @@ ${T('بدلاً من بيع الأصل في نهاية المدة، يقوم ا�
         <div class="section">
           <h3><span class="n">6</span> ${T('مضاعفات الصندوق','Fund Multiples')} (Fund Multiples)</h3>
           <div class="grid3">
-            <div class="kv" style="grid-column:span 1;"><div class="k">DPI</div><div class="v">${c.DPI.toFixed(2)}×</div></div>
-            <div class="kv"><div class="k">RVPI</div><div class="v">${c.RVPI.toFixed(2)}×</div></div>
-            <div class="kv"><div class="k">TVPI</div><div class="v">${c.TVPI.toFixed(2)}×</div></div>
+            <div class="kv" style="grid-column:span 1;"><div class="k">${T('الموزَّع إلى المدفوع (DPI)','DPI')}</div><div class="v">${c.DPI.toFixed(2)}×</div></div>
+            <div class="kv"><div class="k">${T('المتبقي إلى المدفوع (RVPI)','RVPI')}</div><div class="v">${c.RVPI.toFixed(2)}×</div></div>
+            <div class="kv"><div class="k">${T('إجمالي القيمة إلى المدفوع (TVPI)','TVPI')}</div><div class="v">${c.TVPI.toFixed(2)}×</div></div>
           </div>
         </div>
 
@@ -3462,8 +3462,8 @@ ${T('بدلاً من بيع الأصل في نهاية المدة، يقوم ا�
             <div class="k">${T('مدة الصندوق','Fund Term')}</div><div class="v">${c.totalYears} ${T('سنة','yrs')}</div>
             <div class="k">${T('الحد الأدنى للاستثمار','Minimum Investment')}</div><div class="v">${fmtSAR(d.subscription.minInvestment)}</div>
             <div class="k">${T('فئة المستثمر','Investor Class')}</div><div class="v" style="font-family:inherit; font-size:12px; direction:rtl; unicode-bidi:plaintext;">${esc(d.subscription.investorClass)}</div>
-            <div class="k">Hurdle</div><div class="v">${fmtPct(d.economics.hurdle)}</div>
-            <div class="k">Carry</div><div class="v">${fmtPct(d.economics.carry)}</div>
+            <div class="k">${T('العائد المستهدَف (Hurdle)','Hurdle')}</div><div class="v">${fmtPct(d.economics.hurdle)}</div>
+            <div class="k">${T('حصة الأداء (Carry)','Carry')}</div><div class="v">${fmtPct(d.economics.carry)}</div>
           </div>
         </div>
 
@@ -4100,7 +4100,7 @@ function renderFundDetail(fundId){
       <div class="k">${T('نسبة المسحوب','Called %')}</div><div class="v">${s.calledPct!=null?fmtPct(s.calledPct):'—'}</div>
       <div class="k">${T('رأس المال المسدَّد','Paid-in Capital')}</div><div class="v">${fmtSAR(s.paidIn)}</div>
       <div class="k">${T('التوزيعات المصروفة','Distributions Paid')}</div><div class="v">${fmtSAR(s.distPaid)}</div>
-      <div class="k">DPI</div><div class="v">${s.dpi!=null? s.dpi.toFixed(2)+'×':'—'}</div>
+      <div class="k">${T('الموزَّع إلى المدفوع (DPI)','DPI')}</div><div class="v">${s.dpi!=null? s.dpi.toFixed(2)+'×':'—'}</div>
       <div class="k">${T('القيمة الإجمالية المُقدَّرة للأصول المرتبطة','Estimated Total Value — Linked Assets')}</div><div class="v">${fmtSAR(s.totalValue)}</div>
     </div>
 

@@ -76,9 +76,9 @@ export function registerCommandCenter(core){
       <div class="panel">
         <div class="panel-head"><h3>💰 ${core.T('رأس المال','Capital')}</h3></div>
         <div class="kv">
-          <div class="k">AUM</div><div class="v">${core.fmtSAR(s.aum)}</div>
+          <div class="k">${core.T('الأصول تحت الإدارة (AUM)','AUM')}</div><div class="v">${core.fmtSAR(s.aum)}</div>
           <div class="k">${core.T('مستثمر','Invested')}</div><div class="v">${core.fmtSAR(s.investedCapital)}</div>
-          <div class="k">${core.T('متاح تقديري (Dry Powder)','Estimated Available (Dry Powder)')}</div><div class="v">${core.fmtSAR(s.uninvestedCapital)}</div>
+          <div class="k">${core.T('متاح تقديري (سيولة جاهزة للاستثمار)','Estimated Available (Dry Powder)')}</div><div class="v">${core.fmtSAR(s.uninvestedCapital)}</div>
           <div class="k">${core.T('NAV تقديرية من الاكتتاب','Estimated Underwriting NAV')}</div><div class="v"><b>${core.fmtSAR(s.nav)}</b></div>
           <div class="k">${core.T('الدين','Debt')}</div><div class="v">${core.fmtSAR(s.debtSum)}</div>
         </div>
@@ -92,9 +92,9 @@ export function registerCommandCenter(core){
         </div>
         <p class="step-sub" style="margin:14px 0 6px;">${core.T('العوائد على مستوى المحفظة','Portfolio-level Returns')}</p>
         <div class="kv">
-          <div class="k">Gross IRR</div><div class="v">${s.grossIRR!=null? core.fmtPct(s.grossIRR): '—'}</div>
-          <div class="k">Indicative Net IRR</div><div class="v">${s.netIRR!=null? core.fmtPct(s.netIRR): '—'}</div>
-          <div class="k">TVPI</div><div class="v">${s.portfolioMOIC!=null? s.portfolioMOIC.toFixed(2)+'×':'—'}</div>
+          <div class="k">${core.T('العائد الإجمالي (Gross IRR)','Gross IRR')}</div><div class="v">${s.grossIRR!=null? core.fmtPct(s.grossIRR): '—'}</div>
+          <div class="k">${core.T('العائد الصافي الاسترشادي (Net IRR)','Indicative Net IRR')}</div><div class="v">${s.netIRR!=null? core.fmtPct(s.netIRR): '—'}</div>
+          <div class="k">${core.T('إجمالي القيمة إلى المدفوع (TVPI)','TVPI')}</div><div class="v">${s.portfolioMOIC!=null? s.portfolioMOIC.toFixed(2)+'×':'—'}</div>
         </div>
       </div>
 

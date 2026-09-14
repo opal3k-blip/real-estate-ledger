@@ -375,14 +375,14 @@ function renderInstitutionalInvestmentIntelligenceDashboard(core){
     <div class="grid3" style="margin-top:10px;">
       <div class="note">Top Performers: ${top.map(r=>core.esc(r.d.meta.name||r.rec.id)).join(' · ') || '—'}</div>
       <div class="note">Worst Execution: ${worst.map(r=>core.esc(r.d.meta.name||r.rec.id)).join(' · ') || '—'}</div>
-      <div class="note">Top Risks: ${warnings.slice(0,5).map(w=>core.esc(w.name)).join(' · ') || '—'}</div>
+      <div class="note">${core.T('أهم المخاطر','Top Risks')}: ${warnings.slice(0,5).map(w=>core.esc(w.name)).join(' · ') || '—'}</div>
     </div>
   </div>
 
   <div class="panel" style="margin-bottom:14px;">
-    <div class="panel-head"><h3>${core.T('Capital Allocation Optimizer','Capital Allocation Optimizer')}</h3></div>
-    <div class="kv"><div class="k">Available Equity</div><div class="v"><b>${core.fmtSAR(optimizer.availableEquity)}</b></div><div class="k">Capital Remaining</div><div class="v"><b>${core.fmtSAR(optimizer.remaining)}</b></div></div>
-    <div class="tablewrap" style="margin-top:10px;"><table class="db" style="font-size:12px;"><thead><tr><th>${core.T('الفرصة','Opportunity')}</th><th>Need</th><th>Score</th><th>Risk</th><th>Return</th><th>Marginal Return</th><th>Recommended Allocation</th><th>Remaining</th></tr></thead><tbody>
+    <div class="panel-head"><h3>${core.T('محسّن تخصيص رأس المال','Capital Allocation Optimizer')}</h3></div>
+    <div class="kv"><div class="k">${core.T('حقوق الملكية المتاحة','Available Equity')}</div><div class="v"><b>${core.fmtSAR(optimizer.availableEquity)}</b></div><div class="k">${core.T('رأس المال المتبقي','Capital Remaining')}</div><div class="v"><b>${core.fmtSAR(optimizer.remaining)}</b></div></div>
+    <div class="tablewrap" style="margin-top:10px;"><table class="db" style="font-size:12px;"><thead><tr><th>${core.T('الفرصة','Opportunity')}</th><th>${core.T('الاحتياج','Need')}</th><th>${core.T('الدرجة','Score')}</th><th>${core.T('المخاطر','Risk')}</th><th>${core.T('العائد','Return')}</th><th>${core.T('العائد الحدي','Marginal Return')}</th><th>${core.T('التخصيص الموصى به','Recommended Allocation')}</th><th>${core.T('المتبقي','Remaining')}</th></tr></thead><tbody>
       ${optimizer.recommendations.map(r=>`<tr>
         <td>${core.esc(r.name)}</td><td class="num">${core.fmtSAR(r.need)}</td><td class="num">${r.score.toFixed(0)}</td><td style="color:${r.risk.color};font-weight:700;">${core.T(r.risk.ar,r.risk.en)}</td><td class="num">${pctPoint(r.ret)}</td><td class="num">${pctPoint(r.marginal)}</td><td class="num"><b>${core.fmtSAR(r.recommended)}</b></td><td class="num">${core.fmtSAR(r.remainingAfter)}</td>
       </tr>`).join('') || `<tr><td colspan="8" class="note">${core.T('لا توجد فرص غير مربوطة تحتاج تخصيصاً أو لا يوجد رأس مال متاح.','No unlinked allocation candidates or no available capital.')}</td></tr>`}
