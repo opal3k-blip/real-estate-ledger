@@ -36,6 +36,15 @@ import { computeDecisionConfidence } from './decision-confidence.js';
 import { cashFlowTimingAnalysis } from './cash-flow-timing.js';
 
 const COMPARABLES_COLLECTION = 'comparables';
+// معامِل "تخمين" (guess) صريح لمعادلات IRR في Excel — دون توفيره، تبدأ IRR() من افتراضها الداخلي
+// (10%) ولا تتقارب أحياناً (#NUM!) عندما يكون الـ IRR الحقيقي بعيداً جداً عنه (مثلاً فرص خاسرة بشدة
+// بمعدل عائد سالب كبير) رغم وجود حل رياضي صحيح وحيد — قيد معروف وموثَّق في محرّك IRR الافتراضي في
+// Excel نفسه، وليس خللاً في حساب compute() في core.js. نمرِّر القيمة التي حسبها محرك التطبيق فعلاً
+// (c.equityIRR/c.projectIRR) كتخمين ابتدائي حتى تتقارب IRR() في Excel لنفس الإجابة الصحيحة من أول
+// محاولة، بدل تغيير أي منطق حسابي.
+function irrGuessArg(v){
+  return (typeof v==='number' && isFinite(v)) ? `,${v}` : '';
+}
 const SEM = { INPUT:'FF1E40AF', LINK:'FF15803D', EXT_FONT:'FF92650B', EXT_FILL:'FFFEF3C7' };
 const DEC_LABEL = {
   approve:['اعتماد','Approve'], approve_conditions:['اعتماد بشروط','Approve with Conditions'],
@@ -449,11 +458,11 @@ export async function exportUnderwritingWorkbook(core, id){
         const gfaF = `${ref(AS,A.landArea)}*${ref(AS,A.landFar)}`;
         const footprintF = `${ref(AS,A.landArea)}*${ref(AS,A.landBar)}`;
         const heightPremF = `(1+MAX(0,${ref(AS,A.landFloorHeight)}-3.6)*${ref(AS,A.floorHeightPremiumPct)})`;
-        // ملاحظة دقيقة: معامل الفئة (tierMult) إعلامي فقط في محرك compute() — لا يدخل فعلياً في حساب
-        // التكلفة الإنشائية (راجع verticalCost/basementCostFor في core.js: كلاهما يستخدمان معامل الاستخدام
-        // والموقع فقط). لذا معامل التكلفة الفعلي هنا يستثني tierMult عمداً حتى يطابق محرك التطبيق تماماً —
-        // معامل الفئة المعروض في ورقة الافتراضات (٠٢) يبقى رقماً إعلامياً مرجعياً لا أكثر.
-        const costMultF = `${ref(AS,A.useMult)}*${ref(AS,A.siteFactor)}`;
+        // إصلاح حوكمة (سبتمبر 2026): معامل الفئة (tierMult) كان إعلامياً فقط في محرك compute() —
+        // مُحسَباً ومعروضاً في التقارير دون أن يدخل فعلياً في حساب التكلفة الإنشائية. تم إصلاح ذلك في
+        // core.js (راجع verticalCost/basementCostFor) بضرب tierMult ضمن معامل التكلفة الفعلي — والمعادلة
+        // هنا مُحدَّثة بالمثل لتطابق محرك التطبيق تماماً.
+        const costMultF = `${ref(AS,A.tierMult)}*${ref(AS,A.useMult)}*${ref(AS,A.siteFactor)}`;
         const verticalCostF = `(${gfaF})*${ref(AS,A.buildCost)}*${costMultF}*${heightPremF}`;
         // تكلفة البدرومات: مجموع تكلفة كل مستوى (البصمة × تكلفة البناء × المعاملات × علاوة المستوى المتصاعدة)
         const basementLevels = Math.max(0, Math.round(d.land.basements||0));
@@ -570,8 +579,8 @@ function build04Development(core, wb, d, c, A, U, standardPath){
   D.footprint = push(['🟢 بصمة المبنى (Footprint = مساحة الأرض × BAR) م²', null], 'data', 'link');
   D.floors = push(['🟢 عدد الأدوار المطلوب (تقريب لأعلى GFA/البصمة)', null], 'data', 'link');
   D.heightPrem = push(['🟢 معامل علاوة ارتفاع الدور', null], 'data', 'link');
-  D.masterMult = push(['🟢 المعامل المجمّع إعلامي (فئة × استخدام × موقع) — لا يدخل في حساب التكلفة', null], 'data', 'link');
-  D.costMult = push(['🟢 معامل التكلفة الفعلي (استخدام × موقع فقط — معامل الفئة إعلامي في محرك التطبيق)', null], 'data', 'link');
+  D.masterMult = push(['🟢 المعامل المركّب الكلي (فئة × استخدام × موقع)', null], 'data', 'link');
+  D.costMult = push(['🟢 معامل التكلفة الفعلي (فئة × استخدام × موقع — يُطبَّق على كل معادلات التكلفة الإنشائية)', null], 'data', 'link');
   push(['','']);
   push(['توزيع التكلفة الإنشائية الرأسية (Vertical Cost Breakdown)',''],'section');
   push(['البند','القيمة (ر.س)'],'header');
@@ -594,10 +603,11 @@ function build04Development(core, wb, d, c, A, U, standardPath){
   const footprintF = `${ref(A.landArea)}*${ref(A.landBar)}`;
   const heightPremF = `1+MAX(0,${ref(A.landFloorHeight)}-3.6)*${ref(A.floorHeightPremiumPct)}`;
   const masterMultF = `${ref(A.tierMult)}*${ref(A.useMult)}*${ref(A.siteFactor)}`;
-  // معامل التكلفة الفعلي المستخدَم في كل معادلات التكلفة الإنشائية أدناه — يستثني معامل الفئة (tierMult)
-  // عمداً: محرك compute() في core.js لا يُدخل tierMult في حساب verticalCost/basementCostFor إطلاقاً (معامل
-  // الفئة إعلامي بحت هناك أيضاً)، فيبقى هذا التمييز مطابقاً تماماً لسلوك التطبيق الفعلي.
-  const costMultF = `${ref(A.useMult)}*${ref(A.siteFactor)}`;
+  // إصلاح حوكمة (سبتمبر 2026): معامل التكلفة الفعلي كان يستثني معامل الفئة (tierMult) عمداً لمطابقة
+  // خلل قديم في core.js (tierMult محسوب ومعروض في "المعامل المركّب الكلي" دون تطبيقه فعلياً على أي
+  // تكلفة). بعد إصلاح core.js ليُطبِّق tierMult فعلياً على verticalCost/basementCostFor، أصبح معامل
+  // التكلفة هنا مطابقاً لـ masterMultF تماماً — نفس المعادلة.
+  const costMultF = masterMultF;
   xlSetFormula(ws, D.gfa, 2, gfaF, '#,##0');
   xlSetFormula(ws, D.footprint, 2, footprintF, '#,##0');
   xlSetFormula(ws, D.floors, 2, `ROUNDUP(B${D.gfa}/B${D.footprint},0)`, '0');
@@ -834,7 +844,7 @@ function build0809CashFlows(core, wb, d, c){
     const rIRR = B.push(['🔒 Project IRR (معادلة IRR على الصفوف أعلاه)', null], 'note');
     const rNPV = B.push(['🔒 NPV @ WACC ('+(c.WACC*100).toFixed(1)+'%)', null], 'note');
     const ws = xlNewSheet(wb, '08_Project CF', B.rows, B.kinds, { colWidths:[46,26] });
-    xlSetFormula(ws, rIRR, 2, `IRR(B${firstRow}:B${lastRow})`, '0.0%');
+    xlSetFormula(ws, rIRR, 2, `IRR(B${firstRow}:B${lastRow}${irrGuessArg(c.projectIRR)})`, '0.0%');
     xlSetFormula(ws, rNPV, 2, `B${firstRow}+NPV(${c.WACC},B${firstRow+1}:B${lastRow})`, '#,##0;(#,##0);"-"');
     return { ws, rIRR, rNPV };
   }
@@ -897,7 +907,7 @@ function build0809CashFlowsStandard(core, wb, d, c, A, U, R05, DB07){
     if(yr===totalYears) xlSetFormula(ws08, rn, 2, `'07_Debt'!B${dbRow}+B${EX.value}-B${EX.costs}`, '#,##0;(#,##0);"-"');
     else xlSetFormula(ws08, rn, 2, `'07_Debt'!B${dbRow}`, '#,##0;(#,##0);"-"');
   });
-  xlSetFormula(ws08, rIRR8, 2, `IRR(B${firstRow8}:B${lastRow8})`, '0.0%');
+  xlSetFormula(ws08, rIRR8, 2, `IRR(B${firstRow8}:B${lastRow8}${irrGuessArg(c.projectIRR)})`, '0.0%');
   xlSetFormula(ws08, rNPV8, 2, `B${firstRow8}+NPV(${c.WACC},B${firstRow8+1}:B${lastRow8})`, '#,##0;(#,##0);"-"');
 
   /* ---- 09_Equity CF ---- */
@@ -923,7 +933,7 @@ function build0809CashFlowsStandard(core, wb, d, c, A, U, R05, DB07){
     if(yr===totalYears) xlSetFormula(ws09, rn, 2, `${netOpF}+'08_Project CF'!B${EX.value}-'08_Project CF'!B${EX.costs}-'08_Project CF'!B${EX.debtPayoff}`, '#,##0;(#,##0);"-"');
     else xlSetFormula(ws09, rn, 2, netOpF, '#,##0;(#,##0);"-"');
   });
-  xlSetFormula(ws09, rIRR9, 2, `IRR(B${firstRow9}:B${lastRow9})`, '0.0%');
+  xlSetFormula(ws09, rIRR9, 2, `IRR(B${firstRow9}:B${lastRow9}${irrGuessArg(c.equityIRR)})`, '0.0%');
   // المقام = إجمالي رأس المال المُستثمَر فعلياً (contributedEquity + investorSideFees في compute()) —
   // مجموع القيم المطلقة لكل التدفقات السالبة عبر كل السنوات (لا التدفق الأول فقط — قد تُوجَد نداءات
   // رأسمالية إضافية خلال سنوات الإنشاء) زائد رسوم الاشتراك مرة إضافية (نفس ازدواج compute() المتعمَّد).
@@ -954,7 +964,7 @@ async function build0809CashFlowsWithChart(core, wb, d, c, A, U, R05, O06, DB07,
     const rIRR = B.push(['🔒 Equity IRR (معادلة IRR على الصفوف أعلاه)', null], 'note');
     const rMOIC = B.push(['🔒 MOIC (مجموع التوزيعات الموجبة ÷ إجمالي رأس المال المُستثمَر)', null], 'note');
     ws09 = xlNewSheet(wb, '09_Equity CF', B.rows, B.kinds, { colWidths:[46,26] });
-    xlSetFormula(ws09, rIRR, 2, `IRR(B${firstRow}:B${lastRow})`, '0.0%');
+    xlSetFormula(ws09, rIRR, 2, `IRR(B${firstRow}:B${lastRow}${irrGuessArg(c.equityIRR)})`, '0.0%');
     const moicDenomF = `-SUMIF(B${firstRow}:B${lastRow},"<0")+'${AS2}'!B${A.subscriptionFee}*'${SU2}'!B${U.equity}`;
     xlSetFormula(ws09, rMOIC, 2, `SUMIF(B${firstRow}:B${lastRow},">0")/(${moicDenomF})`, '0.00"×"');
     firstRowForChart = firstRow; lastRowForChart = lastRow;

@@ -254,7 +254,7 @@ export function registerSpaceEfficiencyLibrary(core){
         <th>${core.T('الكود','ID')}</th><th>${core.T('البند','Item')}</th><th>${core.T('القطاع','Sector')}</th>
         <th>${core.T('النطاق','Range')}</th><th>${core.T('المنطق المعماري','Architectural logic')}</th>
         <th>${core.T('التصنيف','Class')}</th><th>${core.T('عبء المواقف','Parking load')}</th>
-        <th>${core.T('تكلفة/م² مرجعية','Ref. cost/m²')}</th><th></th>
+        <th>${core.T('تكلفة/م² مرجعية','Ref. cost/m²')}</th><th>${core.T('الحالة','Status')}</th>
       </tr></thead>
       <tbody>
         ${visibleRows.map(r=>`<tr>
@@ -266,7 +266,7 @@ export function registerSpaceEfficiencyLibrary(core){
           <td style="text-align:center;" title="${core.esc(classificationTip(core, r.effIcon))}">${r.effIcon||'—'} <span style="font-size:9px;">${core.esc(r.effText)}</span></td>
           <td style="font-size:10px;">${core.esc(r.parkingLoad||'—')}</td>
           <td class="num mono" style="font-size:10.5px;">${r.avgCostNum!=null? core.fmtSAR(r.avgCostNum)+'/'+core.esc(r.costUnit) : '—'}</td>
-          <td><span class="tag" style="background:var(--surface-2); color:var(--ink-faint); font-size:10px;">📘 ${core.T('أساسي','Baseline')}</span></td>
+          <td>—</td>
         </tr>`).join('')}
         ${visibleOverrides.map(rec=>{
           const o = rec.data;

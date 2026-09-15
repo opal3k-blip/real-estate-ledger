@@ -461,7 +461,12 @@ const STATUS_LABEL = Object.fromEntries(STATUS_OPTS.map(([l,v])=>[v,l]));
 function blankOpportunity(){
   return {
     id: null,
-    meta: { name:'', city:CITIES[0], neighborhood:'', tier:'راقي', oppType:'income', useType:Object.keys(USE_TYPES)[3], analyst:'Opal', createdAt:null, updatedAt:null, createdBy:null, updatedBy:null },
+    // تحديث (سبتمبر 2026): الفئة الافتراضية كانت "راقي" (×1.20) — كانت هذه القيمة غير مؤثرة مالياً
+    // قبل إصلاح خلل tierMult (راجع masterMultiplier أدناه)، فمرّت دون أن يُلاحَظ أنها تفترض مسبقاً
+    // فرصة "راقية" لكل فرصة جديدة. بعد تفعيل tierMult فعلياً في حسابات التكلفة، أصبحت "متوسط" (×1.00 —
+    // محايدة) نقطة بداية أكثر منطقية لفرصة جديدة لم يُحدِّد المستخدم فئتها بعد؛ يبقى قابلاً للتغيير فوراً
+    // من شاشة الفرضيات حسب موقع الفرصة الفعلي.
+    meta: { name:'', city:CITIES[0], neighborhood:'', tier:'متوسط', oppType:'income', useType:Object.keys(USE_TYPES)[3], analyst:'Opal', createdAt:null, updatedAt:null, createdBy:null, updatedBy:null },
     land: { area:5000, price:3500, far:2.0, bar:0.5, floorsAllowed:4, basements:1, floorHeight:3.6, setbacks:0.15, bonusAreaPct:0,
       basementCostPremiumPct:0.30, basementDepthEscalationPct:0.07, floorHeightPremiumPct:0.04 },
     site: { soil:0, water:0, tower:0, topo:0, infra:0 },
@@ -481,7 +486,14 @@ function blankOpportunity(){
       dataCenterSpec: { powerDensityKw:1.5, redundancyTier:'Tier III (N+1)' },
       refinance: { intervalYears:5, refiLtv:0.65, refiCostPct:0.01, analysisHorizon:10 },
     },
-    development: { salePrice:9000, buildCost:3800, constructionYears:2, operationYears:1, exitCapRate:0.08, efficiency:0.85, contingency:0.05,
+    // تحديث buildCost الافتراضي من 3,800 إلى 4,800 ر.س/م² (سبتمبر 2026) بعد مراجعة مقابل مصادر
+    // تكلفة بناء سعودية حديثة (Turner & Townsend KSAMI 2025، Compass Project Consulting H2 2024،
+    // الرقم القياسي لتكاليف البناء GASTAT) — القيمة السابقة كانت متدنية بوضوح عن السوق الحالي لمعظم
+    // أنواع الاستخدام بعد ضرب معامل USE_TYPES.mult (مثال: مكاتب 3,800×1.20=4,560 مقابل نطاق سوقي
+    // 7,000-10,000 لمباني مكاتب Grade A). هذا لا يزال تقديراً متحفظاً (دون أرقام الأبراج الفاخرة في
+    // مناطق الأعمال المركزية) يمكن تعديله يدوياً لكل فرصة حسب موقعها ومستوى تشطيبها الفعلي — راجع
+    // أيضاً ROWS في space-efficiency-data.js لمرجع أكثر تفصيلاً بحسب نوع المنتج.
+    development: { salePrice:9000, buildCost:4800, constructionYears:2, operationYears:1, exitCapRate:0.08, efficiency:0.85, contingency:0.05,
       scopeType:'both', infraCostPerSqm:0,
       costBreakdown:{ structure:0.42, mep:0.18, finishes:0.20, external:0.08, fees:0.12 } },
     landbank: { appreciation:0.08, holdingYears:4, carryAnnual:250000, zoningNote:'', hbuNote:'', interimAnnualIncome:0,
@@ -1047,6 +1059,11 @@ function compute(o, scenarioKey){
   const floorsNeeded = footprint>0? Math.ceil(gfa/footprint) : 0;
   const buildingHeight = floorsNeeded * land.floorHeight;
   const landCostPerGFA = gfa>0? landCost/gfa : 0;
+  // إصلاح حوكمة: كان tierMult يُحسب هنا ويُعرَض في التقارير كـ"المعامل المركّب الكلي" دون أن
+  // يُضرَب فعلياً في أي تكلفة أو إيراد — أي أن تغيير "فئة الحي" (بريميوم/راقي/متوسط/شعبي) لم يكن
+  // يُغيّر أي رقم مالي فعلي رغم ظهوره في الواجهة وكأنه مؤثر. الآن يُضرَب tierMult فعلياً في تكلفة
+  // البناء الرأسية (verticalCost) وتكلفة البدرومات لفرص التطوير والدخل (انظر أدناه)، بما يطابق هذا
+  // التعريف نفسه.
   const masterMultiplier = tierMult * useInfo.mult * siteFactor;
 
   // علاوة تكلفة الارتفاع — أي زيادة في ارتفاع الدور عن المرجع القياسي (3.6م) تعني هيكلاً ووزناً
@@ -1073,7 +1090,7 @@ function compute(o, scenarioKey){
     let sum = 0;
     for(let lvl=1; lvl<=basementLevels; lvl++){
       const levelPremiumMult = 1 + basementCostPremiumPct + (lvl-1)*basementDepthEscalationPct;
-      sum += footprint * ((o.development.buildCost||0)*costMultLocal) * useInfo.mult * siteFactor * heightPremiumMult * levelPremiumMult;
+      sum += footprint * ((o.development.buildCost||0)*costMultLocal) * tierMult * useInfo.mult * siteFactor * heightPremiumMult * levelPremiumMult;
     }
     return sum;
   }
@@ -1109,7 +1126,7 @@ function compute(o, scenarioKey){
     constructionYears = 0;
     operationYears = o.landbank.holdingYears;
   } else if(type==='development'){
-    verticalCost = scopeType==='infra_only' ? 0 : gfa * (o.development.buildCost*costMult) * useInfo.mult * siteFactor * heightPremiumMult;
+    verticalCost = scopeType==='infra_only' ? 0 : gfa * (o.development.buildCost*costMult) * tierMult * useInfo.mult * siteFactor * heightPremiumMult;
     basementCostAmt = scopeType==='infra_only' ? 0 : basementCostFor(costMult);
     hardCostBase = verticalCost + basementCostAmt + infraCostAmt;
     hardCost = hardCostBase * (1+contingencyPct);
@@ -1123,7 +1140,7 @@ function compute(o, scenarioKey){
       : (scopeType!=='infra_only' && strat.offPlanSale && strat.offPlanSale.enabled) ? 0
       : o.development.operationYears;
   } else { // income
-    verticalCost = scopeType==='infra_only' ? 0 : gfa * ((o.development.buildCost||3500)*costMult) * useInfo.mult * siteFactor * heightPremiumMult;
+    verticalCost = scopeType==='infra_only' ? 0 : gfa * ((o.development.buildCost||4800)*costMult) * tierMult * useInfo.mult * siteFactor * heightPremiumMult;
     basementCostAmt = scopeType==='infra_only' ? 0 : basementCostFor(costMult);
     hardCostBase = verticalCost + basementCostAmt + infraCostAmt;
     hardCost = hardCostBase * (1+contingencyPct);
