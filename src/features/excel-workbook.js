@@ -24,7 +24,7 @@
    المُصدَّرة والدوال المُصدَّرة أصلاً.
    ========================================================================= */
 
-import { ddStats, defaultItemsDict, DD_CATEGORIES } from './due-diligence.js';
+import { defaultItemsDict, DD_CATEGORIES } from './due-diligence.js';
 import { RISK_CATEGORIES, defaultRiskItems, scoreOf as riskScoreOf, bandOf as riskBandOf } from './risk-engine.js';
 import { matchBenchmarks, aggregateBench } from './benchmark-engine.js';
 import { maxAcquisitionPrice } from './max-acquisition-price.js';
@@ -338,6 +338,13 @@ export async function exportUnderwritingWorkbook(core, id){
       A.irrMin = push(['الحد الأدنى لـEquity IRR', d.criteria.irrMin], 'data', 'input');
       A.dscrMin = push(['الحد الأدنى لـDSCR', (d.criteria.dscrMin||0).toFixed(2)+'×'], 'data', 'input');
       A.moicMin = push(['الحد الأدنى لـMOIC', (d.criteria.moicMin||0).toFixed(2)+'×'], 'data', 'input');
+      push(['الاقتصاديات — هيكل توزيع العوائد (Waterfall Economics)',''],'section');
+      push(['المتغيّر','القيمة'],'header');
+      A.hurdle = push(['العائد المفضّل (Hurdle Rate)', d.economics.hurdle], 'data', 'input');
+      A.carry = push(['نسبة الفائدة المرحّلة (Carry %)', d.economics.carry], 'data', 'input');
+      A.lpShare = push(['حصة الشريك المحدود من مجمّع الفائدة (LP Share)', d.economics.lpShare], 'data', 'input');
+      A.gpShare = push(['حصة الشريك العام من مجمّع الفائدة (GP Share)', d.economics.gpShare], 'data', 'input');
+      A.devShare = push(['حصة المطوّر من مجمّع الفائدة (Dev Share)', d.economics.devShare], 'data', 'input');
       if(d.meta.oppType==='development' || d.meta.oppType==='income'){
         push(['مدخلات البناء (Building Inputs)',''],'section');
         push(['المتغيّر','القيمة'],'header');
@@ -399,6 +406,7 @@ export async function exportUnderwritingWorkbook(core, id){
         A.feeMgmt, A.feeStructuring, A.feeArrangement, A.feeAcquisition, A.feeDisposition, A.feeAssetMgmt, A.feePropMgmt,
         A.exitBroker, A.exitLegal, A.exitRett, A.exitFeeOther,
         A.subscriptionFee, A.irrMin,
+        A.hurdle, A.carry, A.lpShare, A.gpShare, A.devShare,
         A.exitCapRate, A.efficiency, A.contingency,
         A.cbStructure, A.cbMep, A.cbFinishes, A.cbExternal, A.cbFees,
         A.salePct, A.occupancy, A.opex,
@@ -519,7 +527,7 @@ export async function exportUnderwritingWorkbook(core, id){
     build17Negotiation(core, wb, d, c);
 
     /* ===================== 18_Waterfall ===================== */
-    build18Waterfall(core, wb, d, c);
+    build18Waterfall(core, wb, d, c, A, CF0809);
 
     /* ===================== 19_Fund Ledger ===================== */
     build19FundLedger(core, wb, rec, d, c);
@@ -922,15 +930,15 @@ function build0809CashFlowsStandard(core, wb, d, c, A, U, R05, DB07){
   const moicDenomF9 = `-SUMIF(B${firstRow9}:B${lastRow9},"<0")+${ref(A.subscriptionFee)}*${SU_ref(SU,U.equity)}`;
   xlSetFormula(ws09, rMOIC9, 2, `SUMIF(B${firstRow9}:B${lastRow9},">0")/(${moicDenomF9})`, '0.00"×"');
 
-  return { ws09, lastRow9, rIRR8, rNPV8, rIRR9, rMOIC9 };
+  return { ws09, firstRow9, lastRow9, rIRR8, rNPV8, rIRR9, rMOIC9 };
 }
 
 async function build0809CashFlowsWithChart(core, wb, d, c, A, U, R05, O06, DB07, standardPath){
   const AS2 = '02_Assumptions'; const SU2 = '03_Sources & Uses';
-  let ws09, lastRowForChart, rIRR8, rNPV8, rIRR9, rMOIC9;
+  let ws09, firstRowForChart, lastRowForChart, rIRR8, rNPV8, rIRR9, rMOIC9;
   if(standardPath){
     const res = build0809CashFlowsStandard(core, wb, d, c, A, U, R05, DB07);
-    ws09 = res.ws09; lastRowForChart = res.lastRow9;
+    ws09 = res.ws09; firstRowForChart = res.firstRow9; lastRowForChart = res.lastRow9;
     rIRR8 = res.rIRR8; rNPV8 = res.rNPV8; rIRR9 = res.rIRR9; rMOIC9 = res.rMOIC9;
   } else {
     const res08 = build0809CashFlows(core, wb, d, c);
@@ -949,7 +957,7 @@ async function build0809CashFlowsWithChart(core, wb, d, c, A, U, R05, O06, DB07,
     xlSetFormula(ws09, rIRR, 2, `IRR(B${firstRow}:B${lastRow})`, '0.0%');
     const moicDenomF = `-SUMIF(B${firstRow}:B${lastRow},"<0")+'${AS2}'!B${A.subscriptionFee}*'${SU2}'!B${U.equity}`;
     xlSetFormula(ws09, rMOIC, 2, `SUMIF(B${firstRow}:B${lastRow},">0")/(${moicDenomF})`, '0.00"×"');
-    lastRowForChart = lastRow;
+    firstRowForChart = firstRow; lastRowForChart = lastRow;
     rIRR9 = rIRR; rMOIC9 = rMOIC;
   }
 
@@ -962,7 +970,7 @@ async function build0809CashFlowsWithChart(core, wb, d, c, A, U, R05, O06, DB07,
     options:Object.assign({}, XL_CHART_BASE, { plugins:{ title:{ display:true, text:'Project vs Equity Cash Flow by Year', color:XL_CHART_COLORS.ink, font:{ size:13, weight:'bold' } }, legend:{ position:'bottom', labels:{ color:XL_CHART_COLORS.ink, font:XL_CHART_FONT } } } })
   }, 520, 280, 0, lastRowForChart+3);
 
-  return { rIRR8, rNPV8, rIRR9, rMOIC9 };
+  return { firstRow9: firstRowForChart, lastRow9: lastRowForChart, rIRR8, rNPV8, rIRR9, rMOIC9 };
 }
 
 /* دقة زمنية شهرية/ربع سنوية + ذروة الاحتياج النقدي الفعلي + صافي النقدي المطلوب من
@@ -1110,19 +1118,23 @@ function build13Comparables(core, wb, d, c){
 }
 
 async function build14RiskRegister(core, wb, d, c){
-  const { xlRowsBuilder, xlNewSheet } = core;
+  const { xlRowsBuilder, xlNewSheet, xlSetFormula } = core;
   const B = xlRowsBuilder();
   B.push(['سجل المخاطر — Risk Register',''],'title');
+  B.push(['⚠️ عمود "الدرجة" = الاحتمالية × الأثر (معادلة حية) — تصنيف الفئة اللونية يبقى نصاً محسوباً من محرك التطبيق لأنه IF-cascade نصي/لوني وليس قيمة عددية.','']);
   B.push(['الفئة','الاحتمالية','الأثر','الدرجة','التصنيف','إجراء التخفيف','المسؤول'],'header');
   const riskItems = (d.risk && d.risk.items) || defaultRiskItems();
   const chartLabels = [], chartScores = [], chartColors = [];
+  const scoreRows = [];
   RISK_CATEGORIES.forEach(cat=>{
     const it = riskItems[cat.key] || {probability:1,impact:1,mitigation:'',owner:''};
     const score = riskScoreOf(it), bnd = riskBandOf(score);
-    B.push([core.T(cat.ar,cat.en), it.probability||1, it.impact||1, score, core.T(bnd.ar,bnd.en), it.mitigation||'—', it.owner||'—']);
+    const rn = B.push([core.T(cat.ar,cat.en), it.probability||1, it.impact||1, null, core.T(bnd.ar,bnd.en), it.mitigation||'—', it.owner||'—']);
+    scoreRows.push(rn);
     chartLabels.push(core.T(cat.ar,cat.en)); chartScores.push(score); chartColors.push(bnd.color);
   });
   const ws = xlNewSheet(wb, '14_Risk Register', B.rows, B.kinds, { colWidths:[22,12,10,10,14,40,18], landscape:true });
+  scoreRows.forEach(rn=> xlSetFormula(ws, rn, 4, `B${rn}*C${rn}`, '0'));
   await addChartImage(wb, ws, { type:'bar',
     data:{ labels:chartLabels, datasets:[{ label:'Risk Score (max 25)', data:chartScores, backgroundColor:chartColors }] },
     options:Object.assign({}, XL_CHART_BASE, { indexAxis:'y', plugins:{ title:{ display:true, text:'Risk Score by Category', color:XL_CHART_COLORS.ink, font:{ size:13, weight:'bold' } }, legend:{ display:false } } })
@@ -1130,20 +1142,28 @@ async function build14RiskRegister(core, wb, d, c){
 }
 
 function build15DD(core, wb, d, c){
-  const { fmtPct, xlRowsBuilder, xlNewSheet } = core;
+  const { xlRowsBuilder, xlNewSheet, xlSetFormula } = core;
   const B = xlRowsBuilder();
   B.push(['العناية الواجبة — Due Diligence',''],'title');
   const ddItems = (d.dd && d.dd.items) || defaultItemsDict();
-  const dd = ddStats(ddItems);
-  B.push(['نسبة الإنجاز الإجمالية', fmtPct(dd.pct)]);
-  B.push(['بنود حرجة معلّقة', dd.criticalPending]);
+  const rPct = B.push(['🟢 نسبة الإنجاز الإجمالية (معادلة حية من جدول البنود أدناه)', null]);
+  const rCritical = B.push(['🟢 بنود حرجة معلّقة (معادلة حية من جدول البنود أدناه)', null]);
   B.push(['', '']);
   B.push(['البند','الفئة','الحالة','المستند','المراجع','الخطورة'],'header');
+  const itemStart = B.rows.length+1;
   Object.entries(ddItems).forEach(([key, it])=>{
     const cat = DD_CATEGORIES.find(c2=>key.startsWith(c2.key));
     B.push([key, cat?core.T(cat.ar,cat.en):'—', it.status||'pending', it.document||'—', it.reviewer||'—', it.severity||'—']);
   });
-  xlNewSheet(wb, '15_DD', B.rows, B.kinds, { colWidths:[26,16,14,20,16,12], landscape:true });
+  const itemEnd = B.rows.length;
+  const ws = xlNewSheet(wb, '15_DD', B.rows, B.kinds, { colWidths:[26,16,14,20,16,12], landscape:true });
+  if(itemEnd>=itemStart){
+    xlSetFormula(ws, rPct, 2, `COUNTIF(C${itemStart}:C${itemEnd},"completed")/COUNTA(C${itemStart}:C${itemEnd})`, '0.0%');
+    xlSetFormula(ws, rCritical, 2, `COUNTIFS(F${itemStart}:F${itemEnd},"critical",C${itemStart}:C${itemEnd},"<>completed")`, '0');
+  } else {
+    ws.getCell(rPct,2).value = 0;
+    ws.getCell(rCritical,2).value = 0;
+  }
 }
 
 function build16ICChecklist(core, wb, d, c){
@@ -1184,21 +1204,51 @@ function build17Negotiation(core, wb, d, c){
   colorize(ws, B.kinds, S);
 }
 
-function build18Waterfall(core, wb, d, c){
-  const { fmtSAR, fmtPct, xlRowsBuilder, xlNewSheet } = core;
+function build18Waterfall(core, wb, d, c, A, CF0809){
+  const { xlRowsBuilder, xlNewSheet, xlSetFormula } = core;
+  const AS = '02_Assumptions';
+  const EQ = '09_Equity CF';
+  const canFormulaize = !!(A && A.hurdle && A.carry && A.lpShare && A.gpShare && A.devShare && CF0809 && CF0809.firstRow9!=null && CF0809.lastRow9!=null);
   const B = xlRowsBuilder();
   B.push(['توزيع العوائد — Distribution Waterfall',''],'title');
+  if(!canFormulaize) B.push(['⚠️ تعذّر ربط هذه الورقة بمعادلات حية لهذه الفرصة — القيم أدناه أرقام محسوبة من محرك التطبيق 🔒 (دقتها كاملة).','']);
   B.push(['البند','القيمة'],'header');
-  B.push(['رأس المال المدفوع (PIC)', Math.round(c.PIC||0)]);
-  B.push(['العائد المفضّل (Preferred Return)', fmtPct(c.pref||0)]);
-  B.push(['Catch-up', fmtPct(c.catchup||0)]);
-  B.push(['حصة الشريك المحدود القياسية (LP Standard)', Math.round(c.lpStandard||0)]);
-  B.push(['مجمع الفائدة المرحّلة (Carry Pool)', Math.round(c.carryPool||0)]);
-  B.push(['علاوة الشريك المحدود (LP Bonus)', Math.round(c.lpBonus||0)]);
-  B.push(['🎯 إجمالي حصة الشريك المحدود (LP Total)', Math.round(c.lpTotal||0)]);
-  B.push(['🎯 إجمالي حصة الشريك العام (GP Total)', Math.round(c.gpTotal||0)]);
-  B.push(['إجمالي حصة المطوّر (Dev Total)', Math.round(c.devTotal||0)]);
-  xlNewSheet(wb, '18_Waterfall', B.rows, B.kinds, { colWidths:[42,26] });
+  const rPIC = B.push(['رأس المال المدفوع (PIC)', canFormulaize?null:Math.round(c.PIC||0)]);
+  const rTD = B.push(['🟢 إجمالي التوزيعات (Total Distributions)', canFormulaize?null:Math.round(c.totalDistrib||0)]);
+  const rRoc = B.push(['استرداد رأس المال (Return of Capital)', canFormulaize?null:Math.round(c.roc||0)]);
+  const rYears = B.push(['🟢 مدة الفرصة الفعلية (سنوات، من 09_Equity CF)', canFormulaize?null:(c.totalYears||0)]);
+  const rPref = B.push(['العائد المفضّل (Preferred Return)', canFormulaize?null:Math.round(c.pref||0)]);
+  const rCatchup = B.push(['Catch-up', canFormulaize?null:Math.round(c.catchup||0)]);
+  const rLpStandard = B.push(['حصة الشريك المحدود القياسية (LP Standard)', canFormulaize?null:Math.round(c.lpStandard||0)]);
+  const rCarryPool = B.push(['مجمع الفائدة المرحّلة (Carry Pool)', canFormulaize?null:Math.round(c.carryPool||0)]);
+  const rLpBonus = B.push(['علاوة الشريك المحدود (LP Bonus)', canFormulaize?null:Math.round(c.lpBonus||0)]);
+  const rGpManager = B.push(['رسوم إدارة الأداء للشريك العام (GP Manager)', canFormulaize?null:Math.round(c.gpManager||0)]);
+  const rLpTotal = B.push(['🎯 إجمالي حصة الشريك المحدود (LP Total)', canFormulaize?null:Math.round(c.lpTotal||0)]);
+  const rGpTotal = B.push(['🎯 إجمالي حصة الشريك العام (GP Total)', canFormulaize?null:Math.round(c.gpTotal||0)]);
+  const rDevTotal = B.push(['إجمالي حصة المطوّر (Dev Total)', canFormulaize?null:Math.round(c.devTotal||0)]);
+  const ws = xlNewSheet(wb, '18_Waterfall', B.rows, B.kinds, { colWidths:[46,26] });
+  if(!canFormulaize) return;
+
+  const f9 = CF0809.firstRow9, l9 = CF0809.lastRow9;
+  const numSAR = '#,##0;(#,##0);"-"';
+  xlSetFormula(ws, rPIC, 2, `-SUMIF('${EQ}'!B${f9}:B${l9},"<0")`, numSAR);
+  xlSetFormula(ws, rTD, 2, `SUMIF('${EQ}'!B${f9}:B${l9},">0")`, numSAR);
+  xlSetFormula(ws, rRoc, 2, `MIN(B${rPIC},B${rTD})`, numSAR);
+  xlSetFormula(ws, rYears, 2, `MAX('${EQ}'!A${f9}:A${l9})`, '0');
+  // pref = MIN(المتبقي بعد الاسترداد، MAX(0، PIC×((1+hurdle)^years−1)))
+  xlSetFormula(ws, rPref, 2,
+    `MIN(B${rTD}-B${rRoc}, MAX(0, B${rPIC}*((1+'${AS}'!B${A.hurdle})^B${rYears}-1)))`, numSAR);
+  // catchup = MIN(المتبقي بعد Pref، MAX(0، IF(متبقٍ>0، carry/(1-carry)×pref، 0)))
+  xlSetFormula(ws, rCatchup, 2,
+    `MIN(B${rTD}-B${rRoc}-B${rPref}, MAX(0, IF(B${rTD}-B${rRoc}-B${rPref}>0, ('${AS}'!B${A.carry}/(1-'${AS}'!B${A.carry}))*B${rPref}, 0)))`, numSAR);
+  const remain3 = `(B${rTD}-B${rRoc}-B${rPref}-B${rCatchup})`;
+  xlSetFormula(ws, rLpStandard, 2, `(1-'${AS}'!B${A.carry})*${remain3}`, numSAR);
+  xlSetFormula(ws, rCarryPool, 2, `'${AS}'!B${A.carry}*${remain3}`, numSAR);
+  xlSetFormula(ws, rLpBonus, 2, `'${AS}'!B${A.lpShare}*B${rCarryPool}`, numSAR);
+  xlSetFormula(ws, rGpManager, 2, `'${AS}'!B${A.gpShare}*B${rCarryPool}`, numSAR);
+  xlSetFormula(ws, rDevTotal, 2, `'${AS}'!B${A.devShare}*B${rCarryPool}`, numSAR);
+  xlSetFormula(ws, rLpTotal, 2, `B${rRoc}+B${rPref}+B${rLpStandard}+B${rLpBonus}`, numSAR);
+  xlSetFormula(ws, rGpTotal, 2, `B${rCatchup}+B${rGpManager}`, numSAR);
 }
 
 function build19FundLedger(core, wb, rec, d, c){
