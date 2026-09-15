@@ -5517,6 +5517,10 @@ function exportOpportunityPptx(id){
   const rec = opportunities.find(o=>o.id===id);
   if(!rec) return;
   const d = withDefaults(rec.data), c = compute(d);
+  // خلية جدول موحَّدة لهذا التصدير (نفس الإصلاح المطبَّق في ic-presentation.js): pptxgenjs
+  // لا يُطبِّق rtlMode المضبوط على مستوى addTable على أي خلية فعلياً — تأكَّد هذا بفحص XML
+  // الناتج مباشرةً — لذا يجب ضبط rtlMode وfontFace صراحة داخل خيارات كل خلية على حدة.
+  const pcell = (text, extra)=> ({ text: xlCleanText(String(text==null?'':text)), options: Object.assign({ rtlMode:true, fontFace:'Sakkal Majalla' }, extra||{}) });
   try{
     const Ctor = window.PptxGenJS || (window.pptxgenjs && window.pptxgenjs.default);
     const pres = new Ctor();
@@ -5526,8 +5530,8 @@ function exportOpportunityPptx(id){
     pres.rtlMode = true;
 
     const s1 = pres.addSlide();
-    s1.addText(d.meta.name||'فرصة استثمارية', { x:0.5,y:0.5,w:12.3,h:1, fontSize:28, bold:true, color:'5B4FE8', align:'right', rtlMode:true, fontFace:'Sakkal Majalla' });
-    s1.addText(`${d.meta.city} · ${d.meta.neighborhood||'—'} · ${d.meta.tier}  |  ${rec.id}`, { x:0.5,y:1.4,w:12.3,h:0.5, fontSize:14, color:'5B5170', align:'right', rtlMode:true, fontFace:'Sakkal Majalla' });
+    s1.addText(xlCleanText(d.meta.name||'فرصة استثمارية'), { x:0.5,y:0.5,w:12.3,h:1, fontSize:28, bold:true, color:'5B4FE8', align:'right', rtlMode:true, fontFace:'Sakkal Majalla' });
+    s1.addText(xlCleanText(`${d.meta.city} · ${d.meta.neighborhood||'—'} · ${d.meta.tier}  |  ${rec.id}`), { x:0.5,y:1.4,w:12.3,h:0.5, fontSize:14, color:'5B5170', align:'right', rtlMode:true, fontFace:'Sakkal Majalla' });
     const vlbl = c.verdict==='good'?'التوصية: قابلة للعرض على لجنة الاستثمار':c.verdict==='warn'?'التوصية: تحت المراجعة':'التوصية: دون معايير القبول';
     s1.addText(vlbl, { x:0.5,y:2.0,w:12.3,h:0.5, fontSize:16, bold:true, color: c.verdict==='good'?'1FA67E':c.verdict==='warn'?'C98A2E':'C23B5B', align:'right', rtlMode:true, fontFace:'Sakkal Majalla' });
 
@@ -5556,20 +5560,32 @@ function exportOpportunityPptx(id){
     const s2 = pres.addSlide();
     s2.addText('التدفقات النقدية السنوية', { x:0.5,y:0.4,w:12.3,h:0.6, fontSize:22, bold:true, color:'5B4FE8', align:'right', rtlMode:true, fontFace:'Sakkal Majalla' });
     const rows = [[
-      {text:'تدفق حقوق الملكية', options:{bold:true, fill:{color:'E8E4FB'}}},
-      {text:'تدفق المشروع', options:{bold:true, fill:{color:'E8E4FB'}}},
-      {text:'السنة', options:{bold:true, fill:{color:'E8E4FB'}}},
+      pcell('تدفق حقوق الملكية', {bold:true, fill:{color:'E8E4FB'}}),
+      pcell('تدفق المشروع', {bold:true, fill:{color:'E8E4FB'}}),
+      pcell('السنة', {bold:true, fill:{color:'E8E4FB'}}),
     ]];
-    for(let i=0;i<c.projectCF.length;i++){
-      rows.push([ fmtSARplain(c.equityCF[i]), fmtSARplain(c.projectCF[i]), String(i) ]);
+    // ملاحظة: autoPage:true كان يُسبِّب استثناءً داخلياً حقيقياً في pptxgenjs 3.12.0 (addTableDefinition
+    // تستدعي addTable داخلياً بصفٍّ فارغ أثناء التقسيم التلقائي للصفحات) فيفشل التصدير بالكامل بصمت —
+    // نفس الخلل المؤكَّد والمُصلَح في ic-presentation.js. الحل هنا أيضاً: تحديد الصفوف المعروضة يدوياً
+    // (أول ٦ + صف حذف + آخر ٣ عند تجاوز ١٠ سنوات) بدل الاعتماد على التقسيم التلقائي المعطوب.
+    const maxRows = 10;
+    const nYears = c.projectCF.length;
+    const cfRow = (i)=> [ pcell(fmtSARplain(c.equityCF[i])), pcell(fmtSARplain(c.projectCF[i])), pcell(String(i)) ];
+    if(nYears<=maxRows){
+      for(let i=0;i<nYears;i++) rows.push(cfRow(i));
+    } else {
+      const headN = 6, tailN = maxRows-headN-1;
+      for(let i=0;i<headN;i++) rows.push(cfRow(i));
+      rows.push([ pcell('⋯'), pcell('⋯'), pcell('⋯') ]);
+      for(let i=nYears-tailN;i<nYears;i++) rows.push(cfRow(i));
     }
-    s2.addTable(rows, { x:0.5,y:1.1,w:12.3, fontSize:11, autoPage:true, border:{type:'solid',color:'D9CFEA',pt:0.5}, rtlMode:true, fontFace:'Sakkal Majalla' });
+    s2.addTable(rows, { x:0.5,y:1.1,w:12.3, fontSize:11, border:{type:'solid',color:'D9CFEA',pt:0.5} });
 
     if(d.constructionFinancing){
       const cfin = d.constructionFinancing;
       const s3 = pres.addSlide();
       s3.addText('التمويل الفعلي — على تكلفة الإنشاء فقط', { x:0.5,y:0.4,w:12.3,h:0.6, fontSize:22, bold:true, color:'5B4FE8', align:'right', rtlMode:true, fontFace:'Sakkal Majalla' });
-      s3.addText(cfin.note||'', { x:0.5,y:1.0,w:12.3,h:0.5, fontSize:13, color:'5B5170', align:'right', rtlMode:true, fontFace:'Sakkal Majalla' });
+      s3.addText(xlCleanText(cfin.note||''), { x:0.5,y:1.0,w:12.3,h:0.5, fontSize:13, color:'5B5170', align:'right', rtlMode:true, fontFace:'Sakkal Majalla' });
       const finKpis = [
         ['القرض البنكي', fmtSARplain(cfin.bankLoan)],
         ['النقد المطلوب من المالك', fmtSARplain(cfin.cashRequiredFromOwnerOrInvestors)],
