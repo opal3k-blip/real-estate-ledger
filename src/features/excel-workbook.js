@@ -512,7 +512,7 @@ export async function exportUnderwritingWorkbook(core, id){
     await build12Scenarios(core, wb, d, c);
 
     /* ===================== 13_Comparables ===================== */
-    build13Comparables(core, wb, d, c);
+    build13Comparables(core, wb, d, c, A);
 
     /* ===================== 14_Risk Register ===================== */
     await build14RiskRegister(core, wb, d, c);
@@ -1089,32 +1089,39 @@ async function build12Scenarios(core, wb, d, c){
   }, 480, 260, 0, B.rows.length+2);
 }
 
-function build13Comparables(core, wb, d, c){
-  const { fmtSAR, fmtPct, fmtNum, xlRowsBuilder, xlNewSheet } = core;
+function build13Comparables(core, wb, d, c, A){
+  const { fmtSAR, fmtPct, fmtNum, xlRowsBuilder, xlNewSheet, xlSetFormula } = core;
   const B = xlRowsBuilder(); const S = [];
   const push = (vals,kind,sem)=>{ const n=B.push(vals,kind); S[n-1]=sem||null; return n; };
   push(['مقارنات السوق — Market Comparables',''],'title');
   const comps = (core.STORE[COMPARABLES_COLLECTION] || []).map(r=>r.data).filter(cm=> cm.city && d.meta.city && cm.city.trim()===d.meta.city.trim());
-  push(['الحي','النوع','مساحة الأرض','السعر/م²','التاريخ','المصدر'],'header');
+  push(['الحي','النوع','مساحة الأرض','السعر الإجمالي','🟢 السعر/م² (معادلة)','التاريخ','المصدر'],'header');
+  const itemStart = B.rows.length+1;
   comps.forEach(cm=>{
-    push([cm.neighborhood||'—', cm.propertyType||'—', cm.landSize, cm.landSize>0?Math.round(cm.price/cm.landSize):0, cm.date||'', cm.source||'—'], 'data', 'ext');
+    push([cm.neighborhood||'—', cm.propertyType||'—', cm.landSize||0, Math.round(cm.price||0), null, cm.date||'', cm.source||'—'], 'data', 'ext');
   });
-  if(!comps.length) push(['لا توجد مقارنات مسجَّلة لهذه المدينة','','','','','']);
-  push(['','','','','','']);
-  const perM2s = comps.filter(cm=>cm.landSize>0).map(cm=>cm.price/cm.landSize);
-  const med = median(perM2s);
-  push(['الوسيط (سعر/م² أرض)', med!=null?Math.round(med):'—']);
-  push(['سعر الفرصة الحالي', Math.round(d.land.price)], 'data', 'link');
+  const itemEnd = B.rows.length;
+  const hasComps = itemEnd>=itemStart;
+  if(!hasComps) push(['لا توجد مقارنات مسجَّلة لهذه المدينة','','','','','','']);
+  push(['','','','','','','']);
+  const rMed = push(['🟢 الوسيط (سعر/م² أرض، معادلة MEDIAN حية)', hasComps?null:'—']);
+  const rCur = push(['🟢 سعر الفرصة الحالي (من 02_Assumptions)', A&&A.landPrice?null:Math.round(d.land.price)], 'data', 'link');
   const { rows: benchRows, scope: benchScope } = matchBenchmarks(core, d.meta.city, d.meta.oppType);
   const bench = benchRows.length? aggregateBench(benchRows) : null;
   if(bench){
     push(['','']);
-    push(['المعيار المرجعي (Benchmark) — '+(benchScope==='exact'?'مدينة ونوع مطابقان':'نوع فقط'), ''],'section');
+    push(['المعيار المرجعي (Benchmark) — '+(benchScope==='exact'?'مدينة ونوع مطابقان':'نوع فقط')+' — بيانات مرجعية خارجية من مقارنات أخرى، ليست جزءاً من حسابات هذه الفرصة',''],'section');
     push(['Equity IRR range', bench.irrMin!=null?`${fmtPct(bench.irrMin)} – ${bench.irrMax!=null?fmtPct(bench.irrMax):'—'}`:'—'], 'data', 'ext');
     push(['Cap Rate range', bench.capRateMin!=null?`${fmtPct(bench.capRateMin)} – ${bench.capRateMax!=null?fmtPct(bench.capRateMax):'—'}`:'—'], 'data', 'ext');
   }
-  const ws = xlNewSheet(wb, '13_Comparables', B.rows, B.kinds, { colWidths:[26,18,16,16,14,20], landscape:true });
+  const ws = xlNewSheet(wb, '13_Comparables', B.rows, B.kinds, { colWidths:[26,18,16,18,18,14,20], landscape:true });
   colorize(ws, B.kinds, S);
+  // السعر/م² لكل مقارنة = صيغة حية (السعر الإجمالي ÷ مساحة الأرض)، فارغة إن كانت المساحة صفراً بدل
+  // إظهار صفر مضلِّل — هذا أيضاً يجعل MEDIAN() يتجاهلها تلقائياً (يتجاهل النص/الفراغ) تماماً كما
+  // تُستثنى هذه الصفوف من median() في محرك التطبيق (يُصفّي landSize>0 فقط).
+  for(let r=itemStart; r<=itemEnd; r++){ xlSetFormula(ws, r, 5, `IFERROR(D${r}/C${r},"")`, '#,##0'); }
+  if(hasComps) xlSetFormula(ws, rMed, 2, `MEDIAN(E${itemStart}:E${itemEnd})`, '#,##0');
+  if(A && A.landPrice) xlSetFormula(ws, rCur, 2, `'02_Assumptions'!B${A.landPrice}`, '#,##0;(#,##0);"-"');
 }
 
 async function build14RiskRegister(core, wb, d, c){
