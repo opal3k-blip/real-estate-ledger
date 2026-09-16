@@ -9,43 +9,43 @@
 @import url('https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
 
 :root{
-  /* هوية بصرية مستلهمة من حجر الأوبال ولوجو أوبال: قاعدة لؤلؤية بنفسجية + لمسات لعب ألوان أزرق-بنفسجي ووردي حراري وتيل فيروزي — طابع إبداعي متألق يعكس لمعان حجر الأوبال ذاته، بدل الزمردي والذهبي السابق. */
+  /* هوية بصرية مُنعشة: زمردي عميق + ذهبي دافئ — طابع فاخر يليق بمنصة استثمار عقاري، بدل الرمادي الغرافيتي السابق. */
   color-scheme: light; /* بدون هذا، المتصفح يرسم أدوات التحكم الأصلية (قوائم select المنسدلة تحديداً) بلوحة
     ألوان افتراضية مستقلة عن متغيرات CSS هنا فتتعارض أحياناً معها — النتيجة نص أبيض على خلفية بيضاء (أو العكس)
     غير مرئي إطلاقاً داخل قائمة select مفتوحة (مثال: قائمة "القرار" في بوابة اعتماد لجنة الاستثمار). */
-  --paper:#F7F5FC; --surface:#FFFFFF; --surface-2:#EFEAF8; --surface-3:#E1D6F2;
-  --ink:#241B36; --ink-soft:#5B5170; --ink-faint:#948AA8; --border:#D9CFEA;
-  --accent:#5B4FE8; --accent-ink:#FFFFFF; --accent-soft:#E8E4FB; --accent-soft-ink:#3A32A0;
-  --gold:#D6558B; --gold-soft:#FBE4EE;
-  --good:#1FA67E; --good-soft:#DBF4EA;
-  --warn:#C98A2E; --warn-soft:#FBEEDA;
-  --bad:#C23B5B; --bad-soft:#FAE1E8;
-  --shadow: 0 1px 2px rgba(36,27,54,.08), 0 8px 24px -12px rgba(36,27,54,.22);
+  --paper:#F8F6EF; --surface:#FFFFFF; --surface-2:#EFEAD8; --surface-3:#E3DAB8;
+  --ink:#152420; --ink-soft:#4B5C52; --ink-faint:#8A9890; --border:#DED2A6;
+  --accent:#0E6B4A; --accent-ink:#FFFFFF; --accent-soft:#DCEEE2; --accent-soft-ink:#0A4A33;
+  --gold:#B9862E; --gold-soft:#F4E7C6;
+  --good:#2E9A5C; --good-soft:#DFF2E5;
+  --warn:#B4791E; --warn-soft:#F6E8CE;
+  --bad:#B23B2C; --bad-soft:#F8E1DB;
+  --shadow: 0 1px 2px rgba(21,36,32,.07), 0 8px 24px -12px rgba(21,36,32,.20);
   --radius: 12px;
 }
 @media (prefers-color-scheme: dark){
   :root:not([data-theme="light"]){
     color-scheme: dark;
-    --paper:#120E1F; --surface:#1B1530; --surface-2:#241D3D; --surface-3:#2F2650;
-    --ink:#F0ECFA; --ink-soft:#B8ADD1; --ink-faint:#7A6E94; --border:#3A3157;
-    --accent:#8B7EFF; --accent-ink:#14102A; --accent-soft:#2B2454; --accent-soft-ink:#C4BBFF;
-    --gold:#F08FC0; --gold-soft:#3D1F34;
-    --good:#4FE0B0; --good-soft:#1B3B34;
-    --warn:#F0B15E; --warn-soft:#3D2E14;
-    --bad:#F0708C; --bad-soft:#3D1B24;
-    --shadow: 0 1px 2px rgba(10,6,24,.45), 0 12px 28px -14px rgba(10,6,24,.65);
+    --paper:#0F1815; --surface:#16211C; --surface-2:#1C2921; --surface-3:#243228;
+    --ink:#EDEFE9; --ink-soft:#A9B6AC; --ink-faint:#748078; --border:#2C3B31;
+    --accent:#3FCB8F; --accent-ink:#062015; --accent-soft:#173829; --accent-soft-ink:#84E6B4;
+    --gold:#E0B563; --gold-soft:#332711;
+    --good:#4FCB86; --good-soft:#17301F;
+    --warn:#E7B85E; --warn-soft:#332711;
+    --bad:#E48577; --bad-soft:#301915;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 12px 28px -14px rgba(0,0,0,.6);
   }
 }
 :root[data-theme="dark"]{
   color-scheme: dark;
-  --paper:#120E1F; --surface:#1B1530; --surface-2:#241D3D; --surface-3:#2F2650;
-  --ink:#F0ECFA; --ink-soft:#B8ADD1; --ink-faint:#7A6E94; --border:#3A3157;
-  --accent:#8B7EFF; --accent-ink:#14102A; --accent-soft:#2B2454; --accent-soft-ink:#C4BBFF;
-  --gold:#F08FC0; --gold-soft:#3D1F34;
-  --good:#4FE0B0; --good-soft:#1B3B34;
-  --warn:#F0B15E; --warn-soft:#3D2E14;
-  --bad:#F0708C; --bad-soft:#3D1B24;
-  --shadow: 0 1px 2px rgba(10,6,24,.45), 0 12px 28px -14px rgba(10,6,24,.65);
+  --paper:#0F1815; --surface:#16211C; --surface-2:#1C2921; --surface-3:#243228;
+  --ink:#EDEFE9; --ink-soft:#A9B6AC; --ink-faint:#748078; --border:#2C3B31;
+  --accent:#3FCB8F; --accent-ink:#062015; --accent-soft:#173829; --accent-soft-ink:#84E6B4;
+  --gold:#E0B563; --gold-soft:#332711;
+  --good:#4FCB86; --good-soft:#17301F;
+  --warn:#E7B85E; --warn-soft:#332711;
+  --bad:#E48577; --bad-soft:#301915;
+  --shadow: 0 1px 2px rgba(0,0,0,.4), 0 12px 28px -14px rgba(0,0,0,.6);
 }
 :root[data-theme="light"]{ color-scheme: light; }
 
@@ -73,6 +73,13 @@ button{font-family:inherit;}
   border-radius:var(--radius); box-shadow:var(--shadow); margin-bottom:18px;
 }
 .brand{ display:flex; align-items:center; gap:12px; }
+.brand.brand-home{ cursor:pointer; border-radius:10px; padding:2px; margin:-2px; transition:background .12s; }
+.brand.brand-home:hover{ background:var(--surface-2); }
+.btn-home{
+  background:var(--accent); color:var(--accent-ink); border-color:var(--accent);
+  font-weight:700;
+}
+.btn-home:hover{ filter:brightness(1.05); }
 .brand .mark{
   width:42px;height:42px;border-radius:10px;
   background:linear-gradient(135deg,var(--accent),var(--gold));
@@ -84,6 +91,29 @@ button{font-family:inherit;}
 .opal-footer{
   margin-top:28px; padding:18px 20px; text-align:center; color:var(--ink-faint); font-size:11.5px;
   border-top:1px solid var(--border); display:flex; flex-direction:column; align-items:center; gap:8px;
+}
+
+/* شارة "تعديلات غير محفوظة" العائمة — حمراء نابضة أثناء وجود تعديل معلّق، تتحوّل لحظياً
+   إلى خضراء "تم الحفظ ✓" عند نجاح الحفظ ثم تتلاشى تلقائياً (راجع core.js). */
+#unsaved-edits-badge{
+  position:fixed; bottom:18px; inset-inline-end:18px; z-index:9999;
+  display:flex; align-items:center; gap:9px; font-weight:700; font-size:12.5px; line-height:1.4;
+  padding:10px 16px; border-radius:10px; box-shadow:var(--shadow); font-family:inherit;
+  max-width:min(90vw,360px); background:var(--bad-soft); color:var(--bad); border:1px solid var(--bad);
+  opacity:0; transform:translateY(10px) scale(.96); pointer-events:none;
+  transition:opacity .22s ease, transform .22s ease, background .25s ease, color .25s ease, border-color .25s ease;
+}
+#unsaved-edits-badge.is-visible{ opacity:1; transform:translateY(0) scale(1); pointer-events:auto; }
+#unsaved-edits-badge .dot{
+  width:9px; height:9px; border-radius:50%; flex:none; background:var(--bad); box-shadow:0 0 0 rgba(178,59,44,.5);
+}
+#unsaved-edits-badge.is-warn .dot{ animation:badge-pulse-red 1.4s ease-out infinite; }
+#unsaved-edits-badge.is-saved{ background:var(--good-soft); color:var(--good); border-color:var(--good); }
+#unsaved-edits-badge.is-saved .dot{ background:var(--good); animation:none; }
+@keyframes badge-pulse-red{
+  0%{ box-shadow:0 0 0 0 rgba(178,59,44,.45); }
+  70%{ box-shadow:0 0 0 9px rgba(178,59,44,0); }
+  100%{ box-shadow:0 0 0 0 rgba(178,59,44,0); }
 }
 .opal-footer img{ height:34px; width:auto; opacity:.92; }
 .opal-footer a{ color:var(--accent); text-decoration:none; font-weight:600; }
@@ -216,6 +246,12 @@ select option{ background:var(--surface); color:var(--ink); }
 .suffix-wrap .suffix{ position:absolute; left:11px; top:50%; transform:translateY(-50%); font-size:11.5px; color:var(--ink-faint); pointer-events:none; }
 .suffix-wrap input{ padding-left:44px; }
 
+/* نجمة الحقول "الضرورية" — تشير إلى حقل بلا قيمة افتراضية جاهزة، لازم يُعبَّأ يدوياً لأنه
+   يمس الحساب/النسب مباشرة (راجع reqStar() وblankOpportunity() في core.js). */
+.req-star{ color:var(--bad); font-weight:800; margin-inline-start:2px; cursor:help; }
+.field.is-required input, .field.is-required select{ border-inline-start:3px solid var(--bad-soft); }
+.field.is-required input:focus-visible, .field.is-required select:focus-visible{ border-color:var(--accent); }
+
 .chooser{ display:grid; grid-template-columns:repeat(3,1fr); gap:12px; }
 .chooser .opt{ border:1.5px solid var(--border); border-radius:11px; padding:14px; cursor:pointer; text-align:center; transition:border-color .1s, background .1s; }
 .chooser .opt:hover{ border-color:var(--accent); }
@@ -241,7 +277,7 @@ select option{ background:var(--surface); color:var(--ink); }
 .section h3{ font-size:14.5px; margin:0 0 14px; display:flex; align-items:center; gap:8px; }
 .section h3 .n{ background:var(--accent-soft); color:var(--accent-soft-ink); width:22px;height:22px;border-radius:6px; display:inline-flex; align-items:center; justify-content:center; font-size:11.5px; font-family:'Aptos','Segoe UI',Arial,sans-serif; }
 .kv{ display:grid; grid-template-columns:1fr auto; gap:8px 16px; font-size:13px; }
-.kv .k{ color:var(--ink-soft); min-width:0; overflow-wrap:break-word; }
+.kv .k{ color:var(--ink-soft); }
 .kv .v{ font-family:'Aptos','Segoe UI',Arial,sans-serif; direction:ltr; text-align:center; font-weight:600; }
 .kv .v .bidi-number{ display:inline-block; direction:ltr; unicode-bidi:isolate; white-space:nowrap; text-align:center; }
 table.report{ width:100%; border-collapse:collapse; font-size:13px; }
@@ -384,7 +420,7 @@ html[dir="ltr"] .kv{
 @media print{
   *{ -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; color-adjust:exact !important; }
   .topbar, .kpis.portfolio, .dash-hero, .dash-section, .panel, .badge-row, .small-btns, .overlay, .db-toolbar, .opal-footer, button{ display:none !important; }
-  html,body{ background:#fff; color:#241B36; font-family:'Sakkal Majalla','Amiri','Arial',serif; font-size:12px; line-height:1.5; }
+  html,body{ background:#fff; color:#1B1D22; font-family:'Sakkal Majalla','Amiri','Arial',serif; font-size:12px; line-height:1.5; }
   .app{ padding:0; max-width:none; }
   .memo{ gap:0; }
   /* أرقام/نصوص إنجليزية داخل التقرير المطبوع تبقى بخط لاتيني احترافي واضح، بدل الاعتماد على خط عربي لعرض أرقام */
@@ -393,53 +429,53 @@ html[dir="ltr"] .kv{
   /* شريط علوي متكرر في كل صفحة (اسم الشركة + عنوان التقرير) — position:fixed يتكرر تلقائياً بمعظم المتصفحات عند الطباعة */
   .print-run-header{
     display:flex; align-items:center; justify-content:space-between; position:fixed; top:0; left:0; right:0;
-    font-size:8.5px; color:#948AA8; border-bottom:.5px solid #D9CFEA; padding-bottom:3px;
+    font-size:8.5px; color:#9195A0; border-bottom:.5px solid #E3E1DA; padding-bottom:3px;
   }
 
   /* letterhead (شعار + اسم الشركة، عنصر DOM حتى تُعرض صورة الشعار فعلياً) — غلاف التقرير، صفحة أولى فقط */
   .print-letterhead{
     display:flex; align-items:center; justify-content:center; gap:14px;
-    border-bottom:3px solid #5B4FE8; padding-bottom:14px; margin-bottom:18px;
+    border-bottom:3px solid #1F5F6B; padding-bottom:14px; margin-bottom:18px;
   }
   .print-letterhead-logo{ height:42px; max-width:130px; object-fit:contain; }
   .print-letterhead-text{ text-align:center; }
-  .print-letterhead-company{ font-size:14.5px; font-weight:700; color:#241B36; margin-bottom:3px; letter-spacing:.01em; }
-  .print-letterhead-app{ font-family:'Sakkal Majalla','Amiri',serif; font-size:11px; letter-spacing:.07em; color:#5B4FE8; font-weight:700; }
-  .print-letterhead-date{ font-size:9.5px; color:#5B5170; margin-top:3px; }
+  .print-letterhead-company{ font-size:14.5px; font-weight:700; color:#1B1D22; margin-bottom:3px; letter-spacing:.01em; }
+  .print-letterhead-app{ font-family:'Sakkal Majalla','Amiri',serif; font-size:11px; letter-spacing:.07em; color:#1F5F6B; font-weight:700; }
+  .print-letterhead-date{ font-size:9.5px; color:#565A63; margin-top:3px; }
 
   .memo-hero{
-    border:none; border-bottom:2px solid #5B4FE8; background:linear-gradient(180deg,#EFEAF8,transparent);
+    border:none; border-bottom:2px solid #1F5F6B; background:linear-gradient(180deg,#F2F7F8,transparent);
     border-radius:0; padding:12px 4px 16px; margin-bottom:18px; break-after:avoid;
   }
-  .memo-hero h2{ font-size:23px; margin:8px 0 6px; color:#241B36; font-weight:800; }
-  .memo-hero .eyebrow{ color:#5B4FE8; font-weight:800; }
-  .memo-hero .meta{ color:#5B5170; }
+  .memo-hero h2{ font-size:23px; margin:8px 0 6px; color:#1B1D22; font-weight:800; }
+  .memo-hero .eyebrow{ color:#1F5F6B; font-weight:800; }
+  .memo-hero .meta{ color:#565A63; }
   .verdict-banner{ border:1px solid rgba(0,0,0,.15) !important; font-weight:700; }
 
   .section{
-    border:1px solid #D9CFEA; border-radius:6px; break-inside:avoid; margin-bottom:13px;
+    border:1px solid #DCDAD3; border-radius:6px; break-inside:avoid; margin-bottom:13px;
     box-shadow:none;
   }
   .section h3{
-    background:linear-gradient(90deg,#EFEAF8,#fff); border-inline-start:3.5px solid #5B4FE8;
+    background:linear-gradient(90deg,#F2F7F8,#fff); border-inline-start:3.5px solid #1F5F6B;
     border-radius:6px 6px 0 0; padding-inline-start:12px !important; font-weight:800; letter-spacing:.01em;
   }
   .kpis{ break-inside:avoid; grid-template-columns:repeat(3,1fr) !important; gap:9px; }
-  .kpi{ border:1px solid #D9CFEA; border-inline-start-width:3px; padding:10px 12px; box-shadow:none; }
+  .kpi{ border:1px solid #E3E6DE; border-inline-start-width:3px; padding:10px 12px; box-shadow:none; }
   .kpi .l{ font-size:10px; }
   .kpi .v{ font-size:18px; }
   table.report, table.db{ break-inside:auto; width:100% !important; min-width:0 !important; }
   table.report tr, table.db tr{ break-inside:avoid; }
-  table.report th, table.db th{ background:#EFEAF8 !important; border-bottom:1.5px solid #5B4FE8 !important; }
-  table.report tbody tr:nth-child(even) td, table.db tbody tr:nth-child(even) td{ background:#F7F5FC; }
+  table.report th, table.db th{ background:#F2F7F8 !important; border-bottom:1.5px solid #1F5F6B !important; }
+  table.report tbody tr:nth-child(even) td, table.db tbody tr:nth-child(even) td{ background:#FAFAF8; }
   canvas{ break-inside:avoid; max-height:200px !important; }
   .tag, .verdict-good, .verdict-warn, .verdict-bad{ border:.5px solid rgba(0,0,0,.12); }
 
   /* footer disclaimer + العلامة التجارية */
   .memo::after{
     content: "أوبال القابضة — مستكشف الفرص العقارية — أرقام تقديرية لأغراض دراسة الجدوى الأولية وليست عرضاً ملزماً. Opal Holding — Opal Real Estate Opportunity Explorer — figures are estimates for preliminary feasibility study purposes only and do not constitute a binding offer.";
-    display:block; text-align:center; font-size:9px; color:#948AA8; margin-top:20px;
-    border-top:1px solid #D9CFEA; padding-top:9px;
+    display:block; text-align:center; font-size:9px; color:#888C95; margin-top:20px;
+    border-top:1px solid #DCDAD3; padding-top:9px;
   }
   a[href]:after{ content:""; }
 }

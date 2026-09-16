@@ -7,7 +7,36 @@ let mapCode=fs.readFileSync(path.join(__dirname,'../../src/features/max-acquisit
 mapCode=mapCode.replace(/export\s+function/g,'function').replace(/export\s*\{[^}]*\};?/, 'globalThis.__MAP = { maxAcquisitionPrice, irrAtPrice };');
 vm.runInContext(mapCode, ctx, {timeout:20000});
 const MAP=ctx.__MAP;
-function cp(){return JSON.parse(JSON.stringify(C.blankOpportunity()));}
+// ملاحظة (سبتمبر 2026): blankOpportunity() صارت تُرجع أصفاراً لكل حقل خاص بالمشروع (طلب المستخدم —
+// معالج "فرصة جديدة" بالواجهة يجب ألا يعرض أي رقم افتراضي جاهز). هذا الملف يختبر صحة صيغ compute()
+// نفسها بمعزل عن الواجهة، فنطبّق هنا نسخة معزولة من الافتراضات الواقعية القديمة فوق الهيكل الفارغ —
+// أي حقل لا يحدده base()/الاختبار صراحة بنفسه (مثل development.exitCapRate) يحتاجها ليبقى قابلاً للتنبؤ.
+const REALISTIC_TEST_DEFAULTS = {
+  land: { area:5000, price:3500, far:2.0, bar:0.5, floorsAllowed:4, basements:1, floorHeight:3.6, setbacks:0.15,
+    basementCostPremiumPct:0.30, basementDepthEscalationPct:0.07, floorHeightPremiumPct:0.04 },
+  strategy: { salePct:0.5, offPlanSale:{ preSalePctThreshold:0.30 }, directSale:{ collectionLagYears:1 } },
+  income: { rent:1000, occupancy:0.92, opex:0.28, wale:4.0, tenantConc:0.20,
+    nnn: { leaseTermRemaining:10, pctRentRate:0.06 },
+    hospitality: { adr:450, keys:120, gopMargin:0.35 },
+    logisticsSpec: { clearHeight:11, dockDoors:8 },
+    dataCenterSpec: { powerDensityKw:1.5 },
+    refinance: { intervalYears:5, refiLtv:0.65, refiCostPct:0.01, analysisHorizon:10 },
+  },
+  development: { salePrice:9000, buildCost:4800, constructionYears:2, operationYears:1, exitCapRate:0.08, efficiency:0.85, contingency:0.05,
+    costBreakdown:{ structure:0.42, mep:0.18, finishes:0.20, external:0.08, fees:0.12 } },
+  landbank: { appreciation:0.08, holdingYears:4, carryAnnual:250000 },
+  vat: { refundLagYears:1 },
+  subdivision: { absorptionYears:4, priceEscalationAnnual:0.05 },
+  subscription: { minInvestment:100000, subscriptionFee:0.02, lockupYears:5 },
+  economics: { hurdle:0.12, carry:0.20, lpShare:0.60, gpShare:0.25, devShare:0.15 },
+  fees: { mgmt:0.008, structuring:0.008, arrangement:0.010, acquisition:0.015, disposition:0.010, assetMgmt:0.0075, propMgmt:0.04, regAuditCustodian:200000, cmaSetup:750000, dueDiligence:200000, valuation:150000 },
+  financing: { ltc:0.60, saibor:0.055, margin:0.025, tenor:5, seniorPct:0.80, mezzMarginAdj:0.04, amortYears:10 },
+  wacc: { rf:0.045, mrp:0.065, beta:0.95, crp:0.012, sp:0.020, alpha:0.015, marketCap:0.075, growth:0.03 },
+  exitCosts: { broker:0.025, legal:0.010, exitFee:0.005 },
+  criteria: { preLeasingActual:0.30, preSaleActual:0.30 },
+};
+function deepMergeOverride(dst,src){for(const k in src){const sv=src[k];if(sv&&typeof sv==='object'&&!Array.isArray(sv)){if(!dst[k]||typeof dst[k]!=='object')dst[k]={};deepMergeOverride(dst[k],sv);}else{dst[k]=sv;}}return dst;}
+function cp(){return deepMergeOverride(JSON.parse(JSON.stringify(C.blankOpportunity())), REALISTIC_TEST_DEFAULTS);}
 function set(o,p,v){const a=p.split('.');let x=o;for(let i=0;i<a.length-1;i++)x=x[a[i]];x[a.at(-1)]=v;}
 function clean(o){for(const k of ['mgmt','assetMgmt','regAuditCustodian','structuring','acquisition','arrangement','cmaSetup','dueDiligence','valuation'])set(o,'fees.'+k,0);set(o,'subscription.subscriptionFee',0);for(const k of ['broker','legal','rett','exitFee'])set(o,'exitCosts.'+k,0);set(o,'fees.disposition',0);}
 function base(){const o=cp();set(o,'meta.oppType','development');set(o,'meta.tier','متوسط');set(o,'meta.useType','__neutral__');for(const k of ['soil','water','tower','topo','infra'])set(o,'site.'+k,1);set(o,'land.floorHeight',3.6);set(o,'land.area',5000);set(o,'land.price',2000);set(o,'land.far',2);set(o,'land.bar',.5);set(o,'land.basements',0);set(o,'development.buildCost',3000);set(o,'development.salePrice',6000);set(o,'development.efficiency',.85);set(o,'development.contingency',.05);set(o,'development.constructionYears',2);set(o,'development.operationYears',0);set(o,'development.scopeType','both');set(o,'strategy.salePct',1);set(o,'financing.ltc',.6);set(o,'financing.saibor',.055);set(o,'financing.margin',.025);set(o,'financing.interestDuringConstruction','cash');clean(o);return o;}

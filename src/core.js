@@ -429,6 +429,25 @@ const USE_TYPES = {
   // الإضافة التالية لتغطية الكمبوندات السكنية المغلقة (مسوّرة + أمن + مرافق مشتركة) كنوع منفصل —
   // أرقام تقديرية أولية (علاوة سعرية أعلى مقابل NIY أضيق نسبياً بسبب رسوم الخدمة)، عدّلها من بيانات سوق فعلية.
   "سكني - كمبوند مغلق ومسوّر (Gated Compound)": { mult:1.05, niy:0.055 },
+  // إضافة سبتمبر 2026 (بموافقة المستخدم — أربعة استخدامات لم تكن مغطاة) — تحذير: لا يوجد مصدر سوقي
+  // سعودي منشور موثوق per-m² لأيٍّ من الأربعة أدناه وقت الإضافة (بحث فعلي عبر WebSearch لم يُظهر
+  // سوى بيانات أمريكية/عامة أو أرقام مشاريع عملاقة غير تمثيلية) — كل رقم هنا استدلال هندسي مسنود
+  // بمقارنة مع أقرب فئة موجودة فعلاً في النموذج، لا رقم سوق مُتحقَّق منه. عدّلها فور توفر مصدر فعلي.
+  // رعاية كبار السن: بين المكاتب (تجهيز قياسي) والرعاية الصحية (أنظمة طبية/تحمل أحمال) — منشآت
+  // الرعاية طويلة الأمد عادة أخف طبياً من مستشفى كامل لكنها أثقل من سكني عادي (تحكم مناخي، ممرات
+  // كراسي متحركة، أنظمة نداء ممرضات). NIY قريب من المكاتب لاستقرار العقود التشغيلية طويلة الأمد.
+  "رعاية كبار السن / دور رعاية (Senior Living / Care Homes)": { mult:1.20, niy:0.075 },
+  // سكن طلابي/جماعي مؤسسي: كثافة غرف عالية وتشطيب أبسط من الشقق التمليكية، لكن نسبة ممرات/مرافق
+  // مشتركة (مطابخ، غسيل، صالات دراسة) أعلى من السكني التقليدي — وضعناه بين السكني المفتوح والكمبوند.
+  "سكن طلابي / سكن جماعي مؤسسي (Student / Institutional Housing)": { mult:0.95, niy:0.065 },
+  // مرافق رياضية كبرى/استادات: من أعلى الفئات كثافة رأسمالية بسبب الأسقف طويلة الباع والإنشاء
+  // الهيكلي المعقد ومقصورات الضيافة وأنظمة البث، مع كثافة إشغال منخفضة نسبياً للمساحة المبنية —
+  // niy=null لأن نموذج الإيراد (رعاية/تذاكر/تسمية) لا يقاس بـNIY تقليدي، بنفس معاملة "مخطط رئيسي شامل".
+  "مرافق رياضية كبرى / استادات (Major Sports Facilities / Stadiums)": { mult:1.75, niy:null },
+  // التخزين الذاتي: أبسط الفئات إنشائياً (جدران فاصلة داخلية + أبواب فردية، بلا تحميل أرضيات ثقيل
+  // أو أرصفة شحن كاللوجستي التقليدي) — أقل من معامل اللوجستيات العام، بينما NIY أعلى نسبياً
+  // لانخفاض مصاريف التشغيل واستقرار الإشغال المعروف عالمياً لهذا القطاع.
+  "التخزين الذاتي (Self-Storage)": { mult:0.65, niy:0.085 },
 };
 const ASSET_CLASSES = {
   "عام":            { t:'عام (دخل قياسي)', en:'Standard income' },
@@ -467,24 +486,24 @@ function blankOpportunity(){
     // محايدة) نقطة بداية أكثر منطقية لفرصة جديدة لم يُحدِّد المستخدم فئتها بعد؛ يبقى قابلاً للتغيير فوراً
     // من شاشة الفرضيات حسب موقع الفرصة الفعلي.
     meta: { name:'', city:CITIES[0], neighborhood:'', tier:'متوسط', oppType:'income', useType:Object.keys(USE_TYPES)[3], analyst:'Opal', createdAt:null, updatedAt:null, createdBy:null, updatedBy:null },
-    land: { area:5000, price:3500, far:2.0, bar:0.5, floorsAllowed:4, basements:1, floorHeight:3.6, setbacks:0.15, bonusAreaPct:0,
-      basementCostPremiumPct:0.30, basementDepthEscalationPct:0.07, floorHeightPremiumPct:0.04 },
+    land: { area:0, price:0, far:0, bar:0, floorsAllowed:0, basements:0, floorHeight:0, setbacks:0, bonusAreaPct:0,
+      basementCostPremiumPct:0, basementDepthEscalationPct:0, floorHeightPremiumPct:0 },
     site: { soil:0, water:0, tower:0, topo:0, infra:0 },
-    strategy: { exitStrategy:"مختلط (Mixed Sell+Rent)", salePct:0.5,
+    strategy: { exitStrategy:"مختلط (Mixed Sell+Rent)", salePct:0,
       // البيع على الخارطة (نظام "وافي") — بيع كامل وحدات المشروع على مراحل الإنشاء بدل انتظار التسليم،
       // مع تأخير زمني (Lag) لتحرير المبلغ من حساب الضمان. معطَّل افتراضياً؛ حصري مع نسبة البيع/الإيجار
       // المختلطة العادية (يبيع 100% من الوحدات عبر الشرائح بدل تقسيمها بين بيع وإيجار).
-      offPlanSale: { enabled:false, preSalePctThreshold:0.30, curve:'even', escrowLagYears:0, priceEscalationAnnual:0 },
+      offPlanSale: { enabled:false, preSalePctThreshold:0, curve:'even', escrowLagYears:0, priceEscalationAnnual:0 },
       // البيع المباشر — تمييز مشترٍ كاش عن مشترٍ بتمويل عقاري بنكي: حصة الأخير تتأخر في التحصيل الفعلي
       // (موافقة البنك وتحويل التمويل يستغرقان وقتاً أطول من دفعة كاش مباشرة). معطَّلة افتراضياً (0%).
-      directSale: { bankFinancedPct:0, collectionLagYears:1 } },
-    income: { gla:null, rent:1000, occupancy:0.92, opex:0.28, wale:4.0, tenantConc:0.20, distFreq:"ربع سنوي (Quarterly)",
+      directSale: { bankFinancedPct:0, collectionLagYears:0 } },
+    income: { gla:null, rent:0, occupancy:0, opex:0, wale:0, tenantConc:0, distFreq:"ربع سنوي (Quarterly)",
       assetClass:'عام', holdStrategy:'exit_sale', mixedUse:false,
-      nnn: { tenantCreditTier:'وطني (National)', leaseTermRemaining:10, pctRent:false, pctRentRate:0.06, annualSales:0, envReserveAnnual:0 },
-      hospitality: { adr:450, keys:120, gopMargin:0.35 },
-      logisticsSpec: { clearHeight:11, dockDoors:8 },
-      dataCenterSpec: { powerDensityKw:1.5, redundancyTier:'Tier III (N+1)' },
-      refinance: { intervalYears:5, refiLtv:0.65, refiCostPct:0.01, analysisHorizon:10 },
+      nnn: { tenantCreditTier:'وطني (National)', leaseTermRemaining:0, pctRent:false, pctRentRate:0, annualSales:0, envReserveAnnual:0 },
+      hospitality: { adr:0, keys:0, gopMargin:0 },
+      logisticsSpec: { clearHeight:0, dockDoors:0 },
+      dataCenterSpec: { powerDensityKw:0, redundancyTier:'Tier III (N+1)' },
+      refinance: { intervalYears:0, refiLtv:0, refiCostPct:0, analysisHorizon:0 },
     },
     // تحديث buildCost الافتراضي من 3,800 إلى 4,800 ر.س/م² (سبتمبر 2026) بعد مراجعة مقابل مصادر
     // تكلفة بناء سعودية حديثة (Turner & Townsend KSAMI 2025، Compass Project Consulting H2 2024،
@@ -493,10 +512,10 @@ function blankOpportunity(){
     // 7,000-10,000 لمباني مكاتب Grade A). هذا لا يزال تقديراً متحفظاً (دون أرقام الأبراج الفاخرة في
     // مناطق الأعمال المركزية) يمكن تعديله يدوياً لكل فرصة حسب موقعها ومستوى تشطيبها الفعلي — راجع
     // أيضاً ROWS في space-efficiency-data.js لمرجع أكثر تفصيلاً بحسب نوع المنتج.
-    development: { salePrice:9000, buildCost:4800, constructionYears:2, operationYears:1, exitCapRate:0.08, efficiency:0.85, contingency:0.05,
+    development: { salePrice:0, buildCost:0, constructionYears:0, operationYears:0, exitCapRate:0, efficiency:0, contingency:0,
       scopeType:'both', infraCostPerSqm:0,
-      costBreakdown:{ structure:0.42, mep:0.18, finishes:0.20, external:0.08, fees:0.12 } },
-    landbank: { appreciation:0.08, holdingYears:4, carryAnnual:250000, zoningNote:'', hbuNote:'', interimAnnualIncome:0,
+      costBreakdown:{ structure:0, mep:0, finishes:0, external:0, fees:0 } },
+    landbank: { appreciation:0, holdingYears:0, carryAnnual:0, zoningNote:'', hbuNote:'', interimAnnualIncome:0,
       whiteLandFeePct:0.025, whiteLandFeeExempt:false },
     // الزكاة الشرعية — تقدير توضيحي مبسّط لأثرها على عائد المستثمر السعودي/الخليجي (وليس احتساباً زكوياً
     // معتمداً — الوعاء الفعلي يعتمد على تفاصيل الأصول والمطلوبات ونوع الصندوق). معطَّلة افتراضياً.
@@ -505,27 +524,27 @@ function blankOpportunity(){
     // الاستخدامات السكنية معفاة (فتتحول ضريبة المدخلات غير المستردة على OpEx إلى تكلفة حقيقية إضافية تُخصم
     // من NOI)، وبقية الاستخدامات خاضعة للنسبة الأساسية (تُحصَّل فوق الإيجار وتُورَّد للجهة الضريبية — محايدة
     // على NOI بافتراض استرداد كامل لضريبة المدخلات، وتظهر فقط كبند إفصاحي). معطَّلة افتراضياً.
-    vat: { enabled:false, ratePct:0.15, constructionInputVatPct:0.15, inputRecoveryPct:null, refundLagYears:1, professionalFeesVatPct:0.15 },
+    vat: { enabled:false, ratePct:0.15, constructionInputVatPct:0.15, inputRecoveryPct:null, refundLagYears:0, professionalFeesVatPct:0.15 },
     // تقسيم الأراضي (Land Subdivision) — بيع القطع على مراحل متعددة عبر سنوات (امتصاص تدريجي) بدل بيعة
     // واحدة. يُفعَّل فقط لفرص التطوير بنطاق "أرض مخدَّمة فقط" (scopeType='infra_only'). عند التفعيل، يحل
     // جدول الامتصاص هذا محل نمط سداد الدين المعتاد بآلية "تحرير رهن تناسبي" (كل شريحة مباعة تُسدِّد حصتها
     // النسبية من الدين — وهي الآلية المصرفية الفعلية المعتادة لتمويل تقسيم الأراضي في السوق السعودي).
-    subdivision: { phasedAbsorption:false, absorptionYears:4, curve:'even', priceEscalationAnnual:0.05 },
-    subscription: { minInvestment:100000, subscriptionFee:0.02, lockupYears:5, distPolicy:"عند الإغلاق فقط (At Exit Only)", investorClass:"Class A - تجزئة (Retail)", hwm:true },
-    economics: { hurdle:0.12, carry:0.20, lpShare:0.60, gpShare:0.25, devShare:0.15 },
-    fees: { mgmt:0.008, structuring:0.008, arrangement:0.010, acquisition:0.015, disposition:0.010, assetMgmt:0.0075, propMgmt:0.04, regAuditCustodian:200000, cmaSetup:750000, dueDiligence:200000, valuation:150000,
+    subdivision: { phasedAbsorption:false, absorptionYears:0, curve:'even', priceEscalationAnnual:0 },
+    subscription: { minInvestment:0, subscriptionFee:0, lockupYears:0, distPolicy:"عند الإغلاق فقط (At Exit Only)", investorClass:"Class A - تجزئة (Retail)", hwm:true },
+    economics: { hurdle:0, carry:0, lpShare:0, gpShare:0, devShare:0 },
+    fees: { mgmt:0, structuring:0, arrangement:0, acquisition:0, disposition:0, assetMgmt:0, propMgmt:0, regAuditCustodian:0, cmaSetup:0, dueDiligence:0, valuation:0,
       // رسوم منصة "إيجار" (٪ من الإيراد الإجمالي الفعلي سنوياً) وتأمين الأصل (٪ من إجمالي تكلفة المشروع
       // سنوياً) — بندان اختياريان منفصلان لملخص الرسوم (صفر افتراضياً = لا تغيير). لا تُفعِّلهما لو كانا
       // مُدرجين أصلاً ضمن نسبة OPEX العامة، تفادياً لازدواج الاحتساب.
       ejarFeePct:0, insuranceAnnualPct:0 },
-    financing: { ltc:0.60, saibor:0.055, margin:0.025, tenor:5, structure:'single', seniorPct:0.80, mezzMarginAdj:0.04, amortType:'interest_only', graceYears:0, amortYears:10, interestDuringConstruction:'cash',
+    financing: { ltc:0, saibor:0, margin:0, tenor:0, structure:'single', seniorPct:0, mezzMarginAdj:0, amortType:'interest_only', graceYears:0, amortYears:0, interestDuringConstruction:'cash',
       // الهيكل الشرعي للتمويل — وصفي/عرضي بحت: يُغيّر فقط تسمية "الفائدة/الدين" في المذكرة والتقارير إلى
       // مسمّاها الشرعي المكافئ اقتصادياً، دون أي تغيير في معادلات SAIBOR+الهامش أو التدفقات النقدية أو
       // النتائج المالية (IRR/MOIC/DSCR...) — عقد التمويل الإسلامي الفعلي يحتاج صياغة واعتماداً شرعياً منفصلاً.
       shariahStructure:'تقليدي (فائدة تقليدية)', drawSchedulePct:[] },
-    wacc: { rf:0.045, mrp:0.065, beta:0.95, crp:0.012, sp:0.020, alpha:0.015, marketCap:0.075, growth:0.03 },
-    exitCosts: { broker:0.025, legal:0.010, rett:0.05, exitFee:0.005 },
-    criteria: Object.assign({}, CRITERIA_DEFAULTS, { preLeasingActual:0.30, preSaleActual:0.30 }),
+    wacc: { rf:0, mrp:0, beta:0, crp:0, sp:0, alpha:0, marketCap:0, growth:0 },
+    exitCosts: { broker:0, legal:0, rett:0.05, exitFee:0 },
+    criteria: Object.assign({}, CRITERIA_DEFAULTS, { preLeasingActual:0, preSaleActual:0 }),
     scenarios: {
       optimistic: { rentMult:1.08, salePriceMult:1.08, costMult:0.95, capRateDelta:-0.005, rateDelta:-0.0025 },
       pessimistic:{ rentMult:0.90, salePriceMult:0.88, costMult:1.10, capRateDelta:0.010, rateDelta:0.0075 },
@@ -611,13 +630,34 @@ function localStorageSafe(k){ try{ return localStorage.getItem(k); }catch(e){ re
 function saveLocalFallback(){ try{ localStorage.setItem(DEMO_MODE?'reop_demo_fallback':'reop_fallback', JSON.stringify(opportunities)); }catch(e){} }
 
 /* بيانات تجريبية أولية لرابط الزوار (وضع تجريبي معزول تماماً عن قاعدة البيانات الحقيقية) */
+// بيانات توضيحية واقعية لفرص الوضع التجريبي فقط (رابط الزوار المعزول تماماً عن قاعدة البيانات
+// الحقيقية) — مستقلة عمداً عن أصفار blankOpportunity() الآن (راجع تعليق blankOpportunity أعلاه:
+// صُفِّرت كل الحقول الخاصة بكل مشروع بناءً على طلب المستخدم حتى لا تظهر أي أرقام جاهزة في معالج
+// "فرصة جديدة" الفعلي). الزائر التجريبي يحتاج مثالاً محسوباً وواقعياً ليستكشف الأداة، فهذه القيم
+// التوضيحية تُطبَّق هنا فقط على نسخة العرض التجريبي، دون أي أثر على معالج الإدخال الحقيقي.
+const DEMO_REALISTIC_DEFAULTS = {
+  land: { area:5000, price:3500, far:2.0, bar:0.5, basements:1, floorHeight:3.6 },
+  income: { rent:1000, occupancy:0.92, opex:0.28, wale:4.0, tenantConc:0.20 },
+  development: { salePrice:9000, buildCost:4800, constructionYears:2, operationYears:1, exitCapRate:0.08, efficiency:0.85, contingency:0.05 },
+  financing: { ltc:0.60, saibor:0.055, margin:0.025, tenor:5 },
+  wacc: { rf:0.045, mrp:0.065, beta:0.95, crp:0.012, sp:0.020, alpha:0.015, marketCap:0.075, growth:0.03 },
+  exitCosts: { broker:0.025, legal:0.010, exitFee:0.005 },
+  economics: { hurdle:0.12, carry:0.20, lpShare:0.60, gpShare:0.25, devShare:0.15 },
+};
 function demoSeedOpportunities(){
-  const mk = (name, city, oppType, useType, priceOverrides)=>{
+  const mk = (name, city, oppType, useType, landOverrides)=>{
     const d = blankOpportunity();
+    (function merge(dst, src){
+      for(const k in src){
+        const sv = src[k];
+        if(sv && typeof sv==='object' && !Array.isArray(sv)){ if(!dst[k]||typeof dst[k]!=='object') dst[k]={}; merge(dst[k], sv); }
+        else dst[k] = sv;
+      }
+    })(d, DEMO_REALISTIC_DEFAULTS);
     d.meta.name = name; d.meta.city = city; d.meta.oppType = oppType; d.meta.useType = useType;
     d.meta.analyst = 'زائر تجريبي'; d.meta.createdBy = 'demo@visitor'; d.meta.updatedBy = 'demo@visitor';
     d.meta.createdAt = todayStr(); d.meta.updatedAt = todayStr();
-    Object.assign(d.land, priceOverrides||{});
+    Object.assign(d.land, landOverrides||{});
     return { id: uid('demo'), data: d };
   };
   return [
@@ -2052,16 +2092,24 @@ function runOptimizer(o){
 /* =========================================================================
    واجهة الإدخال — Field builder helpers
    ========================================================================= */
+// نجمة حمراء صغيرة بجانب تسمية أي حقل "ضروري" (opts.required=true) — تشير إلى أن هذا
+// الحقل يمس الحساب أو النسب مباشرة، ولم يعد له قيمة افتراضية جاهزة (صُفِّر عمداً — راجع
+// blankOpportunity أعلاه) بل يجب على المستخدم تعبئته بنفسه حسب معطيات المشروع الفعلية.
+function reqStar(opts){
+  return opts && opts.required
+    ? `<span class="req-star" title="${T('حقل ضروري — يؤثر مباشرة في الحساب/النسب','Required field — directly affects the calculation/ratios')}">*</span>`
+    : '';
+}
 const F = {
   num(path,label,labelEn,val,opts={}){
-    return `<div class="field ${opts.span2?'span2':''}"><label><span>${T(label,labelEn||label)}</span>${LANG==='ar'&&labelEn?`<span class="en">${labelEn}</span>`:''}</label>
+    return `<div class="field ${opts.span2?'span2':''} ${opts.required?'is-required':''}"><label><span>${T(label,labelEn||label)}${reqStar(opts)}</span>${LANG==='ar'&&labelEn?`<span class="en">${labelEn}</span>`:''}</label>
       <div class="suffix-wrap"><input type="number" name="${path}" value="${val==null?'':val}" step="${opts.step||'any'}"
         ${opts.min!=null?'min="'+opts.min+'"':''} ${opts.max!=null?'max="'+opts.max+'"':''}>
         ${opts.suffix?'<span class="suffix">'+opts.suffix+'</span>':''}</div>
       ${opts.hint?'<div class="hint">'+opts.hint+'</div>':''}</div>`;
   },
   pct(path,label,labelEn,val,opts={}){
-    return `<div class="field ${opts.span2?'span2':''}"><label><span>${T(label,labelEn||label)}</span>${LANG==='ar'&&labelEn?`<span class="en">${labelEn}</span>`:''}</label>
+    return `<div class="field ${opts.span2?'span2':''} ${opts.required?'is-required':''}"><label><span>${T(label,labelEn||label)}${reqStar(opts)}</span>${LANG==='ar'&&labelEn?`<span class="en">${labelEn}</span>`:''}</label>
       <div class="suffix-wrap"><input type="number" data-pct="1" name="${path}" value="${(val*100).toFixed(opts.dec==null?2:opts.dec)}" step="${opts.step||'0.1'}">
         <span class="suffix">%</span></div>
       ${opts.hint?'<div class="hint">'+opts.hint+'</div>':''}</div>`;
@@ -2154,21 +2202,21 @@ function renderStepFieldsCore(idx, d){
       </div>`;
     case 1: return `
       <div class="grid3">
-        ${F.num('land.area','مساحة الأرض','Land area', d.land.area, {suffix:'م²', min:0})}
-        ${F.num('land.price','سعر شراء المتر','Price / m²', d.land.price, {suffix:'ر.س/م²', min:0})}
-        ${F.num('land.far','معامل البناء (FAR)','FAR', d.land.far, {suffix:'×', step:0.1, hint:'سكني 1.5-3× · تجاري 4-6×'})}
-        ${F.pct('land.bar','نسبة التغطية (BAR)','BAR', d.land.bar, {dec:0})}
+        ${F.num('land.area','مساحة الأرض','Land area', d.land.area, {required:true, suffix:'م²', min:0})}
+        ${F.num('land.price','سعر شراء المتر','Price / m²', d.land.price, {required:true, suffix:'ر.س/م²', min:0})}
+        ${F.num('land.far','معامل البناء (FAR)','FAR', d.land.far, {required:true, suffix:'×', step:0.1, hint:'سكني 1.5-3× · تجاري 4-6×'})}
+        ${F.pct('land.bar','نسبة التغطية (BAR)','BAR', d.land.bar, {required:true, dec:0})}
         ${F.num('land.floorsAllowed','عدد الأدوار المسموحة','Floors allowed', d.land.floorsAllowed, {suffix:'دور'})}
-        ${F.num('land.basements','عدد البدرومات','Basements', d.land.basements, {suffix:'بدروم'})}
-        ${F.num('land.floorHeight','ارتفاع الدور','Floor height', d.land.floorHeight, {suffix:'م', step:0.1, hint:'المرجع القياسي 3.6م — أي زيادة تُحمَّل علاوة تكلفة ارتفاع أدناه'})}
+        ${F.num('land.basements','عدد البدرومات','Basements', d.land.basements, {required:true, suffix:'بدروم'})}
+        ${F.num('land.floorHeight','ارتفاع الدور','Floor height', d.land.floorHeight, {required:true, suffix:'م', step:0.1, hint:'المرجع القياسي 3.6م — أي زيادة تُحمَّل علاوة تكلفة ارتفاع أدناه'})}
         ${F.pct('land.setbacks','الارتدادات (Setbacks)','Setbacks', d.land.setbacks, {dec:0})}
         ${F.pct('land.bonusAreaPct','مساحات معفاة تقديرية (بلكونات/أسطح)','Exempt bonus area %', d.land.bonusAreaPct, {dec:0, hint:'تقديري - أكد النسبة من كود البلدية المحلي. معلوماتي فقط ولا يدخل في حسابات TPC/GFA الأساسية.'})}
       </div>
       <p class="step-sub" style="margin-top:16px;">${T('علاوات التكلفة الإنشائية للارتفاع والانخفاض — تُحمَّل تلقائياً على تكلفة البناء (Hard Cost) بحسب ارتفاع الدور وعمق البدرومات','Height & depth construction cost premiums — automatically loaded onto build cost (Hard Cost) based on floor height and basement depth')}</p>
       <div class="grid3">
-        ${F.pct('land.floorHeightPremiumPct','علاوة الارتفاع (لكل متر زيادة عن 3.6م)','Height premium (per extra meter over 3.6m)', d.land.floorHeightPremiumPct, {dec:0, hint:'ترفع تكلفة البناء/م² للأدوار الأعلى من المرجع القياسي (هيكل/واجهات/مصاعد أثقل)'})}
-        ${F.pct('land.basementCostPremiumPct','علاوة تكلفة البدروم الأول','1st basement cost premium', d.land.basementCostPremiumPct, {dec:0, hint:'فوق تكلفة البناء العادية للمتر — حفر، دعم جوانب، عزل مائي، خفض منسوب المياه'})}
-        ${F.pct('land.basementDepthEscalationPct','تصاعد العلاوة لكل بدروم أعمق','Escalation per deeper level', d.land.basementDepthEscalationPct, {dec:0, hint:'يُضاف فوق علاوة البدروم الأول عن كل مستوى إضافي أعمق (2، 3...)'})}
+        ${F.pct('land.floorHeightPremiumPct','علاوة الارتفاع (لكل متر زيادة عن 3.6م)','Height premium (per extra meter over 3.6m)', d.land.floorHeightPremiumPct, {required:true, dec:0, hint:'ترفع تكلفة البناء/م² للأدوار الأعلى من المرجع القياسي (هيكل/واجهات/مصاعد أثقل)'})}
+        ${F.pct('land.basementCostPremiumPct','علاوة تكلفة البدروم الأول','1st basement cost premium', d.land.basementCostPremiumPct, {required:true, dec:0, hint:'فوق تكلفة البناء العادية للمتر — حفر، دعم جوانب، عزل مائي، خفض منسوب المياه'})}
+        ${F.pct('land.basementDepthEscalationPct','تصاعد العلاوة لكل بدروم أعمق','Escalation per deeper level', d.land.basementDepthEscalationPct, {required:true, dec:0, hint:'يُضاف فوق علاوة البدروم الأول عن كل مستوى إضافي أعمق (2، 3...)'})}
       </div>
       ${d.meta.oppType!=='landbank'? `
       <p class="step-sub" style="margin-top:16px;">${T('نطاق التطوير — يحدد ما إذا كانت التكلفة تشمل البنية التحتية، الفوقية، أو كلاهما','Development scope — determines whether the cost includes infrastructure, vertical construction, or both')}</p>
@@ -2177,7 +2225,7 @@ function renderStepFieldsCore(idx, d){
           [['بنية تحتية وفوقية (Full Turnkey)','both'],['بنية فوقية فقط (Vertical Only — أرض مخدومة مسبقاً)','vertical_only']]
           .concat(d.meta.oppType==='development'? [['بنية تحتية فقط (Infra Only — أراضٍ مخدومة للبيع)','infra_only']] : []),
           {rerender:true, span2:true})}
-        ${d.development.scopeType!=='vertical_only'? F.num('development.infraCostPerSqm','تكلفة البنية التحتية للمتر','Infra cost / m² (land)', d.development.infraCostPerSqm, {suffix:'ر.س/م²', hint:'طرق، شبكات، تسوية أرض'}) : ''}
+        ${d.development.scopeType!=='vertical_only'? F.num('development.infraCostPerSqm','تكلفة البنية التحتية للمتر','Infra cost / m² (land)', d.development.infraCostPerSqm, {required:true, suffix:'ر.س/م²', hint:'طرق، شبكات، تسوية أرض'}) : ''}
       </div>
       ${d.development.scopeType==='infra_only'? `
       <p class="step-sub" style="margin-top:16px;">${T('تقسيم الأراضي (Land Subdivision) — بيع القطع على مراحل متعددة عبر سنوات بدل بيعة واحدة','Land Subdivision — sell plots across multiple phases over years instead of a single sale')}</p>
@@ -2240,7 +2288,7 @@ function renderStepFieldsCore(idx, d){
           ${F.pct('development.costBreakdown.finishes','التشطيبات','Finishes', cb.finishes, {dec:0})}
           ${F.pct('development.costBreakdown.external','الأعمال الخارجية','External works', cb.external, {dec:0})}
           ${F.pct('development.costBreakdown.fees','رسوم استشارية وإشراف','Fees/Supervision', cb.fees, {dec:0})}
-          ${F.pct('development.contingency','نسبة الطوارئ (Contingency)','Contingency', d.development.contingency, {dec:0})}
+          ${F.pct('development.contingency','نسبة الطوارئ (Contingency)','Contingency', d.development.contingency, {required:true, dec:0})}
         </div>
         <div class="livebox"><div class="lt">${T('تحقق المجموع (بدون الطوارئ)','Sum check (excluding contingency)')} — Sum check</div>
           <div class="li">${T('مجموع النسب','Sum of percentages')}: <b class="num" style="display:inline">${fmtPct(sumCB,0)}</b> ${Math.abs(sumCB-1)<0.005?'✅':'⚠️ '+T('يجب أن يساوي 100%','must equal 100%')}</div>
@@ -2253,20 +2301,20 @@ function renderStepFieldsCore(idx, d){
         const rf = d.income.refinance;
         const revenueFieldsHtml = isHosp ? `
           <div class="grid3">
-            ${F.num('income.hospitality.adr','متوسط سعر الغرفة (ADR)','ADR', d.income.hospitality.adr, {suffix:'ر.س/ليلة'})}
-            ${F.num('income.hospitality.keys','عدد الغرف (Keys)','Keys', d.income.hospitality.keys, {suffix:'غرفة'})}
-            ${F.pct('income.occupancy','نسبة الإشغال الفندقي','Hotel occupancy', d.income.occupancy, {dec:0})}
-            ${F.pct('income.hospitality.gopMargin','هامش الربح التشغيلي (GOP)','GOP margin', d.income.hospitality.gopMargin, {dec:0, hint:'الهامش بعد جميع المصاريف التشغيلية الفندقية'})}
+            ${F.num('income.hospitality.adr','متوسط سعر الغرفة (ADR)','ADR', d.income.hospitality.adr, {required:true, suffix:'ر.س/ليلة'})}
+            ${F.num('income.hospitality.keys','عدد الغرف (Keys)','Keys', d.income.hospitality.keys, {required:true, suffix:'غرفة'})}
+            ${F.pct('income.occupancy','نسبة الإشغال الفندقي','Hotel occupancy', d.income.occupancy, {required:true, dec:0})}
+            ${F.pct('income.hospitality.gopMargin','هامش الربح التشغيلي (GOP)','GOP margin', d.income.hospitality.gopMargin, {required:true, dec:0, hint:'الهامش بعد جميع المصاريف التشغيلية الفندقية'})}
             ${F.num('development.constructionYears','مدة الإنشاء (إن وجدت)','Construction yrs', d.development.constructionYears, {suffix:'سنة'})}
             ${F.num('development.operationYears','مدة التشغيل حتى الخروج','Hold period', d.development.operationYears, {suffix:'سنة'})}
           </div>` : `
           <div class="grid3">
             ${F.num('income.gla','المساحة المؤجّرة (GLA)','GLA', d.income.gla||'', {suffix:'م²', hint:'اتركه فارغاً لاستخدام GFA × كفاءة 85%'})}
-            ${F.num('income.rent','سعر الإيجار (إيجار أساسي)','Base rent / m² / yr', d.income.rent, {suffix:'ر.س/م²/سنة'})}
-            ${F.pct('income.occupancy','نسبة الإشغال','Occupancy', d.income.occupancy, {dec:0})}
-            ${isNNN? '' : F.pct('income.opex','مصاريف التشغيل (OpEx)','OpEx ratio', d.income.opex, {dec:0})}
-            ${F.num('income.wale','متوسط عمر العقود (WALE)','WALE', d.income.wale, {suffix:'سنة', step:0.1})}
-            ${F.pct('income.tenantConc','تركّز أكبر مستأجر','Tenant concentration', d.income.tenantConc, {dec:0})}
+            ${F.num('income.rent','سعر الإيجار (إيجار أساسي)','Base rent / m² / yr', d.income.rent, {required:true, suffix:'ر.س/م²/سنة'})}
+            ${F.pct('income.occupancy','نسبة الإشغال','Occupancy', d.income.occupancy, {required:true, dec:0})}
+            ${isNNN? '' : F.pct('income.opex','مصاريف التشغيل (OpEx)','OpEx ratio', d.income.opex, {required:true, dec:0})}
+            ${F.num('income.wale','متوسط عمر العقود (WALE)','WALE', d.income.wale, {required:true, suffix:'سنة', step:0.1})}
+            ${F.pct('income.tenantConc','تركّز أكبر مستأجر','Tenant concentration', d.income.tenantConc, {required:true, dec:0})}
             ${F.select('income.distFreq','وتيرة التوزيع','Distribution freq', d.income.distFreq, ["ربع سنوي (Quarterly)","نصف سنوي (Semi-Annual)","سنوي (Annual)","عند الإغلاق فقط (At Exit Only)"].map(x=>[x,x]))}
             ${F.num('development.constructionYears','مدة الإنشاء (إن وجدت)','Construction yrs', d.development.constructionYears, {suffix:'سنة'})}
             ${F.num('development.operationYears','مدة التشغيل حتى الخروج','Hold period', d.development.operationYears, {suffix:'سنة'})}
@@ -2275,10 +2323,10 @@ function renderStepFieldsCore(idx, d){
           <p class="step-sub" style="margin-top:16px;">${T('مدخلات عقد الإيجار الصافي (NNN) — المستأجر يتحمّل مصاريف التشغيل','Net lease (NNN) inputs — the tenant bears operating expenses')}</p>
           <div class="grid3">
             ${F.select('income.nnn.tenantCreditTier','تصنيف ائتمان المستأجر','Tenant credit tier', d.income.nnn.tenantCreditTier, Object.keys(CREDIT_TIERS).map(k=>[`${k} — Cap ${CREDIT_TIERS[k]}`,k]), {span2:true, hint:'مرجعي فقط — لا يُعدّل معدل الرسملة تلقائياً'})}
-            ${F.num('income.nnn.leaseTermRemaining','مدة العقد المتبقية','Lease term remaining', d.income.nnn.leaseTermRemaining, {suffix:'سنة'})}
+            ${F.num('income.nnn.leaseTermRemaining','مدة العقد المتبقية','Lease term remaining', d.income.nnn.leaseTermRemaining, {required:true, suffix:'سنة'})}
             ${F.checkbox('income.nnn.pctRent','تفعيل إيجار نسبي من المبيعات؟','Percentage rent?', d.income.nnn.pctRent, {rerender:true})}
-            ${d.income.nnn.pctRent? F.pct('income.nnn.pctRentRate','نسبة الإيجار من المبيعات','Pct rent rate', d.income.nnn.pctRentRate, {dec:1}) : ''}
-            ${d.income.nnn.pctRent? F.num('income.nnn.annualSales','المبيعات السنوية المقدّرة للمستأجر','Est. tenant annual sales', d.income.nnn.annualSales, {suffix:'ر.س', hint:'يُحتسب إيجار إضافي (Overage) فوق نقطة الارتكاز'}) : ''}
+            ${d.income.nnn.pctRent? F.pct('income.nnn.pctRentRate','نسبة الإيجار من المبيعات','Pct rent rate', d.income.nnn.pctRentRate, {required:true, dec:1}) : ''}
+            ${d.income.nnn.pctRent? F.num('income.nnn.annualSales','المبيعات السنوية المقدّرة للمستأجر','Est. tenant annual sales', d.income.nnn.annualSales, {required:true, suffix:'ر.س', hint:'يُحتسب إيجار إضافي (Overage) فوق نقطة الارتكاز'}) : ''}
             ${ac==='gas_station'? F.num('income.nnn.envReserveAnnual','احتياطي بيئي سنوي (خزانات/تلوث)','Annual environmental reserve', d.income.nnn.envReserveAnnual, {suffix:'ر.س/سنة'}) : ''}
           </div>` : '';
         const specialtyHtml = ac==='logistics'? `
@@ -2296,8 +2344,8 @@ function renderStepFieldsCore(idx, d){
           <p class="step-sub" style="margin-top:16px;">${T('استراتيجية مختلطة (بيع جزئي + إيجار)؟','Mixed strategy (partial sale + rent)?')}</p>
           <div class="grid3">
             ${F.checkbox('income.mixedUse','تفعيل البيع الجزئي مع الإيجار؟','Enable partial sale alongside rent?', d.income.mixedUse, {rerender:true, hint:'مثال: مبنى مختلط يُباع جزء من وحداته ويُؤجَّر الباقي'})}
-            ${d.income.mixedUse? F.pct('strategy.salePct','نسبة البيع','Sale %', d.strategy.salePct, {dec:0, hint:'الباقي (١٠٠٪ - النسبة) يبقى مؤجَّراً طوال مدة التشغيل'}) : ''}
-            ${d.income.mixedUse? F.num('development.salePrice','سعر بيع الجزء المُباع','Sale price / m² (sold portion)', d.development.salePrice, {suffix:'ر.س/م²', hint:'حقل مشترك مع فرص التطوير — يُستخدم هنا لتسعير الجزء المُباع فقط'}) : ''}
+            ${d.income.mixedUse? F.pct('strategy.salePct','نسبة البيع','Sale %', d.strategy.salePct, {required:true, dec:0, hint:'الباقي (١٠٠٪ - النسبة) يبقى مؤجَّراً طوال مدة التشغيل'}) : ''}
+            ${d.income.mixedUse? F.num('development.salePrice','سعر بيع الجزء المُباع','Sale price / m² (sold portion)', d.development.salePrice, {required:true, suffix:'ر.س/م²', hint:'حقل مشترك مع فرص التطوير — يُستخدم هنا لتسعير الجزء المُباع فقط'}) : ''}
           </div>
           <p class="note" style="margin-top:8px;">${T('عند التفعيل: يقلّ الإشغال المؤجَّر تناسبياً بنسبة البيع طوال مدة التشغيل، وعند الخروج تُضاف قيمة الجزء المُباع (بسعر البيع أعلاه) إلى القيمة الرأسمالية للجزء المُبقى مؤجَّراً (مرسملة بمعدل الرسملة السوقي). معطَّل افتراضياً — لا يؤثر على أي فرصة دخل موجودة ما لم يُفعَّل صراحةً.','When enabled: rented occupancy shrinks proportionally by the sale percentage throughout the operating period, and at exit the sold portion\'s value (at the sale price above) is added to the capitalized value of the retained rented portion (at the market cap rate). Disabled by default — has no effect on any existing income opportunity unless explicitly enabled.')}</p>
           ${d.income.mixedUse? directSaleFieldsHtml(d) : ''}` : '';
@@ -2310,16 +2358,16 @@ function renderStepFieldsCore(idx, d){
           </div>
           ${holdStrategy==='refinance_close'? `
           <div class="grid3">
-            ${F.pct('income.refinance.refiLtv','نسبة التمويل عند إعادة التمويل (Refi LTV)','Refi LTV', rf.refiLtv, {dec:0})}
-            ${F.pct('income.refinance.refiCostPct','تكاليف إعادة التمويل (% من القرض الجديد)','Refi cost %', rf.refiCostPct, {dec:1})}
+            ${F.pct('income.refinance.refiLtv','نسبة التمويل عند إعادة التمويل (Refi LTV)','Refi LTV', rf.refiLtv, {required:true, dec:0})}
+            ${F.pct('income.refinance.refiCostPct','تكاليف إعادة التمويل (% من القرض الجديد)','Refi cost %', rf.refiCostPct, {required:true, dec:1})}
           </div>
           <p class="note" style="margin-top:8px;">${T('بدلاً من بيع العقار، يتم تسييل قرض جديد بنهاية مدة الصندوق، سداد القرض القائم، وتوزيع الفائض على المستثمرين — إغلاق للصندوق دون بيع الأصل فعلياً.','Instead of selling the property, a new loan is drawn at the end of the fund term, the existing loan is paid off, and the surplus is distributed to investors — closing the fund without actually selling the asset.')}</p>`
           : holdStrategy==='perpetual_hold'? `
           <div class="grid3">
-            ${F.num('income.refinance.analysisHorizon','أفق التحليل (لأغراض القياس فقط)','Analysis horizon', rf.analysisHorizon, {suffix:'سنة', hint:'الأصل يُحتفظ به إلى ما لا نهاية — هذا الأفق لغرض حساب العائد فقط'})}
-            ${F.num('income.refinance.intervalYears','دورية إعادة التمويل','Refinance interval', rf.intervalYears, {suffix:'سنة'})}
-            ${F.pct('income.refinance.refiLtv','نسبة التمويل عند كل إعادة تمويل','Refi LTV (each cycle)', rf.refiLtv, {dec:0})}
-            ${F.pct('income.refinance.refiCostPct','تكاليف كل إعادة تمويل','Refi cost % (each cycle)', rf.refiCostPct, {dec:1})}
+            ${F.num('income.refinance.analysisHorizon','أفق التحليل (لأغراض القياس فقط)','Analysis horizon', rf.analysisHorizon, {required:true, suffix:'سنة', hint:'الأصل يُحتفظ به إلى ما لا نهاية — هذا الأفق لغرض حساب العائد فقط'})}
+            ${F.num('income.refinance.intervalYears','دورية إعادة التمويل','Refinance interval', rf.intervalYears, {required:true, suffix:'سنة'})}
+            ${F.pct('income.refinance.refiLtv','نسبة التمويل عند كل إعادة تمويل','Refi LTV (each cycle)', rf.refiLtv, {required:true, dec:0})}
+            ${F.pct('income.refinance.refiCostPct','تكاليف كل إعادة تمويل','Refi cost % (each cycle)', rf.refiCostPct, {required:true, dec:1})}
           </div>
           <p class="note" style="margin-top:8px;">${T('لا يُباع الأصل إطلاقاً — يُعاد تمويله دورياً لتوزيع جزء من رأس المال، مع استمرار توليد الدخل. سيتم عرض عائد "نقدي محقّق فقط" بجانب العائد الكلي (شامل القيمة غير المحققة) في المذكرة.','The asset is never sold — it is refinanced periodically to distribute part of the capital, while continuing to generate income. A "realized cash only" return will be shown alongside the total return (including unrealized value) in the memo.')}</p>`
           : ''}`;
@@ -2335,10 +2383,10 @@ function renderStepFieldsCore(idx, d){
         <div class="grid3">
           ${F.checkbox('strategy.offPlanSale.enabled','تفعيل البيع على الخارطة؟','Enable off-plan sale?', opSale.enabled, {rerender:true, hint:'بيع 100% من الوحدات على مراحل الإنشاء بدل الانتظار للتسليم — يحل محل نسبة البيع/الإيجار المختلطة وأنماط السداد البنكي المعتادة'})}
           ${opSale.enabled? F.select('strategy.offPlanSale.curve','منحنى تحصيل دفعات المشترين','Buyer payment collection curve', opSale.curve||'even', [['متساوٍ كل سنة إنشاء','even'],['أسرع في البداية','front_loaded'],['أبطأ في البداية','back_loaded']]) : ''}
-          ${opSale.enabled? F.num('strategy.offPlanSale.escrowLagYears','تأخير تحرير الضمان (سنوات)','Escrow release lag (yrs)', opSale.escrowLagYears, {step:0.5, hint:'الفارق الزمني بين اكتمال مرحلة الإنشاء وتحرير المبلغ فعلياً للمطوّر من حساب الضمان'}) : ''}
-          ${opSale.enabled? F.pct('strategy.offPlanSale.priceEscalationAnnual','تصاعد سعر البيع بين الدفعات (سنوياً)','Sale price escalation (annual)', opSale.priceEscalationAnnual, {dec:1}) : ''}
-          ${opSale.enabled? F.pct('strategy.offPlanSale.preSalePctThreshold','الحد الأدنى النظامي لنسبة البيع المسبق','Regulatory min. pre-sale %', opSale.preSalePctThreshold, {dec:0, hint:'الحد الأدنى المطلوب من الجهة المنظّمة قبل الترخيص ببدء تحصيل دفعات المشترين'}) : ''}
-          ${opSale.enabled? F.pct('criteria.preSaleActual','نسبة البيع المسبق الفعلية المُحقَّقة','Actual pre-sale % achieved', d.criteria.preSaleActual, {dec:0}) : ''}
+          ${opSale.enabled? F.num('strategy.offPlanSale.escrowLagYears','تأخير تحرير الضمان (سنوات)','Escrow release lag (yrs)', opSale.escrowLagYears, {required:true, step:0.5, hint:'الفارق الزمني بين اكتمال مرحلة الإنشاء وتحرير المبلغ فعلياً للمطوّر من حساب الضمان'}) : ''}
+          ${opSale.enabled? F.pct('strategy.offPlanSale.priceEscalationAnnual','تصاعد سعر البيع بين الدفعات (سنوياً)','Sale price escalation (annual)', opSale.priceEscalationAnnual, {required:true, dec:1}) : ''}
+          ${opSale.enabled? F.pct('strategy.offPlanSale.preSalePctThreshold','الحد الأدنى النظامي لنسبة البيع المسبق','Regulatory min. pre-sale %', opSale.preSalePctThreshold, {required:true, dec:0, hint:'الحد الأدنى المطلوب من الجهة المنظّمة قبل الترخيص ببدء تحصيل دفعات المشترين'}) : ''}
+          ${opSale.enabled? F.pct('criteria.preSaleActual','نسبة البيع المسبق الفعلية المُحقَّقة','Actual pre-sale % achieved', d.criteria.preSaleActual, {required:true, dec:0}) : ''}
         </div>
         <p class="note" style="margin-top:8px;">${T('عند التفعيل: تُباع كل الوحدات (100%) على مراحل الإنشاء نفسها بدل انتظار التسليم، مع تأخير زمني لتحرير كل دفعة من حساب الضمان الإلزامي. يحل هذا محل نسبة البيع/الإيجار وأنماط السداد البنكي أدناه — لا حاجة لتعبئتها.','When enabled: all units (100%) are sold across the construction period itself instead of waiting for handover, with a time lag before each payment is released from the mandatory escrow account. This replaces the sale/rent split and the bank amortization pattern below — no need to fill those in.')}</p>`
         : '';
@@ -2347,29 +2395,29 @@ function renderStepFieldsCore(idx, d){
         ${!opSale.enabled? `
         <div class="grid3">
           ${F.select('strategy.exitStrategy','استراتيجية الخروج','Exit strategy', d.strategy.exitStrategy, Object.keys(EXIT_STRATEGIES).map(k=>[k,k]), {span2:true, rerender:true})}
-          ${F.pct('strategy.salePct','نسبة البيع','Sale %', d.strategy.salePct, {dec:0, hint:'محسوبة تلقائياً حسب الاستراتيجية — قابلة للتعديل'})}
-          ${F.num('development.salePrice','سعر البيع','Sale price / m²', d.development.salePrice, {suffix:'ر.س/م²'})}
-          ${F.num('development.buildCost','تكلفة البناء','Build cost / m²', d.development.buildCost, {suffix:'ر.س/م²'})}
-          ${F.pct('development.exitCapRate','معدل الرسملة عند الخروج','Exit cap rate (rented %)', d.development.exitCapRate, {dec:1})}
-          ${F.pct('development.efficiency','كفاءة المساحة (GLA/GFA)','Efficiency', d.development.efficiency, {dec:0})}
-          ${F.num('development.constructionYears','مدة الإنشاء','Construction', d.development.constructionYears, {suffix:'سنة'})}
-          ${F.num('development.operationYears','مدة التشغيل حتى الخروج','Operation/hold', d.development.operationYears, {suffix:'سنة'})}
-          ${F.num('income.rent','إيجار الجزء المُبقى (إن Mixed)','Retained rent / m²/yr', d.income.rent, {suffix:'ر.س/م²'})}
-          ${F.pct('income.occupancy','إشغال الجزء المؤجّر','Occupancy (retained)', d.income.occupancy, {dec:0})}
-          ${F.pct('income.opex','OpEx على الجزء المؤجّر','OpEx (retained)', d.income.opex, {dec:0})}
+          ${F.pct('strategy.salePct','نسبة البيع','Sale %', d.strategy.salePct, {required:true, dec:0, hint:'محسوبة تلقائياً حسب الاستراتيجية — قابلة للتعديل'})}
+          ${F.num('development.salePrice','سعر البيع','Sale price / m²', d.development.salePrice, {required:true, suffix:'ر.س/م²'})}
+          ${F.num('development.buildCost','تكلفة البناء','Build cost / m²', d.development.buildCost, {required:true, suffix:'ر.س/م²'})}
+          ${F.pct('development.exitCapRate','معدل الرسملة عند الخروج','Exit cap rate (rented %)', d.development.exitCapRate, {required:true, dec:1})}
+          ${F.pct('development.efficiency','كفاءة المساحة (GLA/GFA)','Efficiency', d.development.efficiency, {required:true, dec:0})}
+          ${F.num('development.constructionYears','مدة الإنشاء','Construction', d.development.constructionYears, {required:true, suffix:'سنة'})}
+          ${F.num('development.operationYears','مدة التشغيل حتى الخروج','Operation/hold', d.development.operationYears, {required:true, suffix:'سنة'})}
+          ${F.num('income.rent','إيجار الجزء المُبقى (إن Mixed)','Retained rent / m²/yr', d.income.rent, {required:true, suffix:'ر.س/م²'})}
+          ${F.pct('income.occupancy','إشغال الجزء المؤجّر','Occupancy (retained)', d.income.occupancy, {required:true, dec:0})}
+          ${F.pct('income.opex','OpEx على الجزء المؤجّر','OpEx (retained)', d.income.opex, {required:true, dec:0})}
         </div>
         ${d.strategy.salePct>0? directSaleFieldsHtml(d) : ''}
         ${isDevRefi? `
         <div class="grid3" style="margin-top:12px;">
-          ${F.pct('income.refinance.refiLtv','نسبة التمويل عند إعادة التمويل (Refi LTV)','Refi LTV', drf.refiLtv, {dec:0})}
-          ${F.pct('income.refinance.refiCostPct','تكاليف إعادة التمويل (% من القرض الجديد)','Refi cost %', drf.refiCostPct, {dec:1})}
+          ${F.pct('income.refinance.refiLtv','نسبة التمويل عند إعادة التمويل (Refi LTV)','Refi LTV', drf.refiLtv, {required:true, dec:0})}
+          ${F.pct('income.refinance.refiCostPct','تكاليف إعادة التمويل (% من القرض الجديد)','Refi cost %', drf.refiCostPct, {required:true, dec:1})}
         </div>
         <p class="note" style="margin-top:8px;">${T('بدلاً من بيع الجزء المُبقى بمعدل الرسملة، يُسحب قرض جديد على قيمته العادلة عند نهاية مدة التشغيل، يُسدَّد به الدين القائم بالكامل، ويُوزَّع الفائض على حقوق الملكية — الأصل (أو الجزء المُبقى منه) لا يُباع فعلياً. لو كانت نسبة البيع أعلى من صفر (استراتيجية مختلطة)، عائد الجزء المُباع يُضاف لنفس عملية سداد الدين.','Instead of selling the retained portion at the cap rate, a new loan is drawn against its fair value at the end of the operating period, the existing debt is paid off in full, and the surplus is distributed to equity — the asset (or its retained portion) is not actually sold. If the sale percentage is above zero (a mixed strategy), proceeds from the sold portion feed into the same debt payoff.')}</p>`
         : ''}` : `
         <div class="grid3">
-          ${F.num('development.salePrice','سعر البيع (بيع على الخارطة)','Sale price / m² (off-plan)', d.development.salePrice, {suffix:'ر.س/م²'})}
-          ${F.num('development.buildCost','تكلفة البناء','Build cost / m²', d.development.buildCost, {suffix:'ر.س/م²'})}
-          ${F.pct('development.efficiency','كفاءة المساحة (GLA/GFA)','Efficiency', d.development.efficiency, {dec:0})}
+          ${F.num('development.salePrice','سعر البيع (بيع على الخارطة)','Sale price / m² (off-plan)', d.development.salePrice, {required:true, suffix:'ر.س/م²'})}
+          ${F.num('development.buildCost','تكلفة البناء','Build cost / m²', d.development.buildCost, {required:true, suffix:'ر.س/م²'})}
+          ${F.pct('development.efficiency','كفاءة المساحة (GLA/GFA)','Efficiency', d.development.efficiency, {required:true, dec:0})}
           ${F.num('development.constructionYears','مدة الإنشاء (= مدة الصندوق بالكامل)','Construction (= full fund term)', d.development.constructionYears, {suffix:'سنة'})}
         </div>`}
         ${costBreakdownHtml}`;
@@ -2377,9 +2425,9 @@ function renderStepFieldsCore(idx, d){
       // landbank
       return `
         <div class="grid3">
-          ${F.pct('landbank.appreciation','معدل الارتفاع السنوي المتوقع','Annual appreciation', d.landbank.appreciation, {dec:1})}
-          ${F.num('landbank.holdingYears','مدة الاحتفاظ','Holding period', d.landbank.holdingYears, {suffix:'سنة'})}
-          ${F.num('landbank.carryAnnual','تكاليف الحمل السنوية','Annual carry cost', d.landbank.carryAnnual, {suffix:'ر.س/سنة', hint:'رسوم، تأمين، صيانة أساسية'})}
+          ${F.pct('landbank.appreciation','معدل الارتفاع السنوي المتوقع','Annual appreciation', d.landbank.appreciation, {required:true, dec:1})}
+          ${F.num('landbank.holdingYears','مدة الاحتفاظ','Holding period', d.landbank.holdingYears, {required:true, suffix:'سنة'})}
+          ${F.num('landbank.carryAnnual','تكاليف الحمل السنوية','Annual carry cost', d.landbank.carryAnnual, {required:true, suffix:'ر.س/سنة', hint:'رسوم، تأمين، صيانة أساسية'})}
           ${F.num('landbank.interimAnnualIncome','دخل تأجيري مؤقت سنوي (اختياري)','Annual interim lease income (optional)', d.landbank.interimAnnualIncome, {suffix:'ر.س/سنة', hint:'تأجير مؤقت للأرض بانتظار التطوير — موقف سيارات، زراعة، لوحات إعلانية. صفر = لا يوجد'})}
         </div>
         <p class="step-sub" style="margin-top:16px;">${T('رسوم الأراضي البيضاء','White Land Fee')}</p>
@@ -2394,9 +2442,9 @@ function renderStepFieldsCore(idx, d){
     }
     case 5: return `
       <div class="grid3">
-        ${F.num('subscription.minInvestment','حد أدنى للاستثمار','Min investment', d.subscription.minInvestment, {suffix:'ر.س'})}
-        ${F.pct('subscription.subscriptionFee','رسوم الاشتراك (لمرة واحدة)','Subscription fee', d.subscription.subscriptionFee, {dec:1})}
-        ${F.num('subscription.lockupYears','فترة حظر البيع / عمر الصندوق','Lock-up / fund life', d.subscription.lockupYears, {suffix:'سنة'})}
+        ${F.num('subscription.minInvestment','حد أدنى للاستثمار','Min investment', d.subscription.minInvestment, {required:true, suffix:'ر.س'})}
+        ${F.pct('subscription.subscriptionFee','رسوم الاشتراك (لمرة واحدة)','Subscription fee', d.subscription.subscriptionFee, {required:true, dec:1})}
+        ${F.num('subscription.lockupYears','فترة حظر البيع / عمر الصندوق','Lock-up / fund life', d.subscription.lockupYears, {required:true, suffix:'سنة'})}
         ${F.select('subscription.distPolicy','سياسة توزيع الأرباح','Distribution policy', d.subscription.distPolicy, ["عند الإغلاق فقط (At Exit Only)","ربع سنوي (Quarterly)","نصف سنوي (Semi-Annual)","سنوي (Annual)","مرن (Hybrid)"].map(x=>[x,x]))}
         ${F.select('subscription.investorClass','فئة المستثمر','Investor class', d.subscription.investorClass, ["Class A - تجزئة (Retail)","Class B - مؤهل (Qualified)","Class C - مؤسسي (Institutional)"].map(x=>[x,x]))}
         ${F.checkbox('subscription.hwm','High-Water Mark','HWM', d.subscription.hwm)}
@@ -2408,34 +2456,34 @@ function renderStepFieldsCore(idx, d){
       </div>`;
     case 6: return `
       <div class="grid3">
-        ${F.pct('economics.hurdle','معدل العائد المستهدف (Hurdle)','Hurdle rate', d.economics.hurdle, {dec:1})}
-        ${F.pct('economics.carry','إجمالي حصة الأداء (Carried Interest)','Total carry', d.economics.carry, {dec:1})}
+        ${F.pct('economics.hurdle','معدل العائد المستهدف (Hurdle)','Hurdle rate', d.economics.hurdle, {required:true, dec:1})}
+        ${F.pct('economics.carry','إجمالي حصة الأداء (Carried Interest)','Total carry', d.economics.carry, {required:true, dec:1})}
       </div>
       <p class="step-sub" style="margin-top:16px;">${T('توزيع حصة الأداء (Carried) داخلياً — يجب أن يساوي المجموع 100%','Internal split of carried interest — must total 100%')}</p>
       <div class="grid3">
-        ${F.pct('economics.lpShare','🟢 حصة المستثمر (LP Bonus)','LP bonus share', d.economics.lpShare, {dec:0})}
-        ${F.pct('economics.gpShare','🔵 حصة مدير الصندوق (GP)','GP share', d.economics.gpShare, {dec:0})}
-        ${F.pct('economics.devShare','🟠 حصة المطور (Promote)','Developer promote', d.economics.devShare, {dec:0})}
+        ${F.pct('economics.lpShare','🟢 حصة المستثمر (LP Bonus)','LP bonus share', d.economics.lpShare, {required:true, dec:0})}
+        ${F.pct('economics.gpShare','🔵 حصة مدير الصندوق (GP)','GP share', d.economics.gpShare, {required:true, dec:0})}
+        ${F.pct('economics.devShare','🟠 حصة المطور (Promote)','Developer promote', d.economics.devShare, {required:true, dec:0})}
       </div>
       <div class="livebox"><div class="lt">${T('تحقق المجموع','Sum check')} — Sum check</div>
         <div class="li">${T('مجموع الحصص','Total split')}: <b class="num" style="display:inline">${fmtPct(d.economics.lpShare+d.economics.gpShare+d.economics.devShare,0)}</b> ${Math.abs(d.economics.lpShare+d.economics.gpShare+d.economics.devShare-1)<0.005?'✅':'⚠️ '+T('يجب أن يساوي 100%','must equal 100%')}</div>
       </div>`;
     case 7: return `
       <div class="grid3">
-        ${F.pct('fees.mgmt','رسوم إدارة الصندوق (سنوي)','Management fee /yr', d.fees.mgmt, {dec:2})}
-        ${F.pct('fees.structuring','رسوم الهيكلة (لمرة واحدة)','Structuring fee', d.fees.structuring, {dec:2})}
-        ${F.pct('fees.arrangement','رسوم ترتيب التمويل','Arrangement fee (on debt)', d.fees.arrangement, {dec:2})}
-        ${F.pct('fees.acquisition','رسوم الاستحواذ','Acquisition fee (on land)', d.fees.acquisition, {dec:2})}
-        ${F.pct('fees.disposition','رسوم البيع / الخروج','Disposition fee', d.fees.disposition, {dec:2})}
-        ${F.pct('fees.assetMgmt','رسوم إدارة الأصول (سنوي)','Asset mgmt fee /yr', d.fees.assetMgmt, {dec:2})}
-        ${F.pct('fees.propMgmt','رسوم إدارة العقارات (من الإيجار)','Property mgmt (of rent)', d.fees.propMgmt, {dec:1})}
-        ${F.num('fees.regAuditCustodian','تدقيق + أمين حفظ (سنوي ثابت)','Audit + custodian /yr', d.fees.regAuditCustodian, {suffix:'ر.س'})}
+        ${F.pct('fees.mgmt','رسوم إدارة الصندوق (سنوي)','Management fee /yr', d.fees.mgmt, {required:true, dec:2})}
+        ${F.pct('fees.structuring','رسوم الهيكلة (لمرة واحدة)','Structuring fee', d.fees.structuring, {required:true, dec:2})}
+        ${F.pct('fees.arrangement','رسوم ترتيب التمويل','Arrangement fee (on debt)', d.fees.arrangement, {required:true, dec:2})}
+        ${F.pct('fees.acquisition','رسوم الاستحواذ','Acquisition fee (on land)', d.fees.acquisition, {required:true, dec:2})}
+        ${F.pct('fees.disposition','رسوم البيع / الخروج','Disposition fee', d.fees.disposition, {required:true, dec:2})}
+        ${F.pct('fees.assetMgmt','رسوم إدارة الأصول (سنوي)','Asset mgmt fee /yr', d.fees.assetMgmt, {required:true, dec:2})}
+        ${F.pct('fees.propMgmt','رسوم إدارة العقارات (من الإيجار)','Property mgmt (of rent)', d.fees.propMgmt, {required:true, dec:1})}
+        ${F.num('fees.regAuditCustodian','تدقيق + أمين حفظ (سنوي ثابت)','Audit + custodian /yr', d.fees.regAuditCustodian, {required:true, suffix:'ر.س'})}
       </div>
       <p class="step-sub" style="margin-top:16px;">${T('رسوم تأسيسية ثابتة (لمرة واحدة)','Fixed one-time setup fees')}</p>
       <div class="grid3">
-        ${F.num('fees.cmaSetup','رسوم تأسيس الصندوق (CMA)','CMA setup', d.fees.cmaSetup, {suffix:'ر.س'})}
-        ${F.num('fees.dueDiligence','العناية الواجبة','Due diligence', d.fees.dueDiligence, {suffix:'ر.س'})}
-        ${F.num('fees.valuation','تثمين الأصول الأولي','Initial valuation', d.fees.valuation, {suffix:'ر.س'})}
+        ${F.num('fees.cmaSetup','رسوم تأسيس الصندوق (CMA)','CMA setup', d.fees.cmaSetup, {required:true, suffix:'ر.س'})}
+        ${F.num('fees.dueDiligence','العناية الواجبة','Due diligence', d.fees.dueDiligence, {required:true, suffix:'ر.س'})}
+        ${F.num('fees.valuation','تثمين الأصول الأولي','Initial valuation', d.fees.valuation, {required:true, suffix:'ر.س'})}
       </div>
       <p class="step-sub" style="margin-top:16px;">${T('بنود منفصلة اختيارية لملخص الرسوم','Optional separate fee-summary line items')}</p>
       <div class="grid3">
@@ -2449,10 +2497,10 @@ function renderStepFieldsCore(idx, d){
       </div>
       <p class="note" style="margin-top:8px;">${T('يُغيّر هذا الاختيار فقط مسمّى "الفائدة/الدين البنكي" في المذكرة والتقارير إلى مسمّاها الشرعي المكافئ اقتصادياً (نفس معادلات SAIBOR+الهامش أدناه)، دون أي تغيير في التدفقات النقدية أو النتائج المالية (IRR/MOIC/DSCR). عقد التمويل الإسلامي الفعلي يحتاج صياغة قانونية واعتماداً من هيئة شرعية معتمدة.','This selection only changes how "Interest / Bank Debt" is labeled in the memo and reports to its economically-equivalent Sharia term (same SAIBOR + margin math below) — it does not change any cash flow or financial result (IRR/MOIC/DSCR). An actual Islamic financing contract requires separate legal drafting and Sharia board approval.')}</p>
       <div class="grid3">
-        ${F.pct('financing.ltc','نسبة التمويل بالدين (LTC)','LTC', d.financing.ltc, {dec:0})}
-        ${F.pct('financing.saibor','سايبور 3 أشهر (SAIBOR)','SAIBOR 3M', d.financing.saibor, {dec:2})}
-        ${F.pct('financing.margin','هامش البنك (الشريحة الأولى)','Bank margin (senior)', d.financing.margin, {dec:2})}
-        ${F.num('financing.tenor','مدة القرض','Loan tenor', d.financing.tenor, {suffix:'سنة'})}
+        ${F.pct('financing.ltc','نسبة التمويل بالدين (LTC)','LTC', d.financing.ltc, {required:true, dec:0})}
+        ${F.pct('financing.saibor','سايبور 3 أشهر (SAIBOR)','SAIBOR 3M', d.financing.saibor, {required:true, dec:2})}
+        ${F.pct('financing.margin','هامش البنك (الشريحة الأولى)','Bank margin (senior)', d.financing.margin, {required:true, dec:2})}
+        ${F.num('financing.tenor','مدة القرض','Loan tenor', d.financing.tenor, {required:true, suffix:'سنة'})}
         ${F.select('financing.structure','هيكل الدين','Debt structure', d.financing.structure, [['قرض واحد (Single Tranche)','single'],['أول + ثانوي (Senior + Mezzanine)','senior_mezz']], {rerender:true})}
         ${F.select('financing.amortType','نمط السداد (شكل القرض)','Amortization type (loan shape)', d.financing.amortType, [
           ['فوائد فقط ثم بالون كامل (Interest-Only / Full Balloon)','interest_only'],
@@ -2467,30 +2515,30 @@ function renderStepFieldsCore(idx, d){
       ${d.financing.structure==='senior_mezz'? `
       <p class="step-sub" style="margin-top:16px;">${T('هيكل الشريحتين','Two-tranche structure')} — Senior + Mezzanine</p>
       <div class="grid3">
-        ${F.pct('financing.seniorPct','نسبة الشريحة الأولى (Senior) من إجمالي الدين','Senior % of total debt', d.financing.seniorPct, {dec:0})}
-        ${F.pct('financing.mezzMarginAdj','هامش إضافي على الميزانين (Mezzanine)','Mezzanine margin add-on', d.financing.mezzMarginAdj, {dec:2})}
+        ${F.pct('financing.seniorPct','نسبة الشريحة الأولى (Senior) من إجمالي الدين','Senior % of total debt', d.financing.seniorPct, {required:true, dec:0})}
+        ${F.pct('financing.mezzMarginAdj','هامش إضافي على الميزانين (Mezzanine)','Mezzanine margin add-on', d.financing.mezzMarginAdj, {required:true, dec:2})}
       </div>`:''}
       ${(d.financing.amortType==='amortizing'||d.financing.amortType==='partial_amort_balloon')? `
       <p class="step-sub" style="margin-top:16px;">${T('جدول الاستهلاك','Amortization schedule')} (Amortization Schedule)</p>
       <div class="grid3">
-        ${F.num('financing.graceYears','سنوات السماح (بدون سداد أصل)','Grace years', d.financing.graceYears, {suffix:'سنة'})}
-        ${F.num('financing.amortYears','مدة استهلاك الأصل (الجدول الافتراضي)','Amortization period (notional schedule)', d.financing.amortYears, {suffix:'سنة', hint:d.financing.amortType==='partial_amort_balloon'? T('اجعلها أطول من مدة الاحتفاظ بالفرصة (مثال: استهلاك 20-25 سنة على فرصة مدتها 7-10 سنوات) — يبقى رصيد لم يُسدَّد بعد يُدفع كبالون واحد عند الخروج/إعادة التمويل.','Set it longer than the opportunity\'s hold period (e.g. a 20-25yr amortization schedule on a 7-10yr hold) — the unpaid remainder becomes a single balloon payment due at exit/refinance.') : T('لو كانت مساوية أو أطول قليلاً من مدة الاحتفاظ، يُسدَّد كامل الدين تقريباً قبل الخروج (بدون بالون يُذكر).','If roughly equal to or longer than the hold period, nearly all the debt is paid down before exit (no meaningful balloon).')})}
+        ${F.num('financing.graceYears','سنوات السماح (بدون سداد أصل)','Grace years', d.financing.graceYears, {required:true, suffix:'سنة'})}
+        ${F.num('financing.amortYears','مدة استهلاك الأصل (الجدول الافتراضي)','Amortization period (notional schedule)', d.financing.amortYears, {required:true, suffix:'سنة', hint:d.financing.amortType==='partial_amort_balloon'? T('اجعلها أطول من مدة الاحتفاظ بالفرصة (مثال: استهلاك 20-25 سنة على فرصة مدتها 7-10 سنوات) — يبقى رصيد لم يُسدَّد بعد يُدفع كبالون واحد عند الخروج/إعادة التمويل.','Set it longer than the opportunity\'s hold period (e.g. a 20-25yr amortization schedule on a 7-10yr hold) — the unpaid remainder becomes a single balloon payment due at exit/refinance.') : T('لو كانت مساوية أو أطول قليلاً من مدة الاحتفاظ، يُسدَّد كامل الدين تقريباً قبل الخروج (بدون بالون يُذكر).','If roughly equal to or longer than the hold period, nearly all the debt is paid down before exit (no meaningful balloon).')})}
       </div>`:''}
       <p class="step-sub" style="margin-top:16px;">${T('مدخلات السوق لحساب تكلفة رأس المال (WACC عبر CAPM)','Market inputs for cost of capital (WACC via CAPM)')}</p>
       <div class="grid3">
-        ${F.pct('wacc.rf','العائد الخالي من المخاطر (Rf)','Risk-free (10y Sukuk)', d.wacc.rf, {dec:2})}
-        ${F.pct('wacc.mrp','علاوة مخاطر السوق (MRP)','Market risk premium', d.wacc.mrp, {dec:2})}
-        ${F.num('wacc.beta','بيتا القطاع العقاري','Sector beta (β)', d.wacc.beta, {step:0.05})}
-        ${F.pct('wacc.crp','علاوة مخاطر الدولة (CRP)','Country risk premium', d.wacc.crp, {dec:2})}
-        ${F.pct('wacc.sp','علاوة مخاطر الحجم (SP)','Size premium', d.wacc.sp, {dec:2})}
-        ${F.pct('wacc.alpha','علاوة مخاطر المشروع (α)','Project-specific α', d.wacc.alpha, {dec:2})}
-        ${F.pct('wacc.marketCap','معدل الرسملة السوقي (مرجعي)','Market cap rate', d.wacc.marketCap, {dec:2})}
-        ${F.pct('wacc.growth','معدل النمو طويل الأجل (g)','Long-term growth', d.wacc.growth, {dec:1})}
+        ${F.pct('wacc.rf','العائد الخالي من المخاطر (Rf)','Risk-free (10y Sukuk)', d.wacc.rf, {required:true, dec:2})}
+        ${F.pct('wacc.mrp','علاوة مخاطر السوق (MRP)','Market risk premium', d.wacc.mrp, {required:true, dec:2})}
+        ${F.num('wacc.beta','بيتا القطاع العقاري','Sector beta (β)', d.wacc.beta, {required:true, step:0.05})}
+        ${F.pct('wacc.crp','علاوة مخاطر الدولة (CRP)','Country risk premium', d.wacc.crp, {required:true, dec:2})}
+        ${F.pct('wacc.sp','علاوة مخاطر الحجم (SP)','Size premium', d.wacc.sp, {required:true, dec:2})}
+        ${F.pct('wacc.alpha','علاوة مخاطر المشروع (α)','Project-specific α', d.wacc.alpha, {required:true, dec:2})}
+        ${F.pct('wacc.marketCap','معدل الرسملة السوقي (مرجعي)','Market cap rate', d.wacc.marketCap, {required:true, dec:2})}
+        ${F.pct('wacc.growth','معدل النمو طويل الأجل (g)','Long-term growth', d.wacc.growth, {required:true, dec:1})}
       </div>
       <p class="step-sub" style="margin-top:16px;">${T('تكاليف الخروج (% من قيمة البيع)','Exit costs (% of sale value)')}</p>
       <div class="grid3">
-        ${F.pct('exitCosts.broker','عمولة السمسرة','Broker commission', d.exitCosts.broker, {dec:2})}
-        ${F.pct('exitCosts.legal','رسوم قانونية وتصرف','Legal / disposal', d.exitCosts.legal, {dec:2})}
+        ${F.pct('exitCosts.broker','عمولة السمسرة','Broker commission', d.exitCosts.broker, {required:true, dec:2})}
+        ${F.pct('exitCosts.legal','رسوم قانونية وتصرف','Legal / disposal', d.exitCosts.legal, {required:true, dec:2})}
         ${F.pct('exitCosts.rett','ضريبة التصرف العقاري (RETT)','RETT', d.exitCosts.rett, {dec:2})}
       </div>`;
     case 9: return `
@@ -2501,7 +2549,7 @@ function renderStepFieldsCore(idx, d){
         ${F.pct('criteria.yocMin','الحد الأدنى Yield on Cost','Min yield on cost', d.criteria.yocMin, {dec:1})}
         ${F.pct('criteria.projIrrMin','الحد الأدنى Project IRR','Min project IRR', d.criteria.projIrrMin, {dec:1})}
         ${F.pct('criteria.preLeasingMin','الحد الأدنى للتأجير المسبق','Min pre-leasing', d.criteria.preLeasingMin, {dec:0})}
-        ${F.pct('criteria.preLeasingActual','نسبة التأجير المسبق الفعلية','Actual pre-leasing', d.criteria.preLeasingActual, {dec:0})}
+        ${F.pct('criteria.preLeasingActual','نسبة التأجير المسبق الفعلية','Actual pre-leasing', d.criteria.preLeasingActual, {required:true, dec:0})}
       </div>
       ${F.textarea('notes','ملاحظات إضافية','Notes', d.notes, {placeholder:'أي ملاحظات، شروط تفاوضية، أو مخاطر إضافية...'})}
       <div class="field span2" style="margin-top:8px;"></div>`;
@@ -4277,25 +4325,37 @@ function captureUnsavedFieldValues(){
    core.clearUnsavedEdits() (تستدعيها معالجات dd-save/risk-save/ev-save/score-save). */
 let hasUnsavedEdits = false;
 let unsavedEditsBadgeEl = null;
+let unsavedEditsBadgeHideTimer = null;
+/* شارة "تعديلات غير محفوظة" — نقطة حمراء نابضة + نص تحذيري طالما فيه تعديل معلّق،
+   تتحوّل تلقائياً إلى نقطة خضراء + "تم الحفظ ✓" لحظة نجاح الحفظ (core.clearUnsavedEdits)،
+   ثم تختفي بعد لحظة قصيرة بدل الاختفاء الفجائي — إشارة بصرية واضحة لحظة اكتمال الحفظ
+   بدل مجرد زوال التحذير بصمت. */
 function ensureUnsavedEditsBadge(){
   if(unsavedEditsBadgeEl) return unsavedEditsBadgeEl;
   const el = document.createElement('div');
   el.id = 'unsaved-edits-badge';
-  el.style.cssText = 'position:fixed; bottom:18px; inset-inline-end:18px; z-index:9999; display:none; align-items:center; gap:8px; background:#f87171; color:#fff; font-weight:700; font-size:12.5px; line-height:1.4; padding:10px 16px; border-radius:10px; box-shadow:0 6px 20px rgba(0,0,0,.28); font-family:inherit; max-width:min(90vw,360px);';
-  el.textContent = '⚠️ ' + T('لديك تعديلات غير محفوظة — اضغط زر "حفظ" في القسم المفتوح قبل المغادرة.','You have unsaved changes — click the "Save" button in the open section before leaving.');
+  el.innerHTML = '<span class="dot"></span><span class="txt"></span>';
   document.body.appendChild(el);
   unsavedEditsBadgeEl = el;
   return el;
 }
 function markUnsavedEdits(){
-  if(hasUnsavedEdits) return;
+  clearTimeout(unsavedEditsBadgeHideTimer);
   hasUnsavedEdits = true;
-  ensureUnsavedEditsBadge().style.display = 'flex';
+  const el = ensureUnsavedEditsBadge();
+  el.classList.remove('is-saved');
+  el.classList.add('is-visible','is-warn');
+  el.querySelector('.txt').textContent = T('لديك تعديلات غير محفوظة — اضغط زر "حفظ" في القسم المفتوح قبل المغادرة.','You have unsaved changes — click the "Save" button in the open section before leaving.');
 }
 function clearUnsavedEdits(){
   if(!hasUnsavedEdits) return;
   hasUnsavedEdits = false;
-  if(unsavedEditsBadgeEl) unsavedEditsBadgeEl.style.display = 'none';
+  const el = ensureUnsavedEditsBadge();
+  el.classList.remove('is-warn');
+  el.classList.add('is-visible','is-saved');
+  el.querySelector('.txt').textContent = T('تم الحفظ بنجاح ✓','Saved successfully ✓');
+  clearTimeout(unsavedEditsBadgeHideTimer);
+  unsavedEditsBadgeHideTimer = setTimeout(()=>{ el.classList.remove('is-visible','is-saved'); }, 2200);
 }
 /* هل يُسمح بمغادرة/إغلاق تفاصيل الفرصة الحالية الآن؟ تسأل المستخدم تأكيداً لو
    فيه تعديلات معلّقة، وتُصفِّر الشارة لو وافق على المتابعة وفقدانها. */
@@ -4330,7 +4390,7 @@ function render(){
   const amAdmin = isAdmin(currentUser);
   let html = `
     <div class="topbar">
-      <div class="brand">
+      <div class="brand brand-home" data-action="go-home" title="${T('الرئيسية — العودة لقائمة الفرص العقارية','Home — back to the opportunities list')}">
         <div class="mark"><img src="${OPAL_LOGO_MARK}" alt="Opal"></div>
         <div>
           <h1>${T('مستكشف الفرص العقارية','Real Estate Opportunity Explorer')}</h1>
@@ -4338,6 +4398,7 @@ function render(){
         </div>
       </div>
       <div class="badge-row">
+        <button class="btn btn-sm btn-home" data-action="go-home" title="${T('العودة للصفحة الرئيسية (قائمة الفرص العقارية)','Back to the home page (opportunities list)')}">🏠 ${T('الرئيسية','Home')}</button>
         ${DEMO_MODE? `<span class="tag" style="background:var(--gold); color:#fff; font-weight:700;">🧪 ${T('وضع تجريبي — بياناتك هنا محلية على متصفحك فقط ولن تصل لقاعدتنا الحقيقية','Demo mode — your data here stays local to this browser and never reaches our real database')}</span>`
           : (!DB? `<span class="tag" style="background:var(--warn-soft); color:var(--warn);">⚠️ ${T('وضع محلي (بدون قاعدة سحابية)','Local mode (no cloud database)')}</span>`:'')}
         ${onlineUsers.length? `<span class="tag" style="background:var(--good-soft); color:var(--good);" title="${esc(onlineUsers.map(u=>u.email).join('، '))}">🟢 ${T('متصل الآن','Online now')}: ${onlineUsers.length}</span>` : ''}
@@ -4383,10 +4444,21 @@ document.addEventListener('click', async (e)=>{
   // (مستخدَمة في أغلب ملفات src/features/*.js) محميان من داخل openOpportunityDetail()
   // و setCoreState() نفسيهما أدناه — فلا داعي لتكرار التحقق هنا لهما.
   if(hasUnsavedEdits && openDetailId){
-    const leavingDetailActions = ['close-detail','edit-opp','open-activity-item','confirm-delete','sign-out'];
+    const leavingDetailActions = ['close-detail','edit-opp','open-activity-item','confirm-delete','sign-out','go-home'];
     if(leavingDetailActions.includes(action)){
       if(!confirmDiscardUnsavedEdits()) return;
     }
+  }
+
+  // زر/شعار "الرئيسية" — يعيد كل حالة العرض إلى الشاشة الافتراضية (قائمة الفرص العقارية)
+  // بصرف النظر عن أي عرض رئيسي بديل مفتوح حالياً (المستثمرون والصناديق، أي شاشة مسجَّلة عبر
+  // registerMainView مثل مكتبة كفاءة المساحات، إلخ) أو أي لوحة/تفصيلة/مقارنة مفتوحة.
+  if(action==='go-home'){
+    mainView = null; fundsViewOpen = false; openFundId = null; ifForm = null;
+    openDetailId = null; compareOpen = false; teamPanelOpen = false; brandingPanelOpen = false;
+    recentActivityOpen = false;
+    render();
+    return;
   }
 
   if(action==='toggle-lang'){ toggleLang(); return; }
