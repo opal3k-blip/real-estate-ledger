@@ -63,12 +63,8 @@ service cloud.firestore {
     }
 
     // نقطة ٧-٢: صلاحية اعتماد لجنة الاستثمار (canApproveIC في roles-permissions.js) — عضو لجنة
-    // استثمار أول فأعلى. مطلوبة هنا (لا فقط في واجهة العميل) لأن ic-workflow.js يسمح لعضو لجنة
-    // استثمار بتسجيل قرار على فرصة *لا يملكها* (لم يُنشئها) — وهذا بالضبط ما كانت قاعدة ownsOpp
-    // القديمة تمنعه بالكامل (كانت تحصر أي تعديل بالمالك أو الأدمن فقط، فيستحيل معها عملياً أن
-    // يعتمد أي عضو لجنة قراراً على فرصة زميل آخر عبر Firestore الحقيقي، حتى لو واجهة العميل
-    // تسمح بالنقر على الزر). المسار الجديد أدناه (icOnlyChange) يفتح ثغرة ضيقة ومضبوطة فقط لهذه
-    // الحالة، لا يفتح الفرصة كاملة للتعديل من غير مالكها.
+    // استثمار أول فأعلى. تبقى مُعرَّفة هنا (تُستخدم في underwritingVersions/icDecisions أدناه)
+    // رغم أن مسار اعتماد القرار نفسه (icOnlyChange سابقاً) أُلغي تماماً — انظر تعليق P0 أدناه.
     function currentRoleIsSeniorICOrAbove() {
       return isAllowlisted() && currentRole() in ['senior_ic','fund_manager'];
     }
@@ -76,14 +72,23 @@ service cloud.firestore {
       return isAdminEmail() || currentRoleIsSeniorICOrAbove();
     }
 
-    // نقطة ٧-٣: تحقّق أن التعديل من عضو لجنة الاستثمار (غير المالك) لم يغيّر إلا حقل قرارات
-    // اللجنة (ic) بالإضافة لطابعي التوقيت/المعدِّل الإداريين في meta (updatedAt/updatedBy) — لا
-    // أي حقل مالي أو تشغيلي آخر في الفرصة. affectedKeys() على مستوى الجذر يكفي لحقل "ic" (كائن
-    // كامل مُستبدَل بالكامل من ic-workflow.js دوماً)، ولمستوى meta نتحقق بالتفصيل من أن الحقول
-    // المتغيّرة فيه هي فقط updatedAt/updatedBy (لا name/city/analyst/... التي تبقى بلا تغيير).
-    function icOnlyChange(before, after) {
-      return after.diff(before).affectedKeys().hasOnly(['ic', 'meta'])
-        && after.meta.diff(before.meta).affectedKeys().hasOnly(['updatedAt', 'updatedBy']);
+    // ==================== P0 — Trusted Transaction Layer ====================
+    // نقطة ٧-٣ سابقاً كانت icOnlyChange(): مسار ضيّق يسمح لعضو لجنة استثمار أول فأعلى (غير مالك
+    // الفرصة) بتعديل opportunity.ic مباشرة من العميل، بشرط ألا يلمس أي حقل آخر. هذا أُلغي بالكامل
+    // الآن — opportunity.ic لم يعد قابلاً للكتابة من *أي* عميل مباشرة أياً كان دوره، فقط عبر
+    // Cloud Functions (approveOpportunity وupdateIcConditionStatus الجديدة، functions/index.js)
+    // التي تعمل بصلاحيات Admin SDK المتجاوزة لهذه القواعد بتصميم Firebase نفسه.
+    //
+    // ⚠️ ثغرة أخطر اكتُشفت أثناء هذه المراجعة، منفصلة تماماً عن icOnlyChange: المسار العام لمالك
+    // الفرصة (ownsOpp أدناه) كان يسمح بتعديل *كامل* وثيقة الفرصة — بما فيها حقل ic نفسه — دون أي
+    // قيد عليه (القيد الوحيد المفروض على ذلك المسار كان !changesCapitalAllocation). أي محلل مالك
+    // لفرصته كان يقدر تقنياً يكتب opportunity.ic.decisions مباشرة عبر حفظ عادي للفرصة (الحقل جزء
+    // من d المحفوظة بالكامل في كل حفظ)، فيُفبرك لنفسه قرار اعتماد "من لجنة الاستثمار" لفرصته هو —
+    // وهذا أخطر عملياً من ثغرة icOnlyChange نفسها (تلك كانت تتطلب دور لجنة على الأقل). changesIc()
+    // أدناه تُغلق هذا المسار أيضاً — لا فرق الآن بين "مالك" و"عضو لجنة": كلاهما ممنوع من الكتابة
+    // المباشرة على ic، الاثنان يمران عبر Cloud Function فقط.
+    function changesIc(before, after) {
+      return after.diff(before).affectedKeys().hasAny(['ic']);
     }
     // ============================================================================
 
@@ -107,18 +112,21 @@ service cloud.firestore {
 
     // بيانات الفرص الاستثمارية — للفريق المصرَّح له فقط (ولسه ضمن مدة الوصول).
     // القراءة: لأي عضو مصرَّح له. الإضافة: لأي عضو مصرَّح له (بشرط نزاهة النِّسبة). التعديل:
-    // الأدمن، أو عضو الفريق لفرصته الخاصة (بشرط ألا يلمس capitalAllocation — أدناه)، أو عضو لجنة
-    // استثمار أول فأعلى *لكن فقط لتسجيل قرار لجنة الاستثمار* (icOnlyChange أعلاه)، أو مدير صندوق
-    // فأعلى *لكن فقط لتخصيص رأس المال* (capitalAllocationOnlyChange أعلاه) — كل ذلك بشرط نزاهة
-    // النِّسبة أيضاً. الحذف: الأدمن أو مالك الفرصة فقط (لم يُوسَّع لعضو اللجنة أو مدير الصندوق
-    // عمداً — الحذف قرار أكبر من مجرد تسجيل قرار لجنة أو تخصيص رأس مال).
+    // الأدمن (دائماً، بلا قيد إضافي — نفس استثناء attributionHonest أعلاه)، أو عضو الفريق لفرصته
+    // الخاصة (بشرط ألا يلمس capitalAllocation ولا ic — أدناه)، أو مدير صندوق فأعلى *لكن فقط
+    // لتخصيص رأس المال* (capitalAllocationOnlyChange أعلاه) — كل ذلك بشرط نزاهة النِّسبة أيضاً.
+    // لم يعد هناك أي مسار عميل مباشر لتعديل ic (P0 — Trusted Transaction Layer أعلاه) — الاعتماد
+    // وتبديل حالة الشروط كلاهما الآن حصراً عبر approveOpportunity/updateIcConditionStatus. الحذف:
+    // الأدمن أو مالك الفرصة فقط (لم يُوسَّع لمدير الصندوق عمداً — الحذف قرار أكبر من مجرد تخصيص
+    // رأس مال).
     match /opportunities/{oppId} {
       allow read: if isAuthorized();
       allow create: if isAuthorized() && attributionHonest();
       allow update: if attributionHonest() && (
              isAdminEmail()
-          || (isAllowlisted() && ownsOpp(resource.data) && !changesCapitalAllocation(resource.data, request.resource.data))
-          || (currentRoleIsSeniorICOrAbove() && icOnlyChange(resource.data, request.resource.data))
+          || (isAllowlisted() && ownsOpp(resource.data)
+                && !changesCapitalAllocation(resource.data, request.resource.data)
+                && !changesIc(resource.data, request.resource.data))
           || (isFundManagerOrAbove() && capitalAllocationOnlyChange(resource.data, request.resource.data))
       );
       allow delete: if isAdminEmail() || (isAllowlisted() && ownsOpp(resource.data));
@@ -198,76 +206,66 @@ service cloud.firestore {
     // أضعف تجربة استخدام من إخفاء الزر، لكنه الحماية الوحيدة الصحيحة والمُتاحة بلا كسر القيد
     // المعماري الأساسي للمشروع — ونؤكد أنها الحماية *الفعلية* بصرف النظر عن شكل الواجهة.
     match /investors/{id}      { allow read: if isAuthorized(); allow create, update, delete: if isFundManagerOrAbove(); }
-    match /funds/{id}          { allow read: if isAuthorized(); allow create, update, delete: if isFundManagerOrAbove(); }
 
-    // ⚠️ إعادة هندسة محاسبية كاملة (المرحلة السادسة، بطلب صريح من المستخدم بعد سؤاله مباشرةً
-    // عن حجم الخطوة وموافقته على "إعادة هندسة كاملة الآن"): commitments/capitalCalls/
-    // distributions/transactions هي دفتر محاسبي حقيقي الآن، لا سجلات CRUD عادية — أي سجل
-    // "مُرحَّل" (posted/locked) لا يمكن تعديله أو حذفه أبداً، حتى من مدير الصندوق نفسه؛ التصحيح
-    // الوحيد المسموح هو قيد عكسي جديد (سجل جديد بحقل reversalOfId يشير للأصل ومبلغ عكسي/سالب)
-    // — تماماً كمبدأ icDecisions/underwritingVersions/oppAuditLog القائم فعلاً في هذا الملف
-    // (allow create فقط، allow update/delete: if false)، مُطبَّقاً هنا حسب "حالة الترحيل" لا
-    // مجرد وجود السجل:
-    //  • commitments: التزام المستثمر "مُرحَّل" من لحظة إنشائه مباشرة (لا حقل status له أصلاً في
-    //    نموذج البيانات — الالتزام بذاته فعل محاسبي واحد، ليس مسودة قابلة للتغيير). فـ create
-    //    فقط دائماً؛ update/delete ممنوعان بالكامل.
-    //  • capitalCalls: "مسودة" فقط بينما status=='pending' (تعديل/حذف حر كما كان)، ثم تُرحَّل
-    //    (تُقفَل) نهائياً بمجرد status=='paid' أو 'waived' — النداء المرتبط تلقائياً بمساهمة
-    //    عينية (linkedCommitmentId) يُرحَّل هو أيضاً فوراً بصرف النظر عن status لأنه ناتج التزام
-    //    مُرحَّل بالفعل.
-    //  • distributions: نفس المنطق — "مسودة" بينما status=='declared'، تُرحَّل عند 'paid'.
-    //  • transactions: سجل تدقيق (Audit Trail) — كان بلا واجهة تعديل أصلاً (تحقَّقنا من هذا في
-    //    core.js قبل الكتابة هنا)؛ الآن مُلزَم في القاعدة أيضاً: append-only بالكامل، لا تعديل
-    //    ولا حذف مهما كانت الحالة — تطابق تماماً oppAuditLog.
-    // الفلترة بحقل status (لا فحص "أي تغيير أصلاً؟") مقصودة: تسمح بأي عدد من التصحيحات على
-    // المسودة قبل ترحيلها (نفس UX الحالي بلا تغيير)، وتقفلها نهائياً في اللحظة التي تصبح فيها
-    // حقيقة محاسبية منشورة — لا نافذة تعديل بعد الترحيل مهما كانت صغيرة.
+    // P0 — Trusted Transaction Layer: fund.assetIds لم يعد قابلاً للكتابة من أي عميل مباشرة —
+    // كانت هذه المجموعة (كباقي دفتر الصندوق) بلا أي قيد على مستوى الحقل، فيقدر أي مدير صندوق (أو
+    // حتى أي عضو مصرَّح له قبل تفعيل isFundManagerOrAbove أصلاً) يربط/يفك أصلاً بصندوق مباشرة عبر
+    // Firestore، بتجاوز كل تحقق linkAssetToFund الحقيقي (اعتماد IC نافذ، السقف المخصَّص، السيولة
+    // القابلة للتوزيع الفعلية). changesAssetIds() تمنع أي تعديل يلمس هذا الحقل تحديداً — الربط/الفك
+    // الفعليان يبقيان ممكنَين فقط عبر Cloud Function linkAssetToFund (functions/index.js، Admin SDK).
+    function changesAssetIds(before, after) {
+      return after.diff(before).affectedKeys().hasAny(['assetIds']);
+    }
+    match /funds/{id} {
+      allow read: if isAuthorized();
+      allow create: if isFundManagerOrAbove();
+      allow update: if isFundManagerOrAbove() && !changesAssetIds(resource.data, request.resource.data);
+      allow delete: if isFundManagerOrAbove();
+    }
+
+    // ⚠️ إعادة هندسة محاسبية كاملة (المرحلة السادسة)، ثم P0 — Trusted Transaction Layer فوقها:
+    // commitments/capitalCalls/distributions/transactions هي دفتر محاسبي حقيقي — أي سجل "مُرحَّل"
+    // (posted/locked) لا يمكن تعديله أو حذفه أبداً، حتى من مدير الصندوق نفسه؛ التصحيح الوحيد
+    // المسموح هو قيد عكسي جديد. بعد مراجعة P0، تبيَّن أن السماح للعميل حتى بإنشاء ذلك القيد العكسي
+    // مباشرة (كان مسموحاً هنا بشرط إشارة المبلغ فقط، بلا أي تحقق أن الأصل موجود/لم يُعكَس من
+    // قبل/المبلغ صحيح) وبتعديل حالة السجل مباشرة عبر ledgerStatusTransitionOk (بلا إعادة تحقق سقف
+    // الالتزام عند لحظة الترحيل الفعلية) كلاهما ثغرات — أُغلقتا هنا بالكامل:
+    //  • commitments: create عادي (غير عكسي) فقط من العميل؛ أي قيد عكسي الآن حصراً عبر
+    //    reverseTransaction (functions/index.js، Admin SDK) — update/delete ممنوعان بالكامل كما كان.
+    //  • capitalCalls/distributions: create عادي (مسودة أولية، أو النقل العيني التلقائي المرتبط
+    //    بالتزام) فقط من العميل؛ كل انتقال حالة لاحق (pending/declared→approved→paid/waived) وكل
+    //    قيد عكسي الآن حصراً عبر transitionLedgerRecord وreverseTransaction (functions/index.js) —
+    //    allow update: if false بالكامل، لا استثناء (لا توجد أي ميزة "تعديل مسودة حرة" فعلية في
+    //    الواجهة لهذين النوعين أصلاً — تحقَّقنا من عدم وجود أي زر if-edit لهما في core.js قبل هذا
+    //    التضييق، فلا ميزة تُكسَر بإغلاق update بالكامل).
+    //  • transactions: سجل تدقيق (Audit Trail) — append-only بالكامل كما كان، بلا تغيير.
     match /commitments/{id} {
       allow read: if isAuthorized();
       allow create: if isFundManagerOrAbove()
-        && (request.resource.data.get('reversalOfId', null) != null
-          ? request.resource.data.commitmentAmount < 0
-          : request.resource.data.commitmentAmount >= 0);
+        && request.resource.data.get('reversalOfId', null) == null
+        && request.resource.data.commitmentAmount >= 0;
       allow update, delete: if false;
-    }
-    // بوابة اعتماد صريحة ومنفصلة (المرحلة السادسة-ب، بطلب صريح من المستخدم: "نعم، أضف بوابة
-    // اعتماد منفصلة" — بدل أن يكون "تعليم كمسدَّد" وحده هو نقطة القفل، أصبح هناك خطوة اعتماد
-    // إلزامية بينهما لا يمكن تخطّيها: pending/declared (مسودة، تعديل حر) → approved (مُعتمَد،
-    // قيمة مُثبَّتة، الحقل الوحيد القابل للتغيير الآن هو status نفسه) → paid/waived (مُرحَّل
-    // نهائياً، القفل الأصلي من المرحلة السادسة). كل هذا مفروض على مستوى الانتقال ذاته (before→
-    // after) لا مجرد "الحالة الحالية"، حتى لا يقدر أحد يقفز من pending مباشرة إلى paid عبر طلب
-    // واحد "مُخبَّأ فيه" تغيير الحالة إلى القيمة النهائية بدل 'approved'.
-    function ledgerStatusTransitionOk(before, after) {
-      return (before.status == 'pending' && (after.status == 'pending' || after.status == 'approved'))
-          || (before.status == 'declared' && (after.status == 'declared' || after.status == 'approved'))
-          || (before.status == 'approved' && after.diff(before).affectedKeys().hasOnly(['status','approvedBy','approvedAt'])
-                && (after.status == 'paid' || after.status == 'waived'));
     }
     function ledgerAmountOk(data) {
       return data.get('reversalOfId', null) != null ? data.amount < 0 : data.amount >= 0;
     }
     match /capitalCalls/{id} {
       allow read: if isAuthorized();
-      // إنشاء عادي (يدوي) يجب أن يبدأ 'pending' دائماً — لا يجوز تخطّي البوابة بإنشاء سجل جديد
-      // مباشرة في حالة مُعتمَدة/مُرحَّلة. استثناءان محسوبان فقط: (١) قيد عكسي (reversalOfId، من
-      // if-reverse — المرحلة السادسة) يُنشَأ عمداً بنفس حالة الأصل المُرحَّلة فوراً، و(٢) نداء
-      // النقل العيني التلقائي (linkedCommitmentId، من منطق if-save الموجود لالتزام عيني) يُنشَأ
-      // 'paid' فوراً لأنه ناتج تنفيذي للالتزام نفسه لحظة توثيقه — ليس نداءً يحتاج اعتماداً مستقلاً.
+      // إنشاء عادي (يدوي) يجب أن يبدأ 'pending' دائماً، أو يكون نداء النقل العيني التلقائي
+      // (linkedCommitmentId، من منطق if-save الموجود لالتزام عيني — ناتج تنفيذي للالتزام نفسه
+      // لحظة توثيقه، ليس نداءً يحتاج اعتماداً مستقلاً). لا إنشاء عكسي مباشر بعد الآن (أعلاه).
       allow create: if isFundManagerOrAbove() && ledgerAmountOk(request.resource.data) && (
              request.resource.data.get('status', null) == 'pending'
-          || request.resource.data.get('reversalOfId', null) != null
           || request.resource.data.get('linkedCommitmentId', null) != null
       );
-      allow update: if isFundManagerOrAbove() && ledgerAmountOk(request.resource.data) && ledgerStatusTransitionOk(resource.data, request.resource.data);
+      allow update: if false;
       allow delete: if isFundManagerOrAbove() && resource.data.status == 'pending' && resource.data.linkedCommitmentId == null;
     }
     match /distributions/{id} {
       allow read: if isAuthorized();
-      allow create: if isFundManagerOrAbove() && ledgerAmountOk(request.resource.data) && (
-             request.resource.data.get('status', null) == 'declared'
-          || request.resource.data.get('reversalOfId', null) != null
-      );
-      allow update: if isFundManagerOrAbove() && ledgerAmountOk(request.resource.data) && ledgerStatusTransitionOk(resource.data, request.resource.data);
+      allow create: if isFundManagerOrAbove() && ledgerAmountOk(request.resource.data)
+        && request.resource.data.get('status', null) == 'declared';
+      allow update: if false;
       allow delete: if isFundManagerOrAbove() && resource.data.status == 'declared';
     }
     match /transactions/{id} {

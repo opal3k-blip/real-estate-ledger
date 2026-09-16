@@ -5,7 +5,7 @@
     "check:js": "node scripts/check-js.mjs",
     "test:financial": "node run_tests_node.js",
     "test:rules": "npm --prefix tests/rules test",
-    "test:functions": "npm --prefix functions run lint",
+    "test:functions": "npm --prefix functions run lint && npm --prefix functions test",
     "test:performance": "node scripts/performance-smoke.mjs",
     "test:load": "npm --prefix tests/rules run test:load",
     "test": "npm run check:js && npm run test:financial && npm run test:functions && npm run test:performance"

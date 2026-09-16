@@ -4793,12 +4793,35 @@ document.addEventListener('click', async (e)=>{
     }
     const validationError = validateIfDraft(kind, ifForm.draft, ifForm.editId);
     if(validationError){ alert(validationError); return; }
-    // إنشاء نداء رأس مال جديد من النموذج (لا يشمل نداء النقل العيني التلقائي أدناه المرتبط
-    // بـcommitment — تدفق منفصل تماماً ويبقى محلياً بلا أي تغيير) فعلياً عبر الخادم (Cloud
+    // قيد عكسي (P0 — Trusted Transaction Layer): يُنشَأ الآن حصراً عبر دالة الخادم reverseTransaction
+    // (functions/index.js)، التي تشتق كل حقل (المبلغ العكسي، المستثمر، الصندوق، الحالة) من السجل
+    // الأصل نفسه بصلاحيات Admin SDK داخل معاملة ذرّية — العميل لا يرسل سوى (النوع، معرّف السجل
+    // الأصل، سبب العكس)، فلا مجال لتزييف "المبلغ العكسي الصحيح" من المتصفح. firestore.rules الآن
+    // تمنع أي إنشاء مباشر لسجل بحقل reversalOfId من العميل (كان مسموحاً بشرط إشارة المبلغ فقط، بلا
+    // أي تحقق أن الأصل موجود/لم يُعكَس من قبل)، فهذا المسار (لا المسار العادي أدناه) هو الوحيد
+    // الممكن فعلياً الآن لأي قيد عكسي خارج وضع الديمو.
+    if(isNew && ifForm.draft.reversalOfId && (kind==='commitment'||kind==='capitalCall'||kind==='distribution')){
+      const useServerFunctionForReversal = !DEMO_MODE && DB && typeof firebase!=='undefined' && firebase.functions;
+      if(useServerFunctionForReversal){
+        try{
+          await firebase.functions().httpsCallable('reverseTransaction')({ kind, id: ifForm.draft.reversalOfId, notes: ifForm.draft.notes||'' });
+        }catch(e){
+          alert((e && e.message) || T('تعذّر إنشاء القيد العكسي عبر الخادم.','The server could not create the reversal entry.'));
+          return;
+        }
+        await loadAll();
+        ifForm = null;
+        render();
+        return;
+      }
+      // لا Firebase حقيقي (وضع الديمو/تشغيل محلي) — يستمر بالمسار العادي أدناه بلا تغيير كما كان.
+    }
+    // إنشاء نداء رأس مال جديد (غير عكسي) من النموذج (لا يشمل نداء النقل العيني التلقائي أدناه
+    // المرتبط بـcommitment — تدفق منفصل تماماً ويبقى محلياً بلا أي تغيير) فعلياً عبر الخادم (Cloud
     // Function postCapitalCall، functions/index.js) عند توفر Firebase حقيقي: يعيد فرض سقف التزام
     // المستثمر (المدفوع + هذا النداء ≤ الملتزَم به) بصلاحيات Admin SDK داخل معاملة ذرّية، بدل
     // الاعتماد فقط على validateIfDraft في المتصفح.
-    const useServerFunctionForCall = isNew && kind==='capitalCall' && !DEMO_MODE && DB && typeof firebase!=='undefined' && firebase.functions;
+    const useServerFunctionForCall = isNew && kind==='capitalCall' && !ifForm.draft.reversalOfId && !DEMO_MODE && DB && typeof firebase!=='undefined' && firebase.functions;
     if(useServerFunctionForCall){
       let resp;
       try{
@@ -4935,10 +4958,12 @@ document.addEventListener('click', async (e)=>{
   }
   if(action==='if-approve'){
     // بوابة الاعتماد (المرحلة السادسة-ب) — الانتقال الإلزامي الوحيد من مسودة (pending/declared)
-    // نحو الترحيل: pending/declared → approved. لا يقدر أحد يقفز فوقها (انظر ledgerStatusTransitionOk
-    // في firestore.rules — نفس القيد مُطبَّق هناك كمصدر الحقيقة الحقيقي، وهنا فقط نسجّل
-    // معتمِد/توقيت الاعتماد للتدقيق). يعمل فقط لـ capitalCall/distribution (commitments لا مسودة
-    // لها أصلاً — مُرحَّلة من لحظة الإنشاء كما صُمِّمت في المرحلة السادسة).
+    // نحو الترحيل: pending/declared → approved. يعمل فقط لـ capitalCall/distribution (commitments
+    // لا مسودة لها أصلاً — مُرحَّلة من لحظة الإنشاء كما صُمِّمت في المرحلة السادسة).
+    // P0 — Trusted Transaction Layer: هذا الانتقال (وapproved→paid/waived أدناه) أصبح خادمياً
+    // بالكامل الآن عبر transitionLedgerRecord (functions/index.js) — firestore.rules تمنع أي
+    // update مباشر من العميل على capitalCalls/distributions إطلاقاً (allow update: if false)، فلا
+    // مسار احتياطي "مباشر" حقيقي متبقٍ خارج وضع الديمو (الكتلة أدناه تبقى فقط لذلك الوضع).
     const kind = el.dataset.kind, id = el.dataset.id;
     const coll = ifCollFor(kind);
     const rec = STORE[coll].find(r=>r.id===id);
@@ -4946,6 +4971,18 @@ document.addEventListener('click', async (e)=>{
     const initial = kind==='distribution' ? 'declared' : 'pending';
     if(rec.data.status !== initial){
       alert(T('لا يمكن اعتماد سجل ليس في حالة المسودة الأولية.','Cannot approve a record that is not in its initial draft state.'));
+      return;
+    }
+    const useServerFunction = !DEMO_MODE && DB && typeof firebase!=='undefined' && firebase.functions;
+    if(useServerFunction){
+      try{
+        await firebase.functions().httpsCallable('transitionLedgerRecord')({ kind, id, toStatus:'approved' });
+      }catch(e){
+        alert((e && e.message) || T('تعذّر اعتماد السجل عبر الخادم.','The server could not approve the record.'));
+        return;
+      }
+      await loadAll();
+      render();
       return;
     }
     rec.data.status = 'approved';
@@ -4969,6 +5006,21 @@ document.addEventListener('click', async (e)=>{
       alert(T('يجب اعتماد السجل أولاً (زر ✅) قبل ترحيله كمسدَّد.','The record must be approved (✅ button) before it can be posted as paid.'));
       return;
     }
+    // P0 — Trusted Transaction Layer: هذه بالضبط اللحظة التي كان يجب أن تُعاد فيها مراجعة سقف
+    // الالتزام (المدفوع التراكمي + هذا النداء ≤ الملتزَم به، الذي ربما تغيَّر منذ الاعتماد) ولم تكن
+    // تُعاد — transitionLedgerRecord تفعل هذا الآن على الخادم داخل معاملة ذرّية قبل الترحيل الفعلي.
+    const useServerFunction = !DEMO_MODE && DB && typeof firebase!=='undefined' && firebase.functions;
+    if(useServerFunction){
+      try{
+        await firebase.functions().httpsCallable('transitionLedgerRecord')({ kind, id, toStatus:'paid' });
+      }catch(e){
+        alert((e && e.message) || T('تعذّر ترحيل السجل كمسدَّد عبر الخادم.','The server could not post the record as paid.'));
+        return;
+      }
+      await loadAll();
+      render();
+      return;
+    }
     rec.data.status = 'paid';
     await persistIfRecord(coll, rec);
     await logIfTransaction({ type:kind, action:'post', relatedId:id, fundId:rec.data.fundId, investorId:rec.data.investorId, amount:rec.data.amount });
@@ -4984,6 +5036,18 @@ document.addEventListener('click', async (e)=>{
     if(!rec) return;
     if(rec.data.status !== 'approved'){
       alert(T('يجب اعتماد النداء أولاً (زر ✅) قبل تعليمه كمعفى/مُلغى.','The call must be approved (✅ button) before it can be marked waived.'));
+      return;
+    }
+    const useServerFunction = !DEMO_MODE && DB && typeof firebase!=='undefined' && firebase.functions;
+    if(useServerFunction){
+      try{
+        await firebase.functions().httpsCallable('transitionLedgerRecord')({ kind, id, toStatus:'waived' });
+      }catch(e){
+        alert((e && e.message) || T('تعذّر تعليم النداء كمعفى عبر الخادم.','The server could not mark the call as waived.'));
+        return;
+      }
+      await loadAll();
+      render();
       return;
     }
     rec.data.status = 'waived';

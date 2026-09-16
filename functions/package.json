@@ -9,6 +9,8 @@
   },
   "scripts": {
     "lint": "node --check index.js",
+    "test": "node test/p0-trusted-transaction-layer.test.js",
+    "test:p0": "node test/p0-trusted-transaction-layer.test.js",
     "deploy": "firebase deploy --only functions"
   },
   "dependencies": {

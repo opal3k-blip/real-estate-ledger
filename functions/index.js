@@ -120,13 +120,44 @@ function requireEmail(request) {
   return String(email).toLowerCase();
 }
 
+// نفس بريدَي الأدمن بالضبط من isAdminEmail() في firestore.rules — يجب أن يتطابق التعريفان دائماً
+// (تكرار متعمَّد: بيئتان منفصلتان بلا استيراد مشترك ممكن، كما في FIELD_LABELS أعلاه).
+const ADMIN_EMAILS = new Set(['opal3k@gmail.com', 'ggocss@gmail.com']);
+function isAdminEmail(email) {
+  return ADMIN_EMAILS.has(email);
+}
+
 async function roleForEmail(email) {
-  if (email === 'opal3k@gmail.com' || email === 'ggocss@gmail.com') return 'admin';
+  if (isAdminEmail(email)) return 'admin';
   const snap = await db.collection('team_roles').doc(email).get();
   return snap.exists ? ((snap.data() || {}).role || 'analyst') : 'analyst';
 }
 
+/* =========================================================================
+   P0 — Trusted Transaction Layer، إغلاق إضافي مكتشَف أثناء هذه المرحلة (لم يطلبه
+   المستخدم صراحةً، لكنه بنفس روح "لا ثقة بالعميل" التي تحكم هذه المرحلة كاملة):
+   requireRole() كانت تتحقق من الدور (team_roles) فقط، بلا أي تحقق من أن البريد
+   لا يزال ضمن قائمة الفريق المصرَّح لها أصلاً (team_members) ولم تنتهِ مدة وصوله
+   (expiresAt) — بعكس isAllowlisted() في firestore.rules التي تفرض الشرطين معاً.
+   عضو فريق أُزيل من team_members، أو انتهت مدة عضويته، كان يبقى قادراً تقنياً على
+   استدعاء أي من دوال هذا الملف طالما بقي مستنداً في team_roles (الذي لا يُحذَف
+   تلقائياً عند إزالة العضو من team_members). requireAuthorized() هنا تُطابق منطق
+   isAllowlisted() تماماً (الأدمن دائماً مُستثنى، كما في القواعد). */
+async function requireAuthorized(email) {
+  if (isAdminEmail(email)) return;
+  const snap = await db.collection('team_members').doc(email).get();
+  if (!snap.exists) throw new HttpsError('permission-denied', 'Not an authorized team member.');
+  const expiresAt = (snap.data() || {}).expiresAt;
+  if (expiresAt) {
+    const expiryMs = typeof expiresAt.toMillis === 'function' ? expiresAt.toMillis() : new Date(expiresAt).getTime();
+    if (Number.isFinite(expiryMs) && expiryMs <= Date.now()) {
+      throw new HttpsError('permission-denied', 'Team access has expired.');
+    }
+  }
+}
+
 async function requireRole(email, minRole) {
+  await requireAuthorized(email);
   const role = await roleForEmail(email);
   if (roleRank(role) < roleRank(minRole)) {
     throw new HttpsError('permission-denied', `Requires ${minRole} role.`);
@@ -179,6 +210,20 @@ async function allocatedElsewhereTx(tx, fund, excludeOppId) {
   return total;
 }
 
+/* ⚠️ TEMPORARY TRUST BOUNDARY (P0 — Trusted Transaction Layer، قرار معماري صريح من المستخدم):
+   `readiness` أدناه لا يزال بيانات "يُصرِّح بها العميل" (نتيجة icReadiness(core, draft) المحسوبة
+   في المتصفح) لا يُعاد حسابها هنا على الخادم — basicReadinessOk() تتحقق فقط من *شكل* الكائن
+   (ready===true وكل بوابة داخله ok!==false)، لا من صحة الأرقام المالية/DD/الأدلة/التخطيط/التسعير
+   التي أنتجت تلك النتيجة أصلاً. هذا يعني: عميل يتلاعب بواجهته (لا بـ Firestore مباشرة — ذلك
+   مقفول الآن) لا يزال يقدر نظرياً يُرسل `readiness:{ready:true, gates:{}}` مصطنعة لهذه الدالة.
+   القرار الصريح لهذه المرحلة (بعد نقاش معماري كامل مع المستخدم) هو تأجيل الإصلاح الكامل لمرحلة
+   منفصلة تماماً: "P0 — Shared Domain Engine Extraction" (استخراج src/domain/{financial-engine,
+   ic-readiness, evidence-engine, dd-engine, planning-engine}.js من core.js لتُستهلَك حرفياً من
+   المتصفح وهذه الدالة معاً، فتصبح إعادة الحساب هنا ممكنة بلا تكرار منطق) — رُفض عمداً بناء نسخة
+   Node مبسَّطة/موازية الآن لهذه الحسابات (كانت ستصبح "محرك خامس متضارب"، بالضبط النمط الذي أزالته
+   مراحل Canonical Metrics Consolidation السابقة). لذلك هذه الدالة تُغلق فقط مسارات الكتابة
+   المباشرة على Firestore (opportunity.ic لم يعد قابلاً للكتابة من العميل إطلاقاً — انظر
+   firestore.rules)، وتُبقي basicReadinessOk() كحارس شكلي مؤقت حتى إنجاز مرحلة استخراج المحرك. */
 exports.approveOpportunity = onCall(async (request) => {
   const email = requireEmail(request);
   await requireRole(email, 'senior_ic');
@@ -222,6 +267,51 @@ exports.approveOpportunity = onCall(async (request) => {
     });
   });
   return { ok: true, decisionId: icRef.id };
+});
+
+/* P0 — Trusted Transaction Layer: يُبقي ميزة "تبديل حالة شرط اعتماد" (ic-toggle-condition في
+   ic-workflow.js) تعمل بعد إغلاق ثغرة icOnlyChange في firestore.rules تماماً (لم يعد opportunity.ic
+   قابلاً للكتابة من أي عميل مباشرة، لا بمسار icOnlyChange القديم ولا حتى بمسار "المالك العادي"
+   ownsOpp — انظر التعليق الجديد في firestore.rules). تُطابق هذه الدالة *حرفياً* نفس صلاحية
+   core.canEditOpp(rec) من جانب العميل (المالك أو الأدمن)، منقولة للخادم: لا نرفع صلاحية التبديل
+   لتصبح دور "عضو لجنة" كما في approveOpportunity — التبديل هنا مجرد تتبّع تنفيذي لشرط سبق واعتمدته
+   اللجنة فعلاً في قرار موجود، وهذا بالضبط ما كان core.canEditOpp يحرسه من قبل، فلا داعي لتضييق
+   الصلاحية أو توسيعها هنا. */
+exports.updateIcConditionStatus = onCall(async (request) => {
+  const email = requireEmail(request);
+  await requireAuthorized(email);
+  const { oppId, decisionIdx, conditionIdx } = request.data || {};
+  if (!oppId || decisionIdx == null || conditionIdx == null) {
+    throw new HttpsError('invalid-argument', 'oppId, decisionIdx and conditionIdx are required.');
+  }
+  const oppRef = db.collection('opportunities').doc(oppId);
+  await db.runTransaction(async (tx) => {
+    const oppSnap = await tx.get(oppRef);
+    if (!oppSnap.exists) throw new HttpsError('not-found', 'Opportunity not found.');
+    const opp = oppSnap.data() || {};
+    const owner = (opp.meta || {}).createdBy;
+    const isOwner = !owner || String(owner).toLowerCase() === email;
+    if (!isAdminEmail(email) && !isOwner) {
+      throw new HttpsError('permission-denied', 'Only the opportunity owner or an admin can toggle IC conditions.');
+    }
+    const ic = opp.ic || {};
+    const decisions = Array.isArray(ic.decisions) ? ic.decisions.slice() : [];
+    const decision = decisions[decisionIdx];
+    if (!decision || !Array.isArray(decision.conditions) || !decision.conditions[conditionIdx]) {
+      throw new HttpsError('not-found', 'Condition not found.');
+    }
+    const conditions = decision.conditions.slice();
+    const cond = Object.assign({}, conditions[conditionIdx]);
+    cond.status = cond.status === 'met' ? 'pending' : 'met';
+    conditions[conditionIdx] = cond;
+    decisions[decisionIdx] = Object.assign({}, decision, { conditions });
+    tx.update(oppRef, {
+      ic: Object.assign({}, ic, { decisions }),
+      'meta.updatedBy': email,
+      'meta.updatedAt': new Date().toISOString().slice(0, 10),
+    });
+  });
+  return { ok: true };
 });
 
 exports.linkAssetToFund = onCall(async (request) => {
@@ -272,6 +362,14 @@ exports.postCapitalCall = onCall(async (request) => {
   const email = requireEmail(request);
   await requireRole(email, 'fund_manager');
   const data = request.data || {};
+  // P0 — Trusted Transaction Layer: قيود عكسية (reversalOfId) لم تعد تُنشأ عبر هذه الدالة إطلاقاً —
+  // كانت (قبل هذه المرحلة) تتجاوز فحص السقف بالكامل (الشرط أدناه في المعاملة يستثنيها عمداً) بلا أي
+  // تحقق بديل (لا فحص "السجل الأصل موجود؟"، ولا "لم يُعكَس من قبل؟"، ولا أن المبلغ هو فعلاً معكوس
+  // الأصل بالضبط) — ثغرة حقيقية أُغلقت الآن بتحويل كل إنشاء قيد عكسي حصرياً لدالة reverseTransaction
+  // المخصَّصة أدناه، التي تشتق كل الحقول من السجل الأصل نفسه بدل قبولها من العميل.
+  if (data.reversalOfId) {
+    throw new HttpsError('invalid-argument', 'Reversal entries must be created via reverseTransaction, not postCapitalCall.');
+  }
   assertLedgerAmount(data, 'amount');
   if (!data.fundId || !data.investorId || !data.callDate) throw new HttpsError('invalid-argument', 'fundId, investorId and callDate are required.');
   // معرّف الوثيقة يُولَّد هنا مسبقاً (خارج المعاملة — doc() لا يحتاج معاملة) ليُعاد للعميل، الذي
@@ -280,7 +378,7 @@ exports.postCapitalCall = onCall(async (request) => {
   // بمعرّف صحيح في دفتر يومية المعاملات الخاص به.
   const ref = db.collection('capitalCalls').doc();
   await db.runTransaction(async (tx) => {
-    if (data.status === 'paid' && !data.reversalOfId) {
+    if (data.status === 'paid') {
       const committed = await committedForInvestorTx(tx, data.fundId, data.investorId);
       const paid = await paidCallsForInvestorTx(tx, data.fundId, data.investorId);
       if (paid + n(data.amount) > committed) {
@@ -298,10 +396,167 @@ exports.postCapitalCall = onCall(async (request) => {
   return { ok: true, id: ref.id };
 });
 
-exports.mirrorOpportunityAuditLog = onDocumentWritten('opportunities/{oppId}', async (event) => {
-  const oppId = event.params.oppId;
-  const beforeSnap = event.data && event.data.before;
-  const afterSnap = event.data && event.data.after;
+/* =========================================================================
+   P0 — Trusted Transaction Layer: دورة حياة نداء رأس المال/التوزيعة (pending/declared →
+   approved → paid/waived) بالكامل من جانب الخادم الآن. قبل هذه المرحلة، كانت الانتقالات الثلاثة
+   (if-approve/if-mark-paid/if-waive في core.js) كتابة عميل مباشرة (persistIfRecord) بلا أي
+   إعادة تحقق خادمية عند لحظة الانتقال نفسها — تحديداً انتقال "الترحيل النهائي" (paid)، الذي هو
+   بالضبط اللحظة التي يُفترض أن يُقفَل فيها السقف (المدفوع + هذا النداء ≤ الملتزَم به) بلا أي مجال
+   للتلاعب؛ postCapitalCall كانت تتحقق من هذا السقف فقط عند *الإنشاء الأولي* (status: 'pending')،
+   لا عند لحظة السداد الفعلية لاحقاً — وبين اللحظتين قد يتغيّر الملتزَم به (قيد عكسي على التزام
+   المستثمر نفسه، مثلاً)، فيصبح نداء كان صحيحاً وقت إنشائه غير صحيح وقت سداده، بلا أي حارس خادمي
+   يمنعه. firestore.rules الآن تمنع أي `update` مباشر من العميل على capitalCalls/distributions
+   بالكامل (`allow update: if false`) — المسار الوحيد المتبقي لأي انتقال حالة هو هذه الدالة. */
+const LEDGER_COLLECTIONS = { capitalCall: 'capitalCalls', distribution: 'distributions' };
+const LEDGER_INITIAL_STATUS = { capitalCall: 'pending', distribution: 'declared' };
+
+// تُطابق ledgerStatusTransitionOk() في firestore.rules بالضبط (قبل إزالتها من القاعدة نفسها الآن
+// أنها لم تعد ضرورية هناك بعد قفل allow update بالكامل — المنطق نفسه ضروري هنا، مصدر الحقيقة
+// الوحيد الآن). waived قاصرة على capitalCall فقط (لا مقابل لها في DISTRIBUTION_STATUS).
+function ledgerTransitionAllowed(kind, before, to) {
+  const initial = LEDGER_INITIAL_STATUS[kind];
+  if (before === initial && to === 'approved') return true;
+  if (before === 'approved' && to === 'paid') return true;
+  if (before === 'approved' && to === 'waived' && kind === 'capitalCall') return true;
+  return false;
+}
+
+exports.transitionLedgerRecord = onCall(async (request) => {
+  const email = requireEmail(request);
+  await requireRole(email, 'fund_manager');
+  const { kind, id, toStatus } = request.data || {};
+  const coll = LEDGER_COLLECTIONS[kind];
+  if (!coll || !id || !toStatus) throw new HttpsError('invalid-argument', 'kind, id and toStatus are required.');
+  if (!['approved', 'paid', 'waived'].includes(toStatus)) throw new HttpsError('invalid-argument', 'Invalid target status.');
+
+  const ref = db.collection(coll).doc(id);
+  await db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists) throw new HttpsError('not-found', 'Record not found.');
+    const data = snap.data() || {};
+    if (!ledgerTransitionAllowed(kind, data.status, toStatus)) {
+      throw new HttpsError('failed-precondition', `Cannot transition ${kind} from "${data.status}" to "${toStatus}".`);
+    }
+    // إعادة التحقق اللحظية من سقف الالتزام — بالضبط اللحظة التي وصفها المستخدم: "يعيد التحقق من
+    // المدفوع التراكمي مقابل الالتزام (الذي ربما عُدِّل) في تلك اللحظة بالذات". نداء تلقائي مرتبط
+    // بمساهمة عينية (linkedCommitmentId) لا يمر بهذه الدالة أصلاً (يُنشأ 'paid' مباشرة من if-save)
+    // فلا حاجة لاستثنائه هنا.
+    if (toStatus === 'paid' && kind === 'capitalCall') {
+      const committed = await committedForInvestorTx(tx, data.fundId, data.investorId);
+      const paid = await paidCallsForInvestorTx(tx, data.fundId, data.investorId);
+      if (paid + n(data.amount) > committed) {
+        throw new HttpsError('failed-precondition', 'Capital call exceeds investor commitment at payment time.');
+      }
+    }
+    const update = { status: toStatus };
+    if (toStatus === 'approved') {
+      update.approvedBy = email;
+      update.approvedAt = new Date().toISOString();
+    }
+    tx.update(ref, update);
+    tx.set(db.collection('transactions').doc(), {
+      type: kind,
+      action: toStatus === 'approved' ? 'approve' : (toStatus === 'waived' ? 'waive' : 'post'),
+      relatedId: id,
+      fundId: data.fundId,
+      investorId: data.investorId,
+      amount: toStatus === 'waived' ? 0 : n(data.amount),
+      by: email,
+      at: FieldValue.serverTimestamp(),
+      version: 1,
+    });
+  });
+  return { ok: true };
+});
+
+/* =========================================================================
+   P0 — Trusted Transaction Layer: reverseTransaction() — القيد العكسي الوحيد الموثوق. قبل هذه
+   المرحلة كان يمكن إنشاء سجل بحقل reversalOfId مباشرة من العميل (firestore.rules كانت تتحقق فقط
+   من إشارة المبلغ) بلا أي تحقق فعلي أن: السجل الأصل موجود، لم يُعكَس من قبل (لا عكس مزدوج)، نفس
+   المستثمر/الصندوق/نوع السجل، والمبلغ هو فعلاً المعكوس الدقيق للأصل. الإصلاح هنا أقوى من "التحقق"
+   فقط: العميل لا يرسل شيئاً سوى (النوع، معرّف السجل الأصل، سبب العكس) — كل حقل آخر (المبلغ العكسي،
+   المستثمر، الصندوق) يُشتَق من السجل الأصل نفسه داخل الخادم، فلا مجال أصلاً لإرسال قيمة مزيَّفة
+   لأي منها. */
+const REVERSAL_COLLECTIONS = { commitment: 'commitments', capitalCall: 'capitalCalls', distribution: 'distributions' };
+const REVERSAL_AMOUNT_FIELD = { commitment: 'commitmentAmount', capitalCall: 'amount', distribution: 'amount' };
+
+// تُطابق isPostedIfRecord(kind, rec) في core.js بالضبط: لا يجوز عكس سجل لم يُرحَّل بعد (له مسار
+// حذف مباشر أبسط لذلك، انظر if-delete) — commitments مُرحَّلة من الإنشاء دوماً؛ capitalCalls
+// مُرحَّلة عند paid/waived أو أي نداء تلقائي مرتبط بمساهمة عينية (linkedCommitmentId)؛
+// distributions فقط عند paid.
+function isPostedForReversal(kind, data) {
+  if (kind === 'commitment') return true;
+  if (kind === 'capitalCall') return data.status === 'paid' || data.status === 'waived' || !!data.linkedCommitmentId;
+  if (kind === 'distribution') return data.status === 'paid';
+  return false;
+}
+
+exports.reverseTransaction = onCall(async (request) => {
+  const email = requireEmail(request);
+  await requireRole(email, 'fund_manager');
+  const { kind, id, notes } = request.data || {};
+  const coll = REVERSAL_COLLECTIONS[kind];
+  const amtField = REVERSAL_AMOUNT_FIELD[kind];
+  if (!coll || !id) throw new HttpsError('invalid-argument', 'kind and id are required.');
+
+  const originalRef = db.collection(coll).doc(id);
+  const newRef = db.collection(coll).doc();
+  await db.runTransaction(async (tx) => {
+    const origSnap = await tx.get(originalRef);
+    if (!origSnap.exists) throw new HttpsError('not-found', 'Original record not found.');
+    const orig = origSnap.data() || {};
+    if (orig.reversalOfId) {
+      throw new HttpsError('failed-precondition', 'Cannot reverse a record that is itself a reversal entry.');
+    }
+    if (!isPostedForReversal(kind, orig)) {
+      throw new HttpsError('failed-precondition', 'Only a posted record can be reversed.');
+    }
+    // لا عكس مزدوج: لا سجل آخر في نفس المجموعة يشير reversalOfId إليه بالفعل.
+    const existingReversal = await tx.get(db.collection(coll).where('reversalOfId', '==', id).limit(1));
+    if (!existingReversal.empty) {
+      throw new HttpsError('failed-precondition', 'This record has already been reversed.');
+    }
+    const origAmount = n(orig[amtField]);
+    const reversal = Object.assign({}, orig, {
+      reversalOfId: id,
+      notes: (notes || '').toString(),
+      [amtField]: -origAmount,
+      createdBy: email,
+      createdAt: FieldValue.serverTimestamp(),
+    });
+    delete reversal.id;
+    if (kind !== 'commitment') {
+      // القيد العكسي لدفعة نداء/توزيعة تلقائية يبقى قائماً بذاته — لا يُعاد ربطه بذات الالتزام
+      // العيني تلقائياً (يطابق تماماً سلوك if-reverse من جانب العميل قبل هذه المرحلة).
+      reversal.linkedCommitmentId = null;
+      // القيد العكسي نفسه سجل مُرحَّل فوراً — نفس حالة الأصل (paid يبقى paid، waived يبقى waived).
+      reversal.status = orig.status;
+      reversal.approvedBy = orig.approvedBy || email;
+      reversal.approvedAt = orig.approvedAt || new Date().toISOString();
+    }
+    tx.set(newRef, reversal);
+    tx.set(db.collection('transactions').doc(), {
+      type: kind,
+      action: 'reverse',
+      relatedId: newRef.id,
+      reversalOfId: id,
+      fundId: orig.fundId,
+      investorId: orig.investorId,
+      amount: -origAmount,
+      by: email,
+      at: FieldValue.serverTimestamp(),
+      version: 1,
+    });
+  });
+  return { ok: true, id: newRef.id };
+});
+
+// ⚠️ ملاحظة توافق (لا علاقة لها بمرحلة P0 هذه): هذا الـtrigger مكتوب بصيغة firebase-functions/v1
+// (لا v2/onDocumentWritten كباقي هذا الملف) — تعديل محلي سابق على هذا الجهاز لأغراض توافق النشر،
+// أبقيته كما هو دون لمسه فلا علاقة له بطبقة المعاملات الموثوقة نفسها.
+exports.mirrorOpportunityAuditLog = require('firebase-functions/v1').firestore.document('opportunities/{oppId}').onWrite(async (change, context) => {
+  const oppId = context.params.oppId;
+  const beforeSnap = change.before; const afterSnap = change.after; 
 
   const afterExists = !!(afterSnap && afterSnap.exists);
   const beforeExists = !!(beforeSnap && beforeSnap.exists);
@@ -350,8 +605,10 @@ exports.mirrorOpportunityAuditLog = onDocumentWritten('opportunities/{oppId}', a
 });
 
 // مُصدَّرة للاختبار البنيوي المباشر (test_functions.mjs) بلا الحاجة لمحاكي Functions كامل.
-exports._internal = { deepDiff, fieldLabel, FIELD_LABELS, IGNORE_PATHS, actorFromData, basicReadinessOk, decisionConditionsMet, assertLedgerAmount, roleRank };
+exports._internal = { deepDiff, fieldLabel, FIELD_LABELS, IGNORE_PATHS, actorFromData, basicReadinessOk, decisionConditionsMet, assertLedgerAmount, roleRank, isAdminEmail, ledgerTransitionAllowed, isPostedForReversal };
 
 // تكامل Monday.com الخلفي الآمن: يعالج mondayTaskQueue من الخادم فقط، بعد ضبط
 // MONDAY_API_TOKEN في Secret Manager. لا يوجد أي رمز API في واجهة العميل.
 Object.assign(exports, require('./monday-sync'));
+  
+Object.assign(exports, require('./monday-webhook'));  

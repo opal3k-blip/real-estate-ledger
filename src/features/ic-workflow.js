@@ -251,6 +251,25 @@ export function registerICWorkflow(core){
       const rec = core.opportunities.find(o=>o.id===oppId);
       if(!rec || !core.canEditOpp(rec)) return true;
 
+      // P0 — Trusted Transaction Layer: opportunity.ic لم يعد قابلاً للكتابة من العميل مباشرة
+      // بأي مسار (لا icOnlyChange سابقاً، ولا حتى مسار "المالك العادي" ownsOpp — انظر
+      // firestore.rules). updateIcConditionStatus (functions/index.js) تُطابق حرفياً نفس صلاحية
+      // core.canEditOpp أعلاه (المالك أو الأدمن) لكن مُنفَّذة على الخادم بصلاحيات Admin SDK.
+      const useServerFunction = !core.DEMO_MODE && core.DB && typeof firebase!=='undefined' && firebase.functions;
+      if(useServerFunction){
+        try{
+          await firebase.functions().httpsCallable('updateIcConditionStatus')({ oppId, decisionIdx: idx, conditionIdx: ci });
+        }catch(err){
+          alert(core.T('تعذّر تحديث حالة الشرط عبر الخادم: ','Server could not update the condition status: ') + (err && err.message ? err.message : String(err)));
+          return true;
+        }
+        await core.loadAll();
+        core.render();
+        return true;
+      }
+
+      // مسار احتياطي (وضع الديمو، أو تشغيل محلي بلا Firebase حقيقي أصلاً): لا دالة خلفية
+      // لاستدعائها، فيبقى المسار القديم من جانب العميل فقط كما كان قبل هذا الإصلاح.
       const draft = core.withDefaults(rec.data);
       const dec = draft.ic.decisions && draft.ic.decisions[idx];
       if(dec && dec.conditions && dec.conditions[ci]){

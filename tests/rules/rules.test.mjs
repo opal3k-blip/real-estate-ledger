@@ -492,6 +492,54 @@ for(const coll of LEDGER_COLLECTIONS){
   assert(true, '🔒 قائمة انتظار Monday لا تُحذف من العميل');
 }
 
+// ==================== ١٣) [تغطية دائمة — طلب صريح من المستخدم ضمن P0: Trusted Transaction Layer]
+// analyst direct IC mutation: التأكد من أن changesIc() تحجب حقل ic بالكامل عن مسار ownsOpp العادي،
+// حتى لمالك الفرصة نفسه (لا فقط لمحلل لا يملكها كما في القسم ٢ أعلاه) ولا حتى للأدمن ====================
+{
+  await testEnv.withSecurityRulesDisabled(async (ctx)=>{
+    await setDoc(doc(ctx.firestore(),'opportunities','OPP-1'), baseOpp(ANALYST_OWNER, []));
+  });
+  const db = ctxFor(ANALYST_OWNER).firestore();
+  const attempt = baseOpp(ANALYST_OWNER, [{ decision:'approve', reasons:['محاولة مباشرة'], conditions:[], decidedBy:ANALYST_OWNER, decidedAt:'2026-09-09T10:00:00Z' }]);
+  attempt.meta.updatedBy = ANALYST_OWNER;
+  await assertFails(setDoc(doc(db,'opportunities','OPP-1'), attempt));
+  assert(true, '🔒 [السيناريو المسمّى: analyst direct IC mutation] حتى مالك الفرصة نفسه (محلل) لا يقدر يعدّل حقل ic مباشرة من العميل — changesIc() تحجب الحقل بالكامل عن مسار ownsOpp؛ المسار الوحيد المتبقي هو updateIcConditionStatus عبر Cloud Function');
+}
+{
+  // ملاحظة تصميمية مهمة تُختبَر هنا صراحة (وتُفرّق هذا القسم عن القسم ١٤ التالي): isAdminEmail()
+  // هو OR-فرع مستقل تماماً بذاته في allow update لـopportunities (بلا أي AND مع !changesIc) —
+  // فالأدمن *يقدر فعلاً* يعدّل ic مباشرة من العميل بتصميم متعمَّد (نفس امتياز "بلا قيد إضافي"
+  // الذي يملكه على كل حقول الفرصة)، بخلاف fund.assetIds في القسم ١٤ حيث لا يوجد أي استثناء
+  // أدمن إطلاقاً. هذا الفارق التصميمي بين الحقلين موثَّق في تعليق firestore.rules نفسه.
+  await testEnv.withSecurityRulesDisabled(async (ctx)=>{
+    await setDoc(doc(ctx.firestore(),'opportunities','OPP-1'), baseOpp(ANALYST_OWNER, []));
+  });
+  const db = ctxFor(ADMIN).firestore();
+  const attempt = baseOpp(ANALYST_OWNER, [{ decision:'approve', reasons:[], conditions:[], decidedBy:ADMIN, decidedAt:'x' }]);
+  attempt.meta.updatedBy = ADMIN;
+  await assertSucceeds(setDoc(doc(db,'opportunities','OPP-1'), attempt));
+  assert(true, 'ℹ️ الأدمن *يقدر* يعدّل ic مباشرة من العميل (isAdminEmail() فرع مستقل بلا قيد changesIc) — هذا بتصميم متعمَّد يطابق امتيازه العام على بقية حقول الفرصة، ويُذكَر هنا صراحة لتوثيق الفارق عن حالة fund.assetIds في القسم التالي حيث لا استثناء أدمن إطلاقاً');
+}
+
+// ==================== ١٤) [تغطية دائمة — طلب صريح من المستخدم ضمن P0: Trusted Transaction Layer]
+// direct fund.assetIds mutation: التأكد من أن changesAssetIds() تحجب الحقل عن أي دور بما فيه
+// الأدمن نفسه — بخلاف changesIc() التي تسمح للأدمن بمسار خاص به، فهنا لا استثناء أدمن مطلقاً ====================
+{
+  await testEnv.withSecurityRulesDisabled(async (ctx)=>{
+    await setDoc(doc(ctx.firestore(),'funds','FND-ASSETIDS'), { name:'صندوق تجريبي', assetIds:['OPP-1'] });
+  });
+  const dbFM = ctxFor(FUND_MANAGER).firestore();
+  await assertFails(updateDoc(doc(dbFM,'funds','FND-ASSETIDS'), { assetIds:['OPP-1','OPP-2'] }));
+  assert(true, '🔒 [السيناريو المسمّى: direct fund.assetIds mutation] حتى مدير الصندوق (الذي يملك صلاحية isFundManagerOrAbove الكاملة على funds بخلاف ذلك) لا يقدر يعدّل assetIds مباشرة — المسار الوحيد هو linkAssetToFund عبر Cloud Function');
+}
+{
+  const dbAdmin = ctxFor(ADMIN).firestore();
+  await assertFails(updateDoc(doc(dbAdmin,'funds','FND-ASSETIDS'), { assetIds:['OPP-1','OPP-3'] }));
+  assert(true, '🔒 حتى الأدمن لا يقدر يعدّل fund.assetIds مباشرة رغم أن isFundManagerOrAbove() تمنحه المرور دوماً (isAdminEmail() OR-فرع فيها) — لأن changesAssetIds() لا تحتوي على أي استثناء isAdminEmail() على الإطلاق، بخلاف تصميم changesIc(); هذا الفارق التصميمي المتعمَّد هو بالضبط ما يُختبر هنا');
+  await assertSucceeds(updateDoc(doc(dbAdmin,'funds','FND-ASSETIDS'), { name:'صندوق تجريبي (معدّل)' }));
+  assert(true, '✅ تعديل أي حقل آخر غير assetIds في نفس الوثيقة يبقى مسموحاً للأدمن — القيد ينصبّ على حقل assetIds تحديداً فقط، لا على الوثيقة كاملة');
+}
+
 console.log(failures? `\n${failures} FAILURE(S)` : '\nALL PASSED (against a real Firestore emulator, not a mock)');
 await testEnv.cleanup();
 process.exit(failures?1:0);
