@@ -1031,6 +1031,12 @@ function fundLedgerSummary(fundId){
    ========================================================================= */
 function irr(cashflows){
   // Newton's method with bisection fallback. cashflows[0] is year 0.
+  // حارس ضروري: عندما تكون كل التدفقات صفراً (مثلاً معالج فرصة جديدة لم تُعبَّأ
+  // أرقامه بعد)، فإن NPV(r)=0 عند أي معدل r — ما كان يجعل الحلقة تتقارب فوراً
+  // على تخمين نيوتن الابتدائي (0.15 = 15%) وتُعيده كأنه معدل عائد داخلي حقيقي،
+  // رغم أنه رقم عشوائي بلا أي معنى. نتحقق هنا صراحة ونُرجع NaN بدلاً من ذلك.
+  if(!Array.isArray(cashflows) || cashflows.length<2) return NaN;
+  if(cashflows.every(v=>!v || Math.abs(v)<1e-9)) return NaN;
   function npv(r){ let s=0; for(let t=0;t<cashflows.length;t++) s += cashflows[t]/Math.pow(1+r,t); return s; }
   let r = 0.15;
   for(let i=0;i<60;i++){
