@@ -6,9 +6,10 @@ import { fileURLToPath } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const ROOT = path.join(__dirname, '..', '..');
 
-export function loadCore(){
+export function loadCore(extraExports = []){
   let coreCode = fs.readFileSync(path.join(ROOT, 'src/core.js'), 'utf8');
-  coreCode = coreCode.replace(/export\s*\{/, 'globalThis.__C = {');
+  const extras = Array.isArray(extraExports) && extraExports.length ? `${extraExports.join(',')},` : '';
+  coreCode = coreCode.replace(/export\s*\{/, `globalThis.__C = {${extras}`);
   const ctx = {
     console, setTimeout, clearTimeout,
     localStorage: { getItem(){ return null; }, setItem(){} },
