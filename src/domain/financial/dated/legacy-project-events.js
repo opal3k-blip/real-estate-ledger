@@ -10,9 +10,9 @@
    ========================================================================= */
 import { createFinancialEvent, FINANCIAL_EVENT_TYPES, aggregateEventEffects } from './financial-event.js';
 import { requireAcquisitionDate } from './timeline.js';
+import { extractProjectCostComponents } from './project-cost-components.js';
 
-function n(v){ return Number.isFinite(Number(v)) ? Number(v) : 0; }
-function positive(v){ return Math.max(0,n(v)); }
+function positive(v){ return Math.max(0,Number.isFinite(Number(v)) ? Number(v) : 0); }
 
 export function generateLegacyProjectCostEvents(computation,{acquisitionDate,scope='legacy-project'}={}){
   requireAcquisitionDate(acquisitionDate);
@@ -25,23 +25,15 @@ export function generateLegacyProjectCostEvents(computation,{acquisitionDate,sco
     events.push(createFinancialEvent({scope,sequence:seq++,date:acquisitionDate,type,amount,metadata:{key,...metadata}}));
   };
 
-  const contingency = positive(computation.costBreakdownAmounts?.contingency);
-  const hardCostBase = positive(computation.hardCostBase);
-  push(FINANCIAL_EVENT_TYPES.LAND_ACQUISITION, computation.landCost, 'land');
-  push(FINANCIAL_EVENT_TYPES.CONSTRUCTION_COST, hardCostBase, 'hard-cost-base');
-  push(FINANCIAL_EVENT_TYPES.CONTINGENCY, contingency, 'contingency');
+  const components=extractProjectCostComponents(computation);
+  push(FINANCIAL_EVENT_TYPES.LAND_ACQUISITION, components.landCost, 'land');
+  push(FINANCIAL_EVENT_TYPES.CONSTRUCTION_COST, components.hardCostBase, 'hard-cost-base');
+  push(FINANCIAL_EVENT_TYPES.CONTINGENCY, components.contingency, 'contingency');
 
-  const feeComponents={
-    oneTimeFixed:positive(computation.oneTimeFixed),
-    structuringFee:positive(computation.structuringFee),
-    acquisitionFee:positive(computation.acquisitionFee),
-    arrangementFee:positive(computation.arrangementFee),
-  };
-  for(const [key,amount] of Object.entries(feeComponents)) push(FINANCIAL_EVENT_TYPES.FEE,amount,key,{feeComponent:key});
+  for(const [key,amount] of Object.entries(components.fees)) push(FINANCIAL_EVENT_TYPES.FEE,amount,key,{feeComponent:key});
 
-  const vatExcluded=positive(computation.vatInputTotal);
   const generatedOutflow=-aggregateEventEffects(events).projectCash;
-  const expectedWithoutVat=positive(computation.TPC)-vatExcluded;
+  const expectedWithoutVat=components.expectedTPCExcludingVAT;
 
   return Object.freeze({
     events:Object.freeze(events),
@@ -49,7 +41,7 @@ export function generateLegacyProjectCostEvents(computation,{acquisitionDate,sco
       generatedProjectOutflow:generatedOutflow,
       expectedLegacyTPCExcludingVAT:expectedWithoutVat,
       delta:generatedOutflow-expectedWithoutVat,
-      excludedVAT:vatExcluded,
+      excludedVAT:components.vatExcluded,
       timingFinding:'LEGACY_ALL_TPC_AT_T0_NO_CANONICAL_SPEND_CURVE',
     }),
   });
