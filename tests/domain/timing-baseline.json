@@ -1270,7 +1270,7 @@
     },
     "T16-refinance-close": {
       "label": "Refinance-close at terminal year",
-      "datedCoverage": "BASELINE_ONLY",
+      "datedCoverage": "IMPLEMENTED_WITH_FINDINGS",
       "timing": {
         "totalYears": 7,
         "constructionYears": 2,
@@ -1395,7 +1395,7 @@
     },
     "T17-perpetual-hold-periodic-refi": {
       "label": "Perpetual hold with periodic refinance",
-      "datedCoverage": "BASELINE_ONLY",
+      "datedCoverage": "IMPLEMENTED_WITH_FINDINGS",
       "timing": {
         "totalYears": 9,
         "constructionYears": 1,

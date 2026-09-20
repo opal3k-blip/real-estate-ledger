@@ -24,6 +24,8 @@ const eq=createFinancialEvent({scope:'x',sequence:0,date:'2026-01-01',type:FINAN
 assert.deepEqual(eventEffects(eq),{projectCash:0,equityCash:-100,debtBalance:0,financingCash:100});
 const cap=createFinancialEvent({scope:'x',sequence:1,date:'2026-12-31',type:FINANCIAL_EVENT_TYPES.INTEREST_CAPITALIZED,amount:8});
 assert.deepEqual(eventEffects(cap),{projectCash:0,equityCash:0,debtBalance:8,financingCash:0});
+const refiFee=createFinancialEvent({scope:'x',sequence:2,date:'2026-12-31',type:FINANCIAL_EVENT_TYPES.REFINANCE_FEE,amount:3});
+assert.deepEqual(eventEffects(refiFee),{projectCash:0,equityCash:0,debtBalance:0,financingCash:-3});
 assert.throws(()=>createFinancialEvent({date:'2026-01-01',type:FINANCIAL_EVENT_TYPES.DEBT_DRAW,amount:-1}),/INVALID_EVENT_AMOUNT/);
 assert.throws(()=>createFinancialEvent({date:'2026-13-01',type:FINANCIAL_EVENT_TYPES.DEBT_DRAW,amount:1}),/INVALID_EVENT_DATE/);
 

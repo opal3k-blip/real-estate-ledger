@@ -27,6 +27,7 @@ export const FINANCIAL_EVENT_TYPES = Object.freeze({
   INTEREST_CAPITALIZED: 'INTEREST_CAPITALIZED',
   REFINANCE_DRAW: 'REFINANCE_DRAW',
   REFINANCE_REPAYMENT: 'REFINANCE_REPAYMENT',
+  REFINANCE_FEE: 'REFINANCE_FEE',
 });
 
 /*
@@ -61,6 +62,7 @@ export const EVENT_TYPE_META = Object.freeze({
   INTEREST_CAPITALIZED:  { projectCashSign: 0, equityCashSign: 0, debtBalanceSign: 1, financingCashSign: 0 },
   REFINANCE_DRAW:        { projectCashSign: 0, equityCashSign: 0, debtBalanceSign: 1, financingCashSign: 1 },
   REFINANCE_REPAYMENT:   { projectCashSign: 0, equityCashSign: 0, debtBalanceSign:-1, financingCashSign:-1 },
+  REFINANCE_FEE:         { projectCashSign: 0, equityCashSign: 0, debtBalanceSign: 0, financingCashSign:-1 },
 });
 
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
