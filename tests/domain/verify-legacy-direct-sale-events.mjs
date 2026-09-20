@@ -1,3 +1,4 @@
+import coreVmSource from '../helpers/core-vm-source.cjs';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'url';
 import path from 'path';
@@ -17,8 +18,7 @@ const TOL=1e-7;
 function near(a,b,tol=TOL){ return Math.abs(a-b)<=tol*Math.max(1,Math.abs(a),Math.abs(b)); }
 
 function loadCore(){
-  let code=fs.readFileSync(path.join(ROOT,'src/core.js'),'utf8');
-  code=code.replace(/export\s*\{/,'globalThis.__C = {');
+  let code=coreVmSource.buildCoreVmSource();
   const ctx={
     console,setTimeout,clearTimeout,
     localStorage:{getItem(){return null;},setItem(){}},

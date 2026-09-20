@@ -1,6 +1,6 @@
+const { buildCoreVmSource }=require('../helpers/core-vm-source.cjs');
 const fs=require('fs'), vm=require('vm'), assert=require('assert'), path=require('path');
-let code=fs.readFileSync(path.join(__dirname,'../../src/core.js'),'utf8');
-code=code.replace(/export\s*\{/,'globalThis.__C = {');
+let code=buildCoreVmSource();
 const ctx={console,setTimeout,clearTimeout,localStorage:{getItem(){return null},setItem(){}},document:{documentElement:{lang:'ar'},querySelector(){return null},addEventListener(){},getElementById(){return null},querySelectorAll(){return[]},body:{},createElement(){return {}}},window:{},Notification:undefined,navigator:{},URL,FileReader:function(){},Intl,Math,JSON,Date,parseFloat,parseInt,isFinite,Number,String,Array,Object};ctx.window=ctx;vm.createContext(ctx);vm.runInContext(code,ctx,{timeout:20000});
 const C=ctx.__C;
 let mapCode=fs.readFileSync(path.join(__dirname,'../../src/features/max-acquisition-price.js'),'utf8');

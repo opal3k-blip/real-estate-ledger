@@ -1,3 +1,4 @@
+import coreVmSource from '../helpers/core-vm-source.cjs';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'url';
 import path from 'path';
@@ -11,8 +12,7 @@ const ROOT=path.join(__dirname,'..','..');
 const expected=JSON.parse(fs.readFileSync(path.join(__dirname,'timing-baseline.json'),'utf8'));
 
 function loadCore(){
-  let code=fs.readFileSync(path.join(ROOT,'src/core.js'),'utf8');
-  code=code.replace(/export\s*\{/,'globalThis.__C = {');
+  let code=coreVmSource.buildCoreVmSource();
   const ctx={
     console,setTimeout,clearTimeout,
     localStorage:{getItem(){return null;},setItem(){}},

@@ -1,4 +1,4 @@
-import fs from 'fs';
+import coreVmSource from '../helpers/core-vm-source.cjs';
 import path from 'path';
 import vm from 'vm';
 import { fileURLToPath } from 'url';
@@ -7,9 +7,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const ROOT = path.join(__dirname, '..', '..');
 
 export function loadCore(extraExports = []){
-  let coreCode = fs.readFileSync(path.join(ROOT, 'src/core.js'), 'utf8');
-  const extras = Array.isArray(extraExports) && extraExports.length ? `${extraExports.join(',')},` : '';
-  coreCode = coreCode.replace(/export\s*\{/, `globalThis.__C = {${extras}`);
+  const coreCode = coreVmSource.buildCoreVmSource({ extraExports });
   const ctx = {
     console, setTimeout, clearTimeout,
     localStorage: { getItem(){ return null; }, setItem(){} },

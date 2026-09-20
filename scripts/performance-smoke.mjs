@@ -1,9 +1,8 @@
+import coreVmSource from '../tests/helpers/core-vm-source.cjs';
 import { performance } from 'node:perf_hooks';
-import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 
-let code = readFileSync(new URL('../src/core.js', import.meta.url), 'utf8');
-code = code.replace(/export\s*\{/, 'globalThis.__C = {');
+let code = coreVmSource.buildCoreVmSource();
 
 const ctx = {
   console,

@@ -1,6 +1,6 @@
+const { buildCoreVmSource }=require('../helpers/core-vm-source.cjs');
 const fs=require('fs'), vm=require('vm');
-let code=fs.readFileSync(require('path').join(__dirname,'../../src/core.js'), 'utf8');
-code=code.replace(/export\s*\{/,'globalThis.__C = {');
+let code=buildCoreVmSource();
 const ctx={console, setTimeout, clearTimeout, localStorage:{getItem(){return null},setItem(){}}, document:{documentElement:{lang:'ar'},querySelector(){return null},addEventListener(){},getElementById(){return null},querySelectorAll(){return[]},body:{},createElement(){return {}}}, window:{}, Notification:undefined, navigator:{}, URL, FileReader:function(){}, Intl, Math, JSON, Date, parseFloat, parseInt, isFinite, Number, String, Array, Object}; ctx.window=ctx; vm.createContext(ctx); vm.runInContext(code,ctx,{timeout:10000}); const C=ctx.__C;
 function cp(){return JSON.parse(JSON.stringify(C.blankOpportunity()));}
 function set(o,p,v){let a=p.split('.'),x=o;for(let i=0;i<a.length-1;i++)x=x[a[i]];x[a.at(-1)]=v;}

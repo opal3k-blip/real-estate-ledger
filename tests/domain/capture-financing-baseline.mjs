@@ -1,3 +1,4 @@
+import coreVmSource from '../helpers/core-vm-source.cjs';
 /* =========================================================================
    capture-financing-baseline.mjs — Phase 3B-4A: Financing Baseline (REBUILD)
    ---------------------------------------------------------------------------
@@ -22,8 +23,7 @@ import vm from 'vm';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, '..', '..');
 
-let coreCode = fs.readFileSync(path.join(ROOT, 'src/core.js'), 'utf8');
-coreCode = coreCode.replace(/export\s*\{/, 'globalThis.__C = {');
+const coreCode = coreVmSource.buildCoreVmSource();
 const ctx = {
   console, setTimeout, clearTimeout,
   localStorage: { getItem(){ return null; }, setItem(){} },

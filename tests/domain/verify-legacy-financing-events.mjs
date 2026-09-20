@@ -1,3 +1,4 @@
+import coreVmSource from '../helpers/core-vm-source.cjs';
 import assert from 'assert/strict';
 import fs from 'fs';
 import path from 'path';
@@ -9,7 +10,7 @@ import { FINANCIAL_EVENT_TYPES } from '../../src/domain/financial/dated/financia
 
 const __dirname=path.dirname(fileURLToPath(import.meta.url));
 const ROOT=path.join(__dirname,'..','..');
-let code=fs.readFileSync(path.join(ROOT,'src/core.js'),'utf8').replace(/export\s*\{/,'globalThis.__C = {');
+let code=coreVmSource.buildCoreVmSource();
 const ctx={console,setTimeout,clearTimeout,localStorage:{getItem(){return null},setItem(){}},document:{documentElement:{lang:'ar'},querySelector(){return null},addEventListener(){},getElementById(){return null},querySelectorAll(){return[]},body:{},createElement(){return{}}},window:{},Notification:undefined,navigator:{},URL,FileReader:function(){},Intl,Math,JSON,Date,parseFloat,parseInt,isFinite,Number,String,Array,Object};ctx.window=ctx;vm.createContext(ctx);vm.runInContext(code,ctx,{timeout:20000});
 const C=ctx.__C;
 const baseline=JSON.parse(fs.readFileSync(path.join(__dirname,'financing-baseline.json'),'utf8'));
