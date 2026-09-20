@@ -15,6 +15,8 @@ export const FINANCIAL_EVENT_TYPES = Object.freeze({
   VAT_REFUND: 'VAT_REFUND',
   RENT_INCOME: 'RENT_INCOME',
   OPEX: 'OPEX',
+  OPERATING_INCOME: 'OPERATING_INCOME',
+  OPERATING_EXPENSE: 'OPERATING_EXPENSE',
   SALE_PROCEEDS: 'SALE_PROCEEDS',
   EXIT_PROCEEDS: 'EXIT_PROCEEDS',
 
@@ -52,6 +54,8 @@ export const EVENT_TYPE_META = Object.freeze({
   VAT_REFUND:            { projectCashSign: 1, equityCashSign: 0, debtBalanceSign: 0, financingCashSign: 0 },
   RENT_INCOME:           { projectCashSign: 1, equityCashSign: 0, debtBalanceSign: 0, financingCashSign: 0 },
   OPEX:                  { projectCashSign:-1, equityCashSign: 0, debtBalanceSign: 0, financingCashSign: 0 },
+  OPERATING_INCOME:      { projectCashSign: 1, equityCashSign: 0, debtBalanceSign: 0, financingCashSign: 0 },
+  OPERATING_EXPENSE:     { projectCashSign:-1, equityCashSign: 0, debtBalanceSign: 0, financingCashSign: 0 },
   SALE_PROCEEDS:         { projectCashSign: 1, equityCashSign: 0, debtBalanceSign: 0, financingCashSign: 0 },
   EXIT_PROCEEDS:         { projectCashSign: 1, equityCashSign: 0, debtBalanceSign: 0, financingCashSign: 0 },
 
