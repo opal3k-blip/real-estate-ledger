@@ -8,7 +8,7 @@ This baseline is **not represented as the lost historical artifact**. It is a ne
 
 ## Frozen scope
 
-`tests/domain/timing-baseline.json` freezes 18 timing fixtures. For each fixture it records:
+`tests/domain/timing-baseline.json` freezes 20 timing fixtures. For each fixture it records:
 
 - total / construction / operation horizon;
 - t0 plus deterministic annual and half-year date mapping from an explicit `2026-01-01` acquisition date;
@@ -24,26 +24,24 @@ The capture is deterministic: there is no generated timestamp and no use of the 
 
 ## Coverage status
 
-The baseline deliberately distinguishes current dated-event implementation from legacy behavior that is only frozen for later reconstruction.
+The recovered dated model now covers every frozen fixture family used for Phase 3B closure. No fixture remains `BASELINE_ONLY`.
 
-Already covered by the rebuilt dated shadow model:
+Implemented coverage includes:
 
 - ordinary development horizons;
 - construction draw schedules;
-- cash and capitalized interest (with the explicit final-period capitalization finding);
+- cash and capitalized interest, including the explicit normal-exit final-period finding;
 - landbank annual debt timing;
 - follow-on equity contributions;
-- legacy blended debt principal behavior.
-
-Frozen here but still **BASELINE_ONLY** for later event implementation:
-
+- legacy blended debt principal behavior;
 - off-plan tranche / escrow timing;
-- VAT recovery timing;
 - phased subdivision releases;
-- refinance-close;
-- periodic refinance in perpetual-hold mode.
+- VAT recovery timing;
+- refinance-close and periodic refinance, with legacy terminal findings surfaced;
+- direct-sale buyer-bank deferred collection;
+- off-plan phased sale with capitalized construction interest and final payoff reconciliation.
 
-No S-curve or intra-year construction spend schedule is invented. The legacy core still places project cost funding at t0; transaction-grade construction-spend timing requires a new explicit input model and separate governance decision.
+The legacy core still keeps project cost at `t0`. Phase 3B-6 therefore adds a separate explicit `CONSTRUCTION_SPEND_V1` contract for transaction-grade construction timing without fabricating an S-curve.
 
 ## Verification
 

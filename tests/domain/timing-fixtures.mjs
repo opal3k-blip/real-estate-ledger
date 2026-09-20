@@ -67,6 +67,7 @@ const DEFINITIONS=[
   ['T17-perpetual-hold-periodic-refi','Perpetual hold with periodic refinance','IMPLEMENTED_WITH_FINDINGS',o=>{set(o,'meta.oppType','income');set(o,'income.holdStrategy','perpetual_hold');set(o,'income.rent',800);set(o,'income.occupancy',0.9);set(o,'income.opex',0.2);set(o,'income.refinance.intervalYears',3);set(o,'income.refinance.refiLtv',0.65);set(o,'income.refinance.refiCostPct',0.01);set(o,'income.refinance.analysisHorizon',8);set(o,'development.constructionYears',1);set(o,'development.operationYears',5);} ],
   ['T18-high-leverage','High-leverage timing control','IMPLEMENTED',o=>set(o,'financing.ltc',0.9)],
   ['T19-direct-sale-bank-lag2','Direct sale with 60% buyer-bank financing collected two years later','IMPLEMENTED',o=>{set(o,'strategy.directSale.bankFinancedPct',0.6);set(o,'strategy.directSale.collectionLagYears',2);} ],
+  ['T20-offplan-capitalized-interest','Off-plan phased sale with capitalized construction interest','IMPLEMENTED',o=>{set(o,'strategy.offPlanSale.enabled',true);set(o,'strategy.offPlanSale.escrowLagYears',0);set(o,'financing.interestDuringConstruction','capitalized');}],
 ];
 
 export function buildTimingFixtures(C){

@@ -53,14 +53,15 @@ function timingFacts(c){
 assert.equal(expected.schemaVersion,'3B1-RECOVERY-V1');
 const C=loadCore();
 const fixtures=buildTimingFixtures(C);
-assert.equal(fixtures.length,19);
-assert.equal(expected.fixtureCount,19);
+assert.equal(fixtures.length,20);
+assert.equal(expected.fixtureCount,20);
 let pass=0;
 for(const f of fixtures){
   const frozen=expected.fixtures[f.id];
   assert(frozen,`${f.id}: missing frozen baseline`);
   assert.equal(frozen.label,f.label,`${f.id}: label drift`);
   assert.equal(frozen.datedCoverage,f.datedCoverage,`${f.id}: coverage classification drift`);
+  assert.notEqual(f.datedCoverage,'BASELINE_ONLY',`${f.id}: Phase 3B closure cannot retain BASELINE_ONLY fixtures`);
   const actual=timingFacts(C.compute(f.input,f.scenarioKey));
   assert.deepEqual(actual,frozen.timing,`${f.id}: timing baseline drift`);
   const cashHorizon=Math.max(actual.totalYears,actual.directSaleDeferredYear??actual.totalYears);

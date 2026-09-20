@@ -17,7 +17,7 @@ const fixtures=Object.fromEntries(buildTimingFixtures(C).map(f=>[f.id,f]));
 const acquisitionDate='2026-01-01';
 const tol=(a,b)=>Math.abs(a-b)<=1e-6*Math.max(1,Math.abs(a),Math.abs(b));
 
-const phasedIds=['T04-offplan-no-lag','T08-offplan-lag1','T09-offplan-lag2-backloaded','T12-phased-subdivision'];
+const phasedIds=['T04-offplan-no-lag','T08-offplan-lag1','T09-offplan-lag2-backloaded','T12-phased-subdivision','T20-offplan-capitalized-interest'];
 const phasedResults=[];
 for(const id of phasedIds){
   const f=fixtures[id];
@@ -28,7 +28,10 @@ for(const id of phasedIds){
   assert(out.reconciliation.costsMatchSchedule,`${id}: sale costs must match legacy tranche schedule`);
   assert(out.reconciliation.principalMatchesSchedule,`${id}: releases must match legacy tranche schedule`);
   assert(out.reconciliation.drawsMatchDebt,`${id}: debt draws must match debt sizing`);
-  assert(tol(out.reconciliation.closingDebtBalance,0),`${id}: phased principal ledger must close`);
+  assert(out.reconciliation.allInterestMatchesLegacy,`${id}: phased-sale interest must reconcile year-by-year to legacy P&L`);
+  assert(out.reconciliation.finalPayoffMatchesLegacy,`${id}: final phased debt payoff must reconcile to legacy P&L`);
+  assert(tol(out.reconciliation.closingDebtBalance,0),`${id}: phased financing ledger must close`);
+  assert.equal(out.reconciliation.findings.length,0,`${id}: no unexplained phased financing finding expected`);
 
   const byYear={};
   for(const e of out.events){
@@ -41,7 +44,14 @@ for(const id of phasedIds){
     assert(tol(byYear[tranche.yr]||0,tranche.trancheRevenue-tranche.trancheCosts),`${id}: year ${tranche.yr} sale cash timing mismatch`);
     assert(tol(c.projectCF[tranche.yr],tranche.trancheRevenue-tranche.trancheCosts),`${id}: fixture projectCF must expose same phased-sale cash timing`);
   }
-  phasedResults.push({id,kind:out.kind,tranches:(c.offPlanSchedule||c.absorptionSchedule||[]).length,closingDebt:out.reconciliation.closingDebtBalance});
+  if(id==='T20-offplan-capitalized-interest'){
+    assert(out.reconciliation.capitalizedInterest>0,`${id}: fixture must capitalize construction interest`);
+    assert(tol(out.reconciliation.capitalizedInterestRepayments,out.reconciliation.capitalizedInterest),`${id}: all capitalized interest must be repaid at final phased close`);
+    const finalRow=c.pnlRows.find(r=>Math.round(Number(r.yr))===Math.round(Number(c.totalYears)));
+    const finalRepay=out.events.filter(e=>e.type===FINANCIAL_EVENT_TYPES.DEBT_REPAYMENT && Math.round(Number(e.metadata.legacyYear))===Math.round(Number(c.totalYears))).reduce((a,e)=>a+e.amount,0);
+    assert(tol(finalRepay,finalRow.debtPayoffAtExit),`${id}: canonical final phased repayment must equal legacy debtPayoffAtExit`);
+  }
+  phasedResults.push({id,kind:out.kind,tranches:(c.offPlanSchedule||c.absorptionSchedule||[]).length,closingDebt:out.reconciliation.closingDebtBalance,capitalizedInterest:out.reconciliation.capitalizedInterest});
 }
 
 const vatIds=['T10-vat-refund-lag0','T11-vat-refund-lag2'];
@@ -69,4 +79,4 @@ for(const id of vatIds){
 
 console.table(phasedResults);
 console.table(vatResults);
-console.log(`PASS verify-legacy-cash-timing-events: ${phasedIds.length} phased-sale fixtures + ${vatIds.length} VAT fixtures reconcile to current core.js timing.`);
+console.log(`PASS verify-legacy-cash-timing-events: ${phasedIds.length} phased-sale fixtures + ${vatIds.length} VAT fixtures reconcile to current core.js timing, including capitalized-interest phased payoff.`);

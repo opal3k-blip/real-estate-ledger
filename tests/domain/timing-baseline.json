@@ -1,7 +1,7 @@
 {
   "schemaVersion": "3B1-RECOVERY-V1",
   "acquisitionDate": "2026-01-01",
-  "fixtureCount": 19,
+  "fixtureCount": 20,
   "fixtures": {
     "T01-base-development": {
       "label": "Base development (2 construction years)",
@@ -1664,6 +1664,81 @@
             "principalPayment": 0,
             "debtPayoffAtExit": 30081669.360000003,
             "exitValue": 51000000
+          }
+        ]
+      }
+    },
+    "T20-offplan-capitalized-interest": {
+      "label": "Off-plan phased sale with capitalized construction interest",
+      "datedCoverage": "IMPLEMENTED",
+      "timing": {
+        "totalYears": 2,
+        "constructionYears": 2,
+        "operationYears": 0,
+        "holdStrategy": "exit_sale",
+        "isOffPlanSale": true,
+        "isSubdivisionPhased": false,
+        "isPhasedSaleMode": true,
+        "drawSchedule": null,
+        "vatWorkingCapitalRefundLagYears": 0,
+        "directSaleDeferredYear": null,
+        "directSaleDeferredAmt": 0,
+        "timeline": {
+          "t0": "2026-01-01",
+          "yearEnds": [
+            "2027-01-01",
+            "2028-01-01"
+          ],
+          "yearMidpoints": [
+            "2026-07-01",
+            "2027-07-01"
+          ]
+        },
+        "offPlanSchedule": [
+          {
+            "yr": 1,
+            "pct": 0.5,
+            "trancheRevenue": 25500000,
+            "trancheCosts": 0,
+            "tranchePrincipalPay": 15040834.680000002
+          },
+          {
+            "yr": 2,
+            "pct": 0.5,
+            "trancheRevenue": 25500000,
+            "trancheCosts": 0,
+            "tranchePrincipalPay": 15040834.680000002
+          }
+        ],
+        "absorptionSchedule": null,
+        "projectCF": [
+          -50136115.60000001,
+          25500000,
+          25500000
+        ],
+        "equityCF": [
+          -20054446.240000006,
+          10459165.319999998,
+          6656842.312895998
+        ],
+        "pnlRows": [
+          {
+            "yr": 1,
+            "phase": "construction",
+            "isExitYear": true,
+            "interestExpense": 2406533.5488000005,
+            "principalPayment": 0,
+            "debtPayoffAtExit": 15040834.680000002,
+            "exitValue": 25500000
+          },
+          {
+            "yr": 2,
+            "phase": "construction",
+            "isExitYear": true,
+            "interestExpense": 1395789.4583040003,
+            "principalPayment": 0,
+            "debtPayoffAtExit": 18843157.687104,
+            "exitValue": 25500000
           }
         ]
       }
