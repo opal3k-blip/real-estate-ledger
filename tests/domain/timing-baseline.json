@@ -1,0 +1,1608 @@
+{
+  "schemaVersion": "3B1-RECOVERY-V1",
+  "acquisitionDate": "2026-01-01",
+  "fixtureCount": 18,
+  "fixtures": {
+    "T01-base-development": {
+      "label": "Base development (2 construction years)",
+      "datedCoverage": "IMPLEMENTED",
+      "timing": {
+        "totalYears": 2,
+        "constructionYears": 2,
+        "operationYears": 0,
+        "holdStrategy": "exit_sale",
+        "isOffPlanSale": false,
+        "isSubdivisionPhased": false,
+        "isPhasedSaleMode": false,
+        "drawSchedule": null,
+        "vatWorkingCapitalRefundLagYears": 0,
+        "directSaleDeferredYear": null,
+        "directSaleDeferredAmt": 0,
+        "timeline": {
+          "t0": "2026-01-01",
+          "yearEnds": [
+            "2027-01-01",
+            "2028-01-01"
+          ],
+          "yearMidpoints": [
+            "2026-07-01",
+            "2027-07-01"
+          ]
+        },
+        "offPlanSchedule": null,
+        "absorptionSchedule": null,
+        "projectCF": [
+          -50136115.60000001,
+          0,
+          51000000
+        ],
+        "equityCF": [
+          -20054446.240000006,
+          -2406533.5488000005,
+          18511797.091199998
+        ],
+        "pnlRows": [
+          {
+            "yr": 1,
+            "phase": "construction",
+            "isExitYear": false,
+            "interestExpense": 2406533.5488000005,
+            "principalPayment": 0,
+            "debtPayoffAtExit": 0,
+            "exitValue": 0
+          },
+          {
+            "yr": 2,
+            "phase": "construction",
+            "isExitYear": true,
+            "interestExpense": 2406533.5488000005,
+            "principalPayment": 0,
+            "debtPayoffAtExit": 30081669.360000003,
+            "exitValue": 51000000
+          }
+        ]
+      }
+    },
+    "T02-construction-heavy": {
+      "label": "Four-year construction horizon",
+      "datedCoverage": "IMPLEMENTED",
+      "timing": {
+        "totalYears": 4,
+        "constructionYears": 4,
+        "operationYears": 0,
+        "holdStrategy": "exit_sale",
+        "isOffPlanSale": false,
+        "isSubdivisionPhased": false,
+        "isPhasedSaleMode": false,
+        "drawSchedule": null,
+        "vatWorkingCapitalRefundLagYears": 0,
+        "directSaleDeferredYear": null,
+        "directSaleDeferredAmt": 0,
+        "timeline": {
+          "t0": "2026-01-01",
+          "yearEnds": [
+            "2027-01-01",
+            "2028-01-01",
+            "2029-01-01",
+            "2030-01-01"
+          ],
+          "yearMidpoints": [
+            "2026-07-01",
+            "2027-07-01",
+            "2028-07-01",
+            "2029-07-01"
+          ]
+        },
+        "offPlanSchedule": null,
+        "absorptionSchedule": null,
+        "projectCF": [
+          -50136115.60000001,
+          0,
+          0,
+          0,
+          51000000
+        ],
+        "equityCF": [
+          -20054446.240000006,
+          -2406533.5488000005,
+          -2406533.5488000005,
+          -2406533.5488000005,
+          18511797.091199998
+        ],
+        "pnlRows": [
+          {
+            "yr": 1,
+            "phase": "construction",
+            "isExitYear": false,
+            "interestExpense": 2406533.5488000005,
+            "principalPayment": 0,
+            "debtPayoffAtExit": 0,
+            "exitValue": 0
+          },
+          {
+            "yr": 2,
+            "phase": "construction",
+            "isExitYear": false,
+            "interestExpense": 2406533.5488000005,
+            "principalPayment": 0,
+            "debtPayoffAtExit": 0,
+            "exitValue": 0
+          },
+          {
+            "yr": 3,
+            "phase": "construction",
+            "isExitYear": false,
+            "interestExpense": 2406533.5488000005,
+            "principalPayment": 0,
+            "debtPayoffAtExit": 0,
+            "exitValue": 0
+          },
+          {
+            "yr": 4,
+            "phase": "construction",
+            "isExitYear": true,
+            "interestExpense": 2406533.5488000005,
+            "principalPayment": 0,
+            "debtPayoffAtExit": 30081669.360000003,
+            "exitValue": 51000000
+          }
+        ]
+      }
+    },
+    "T03-operation-hold": {
+      "label": "Two construction + five operation years",
+      "datedCoverage": "IMPLEMENTED",
+      "timing": {
+        "totalYears": 7,
+        "constructionYears": 2,
+        "operationYears": 5,
+        "holdStrategy": "exit_sale",
+        "isOffPlanSale": false,
+        "isSubdivisionPhased": false,
+        "isPhasedSaleMode": false,
+        "drawSchedule": null,
+        "vatWorkingCapitalRefundLagYears": 0,
+        "directSaleDeferredYear": null,
+        "directSaleDeferredAmt": 0,
+        "timeline": {
+          "t0": "2026-01-01",
+          "yearEnds": [
+            "2027-01-01",
+            "2028-01-01",
+            "2029-01-01",
+            "2030-01-01",
+            "2031-01-01",
+            "2032-01-01",
+            "2033-01-01"
+          ],
+          "yearMidpoints": [
+            "2026-07-01",
+            "2027-07-01",
+            "2028-07-01",
+            "2029-07-01",
+            "2030-07-01",
+            "2031-07-01",
+            "2032-07-01"
+          ]
+        },
+        "offPlanSchedule": null,
+        "absorptionSchedule": null,
+        "projectCF": [
+          -50136115.60000001,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          51000000
+        ],
+        "equityCF": [
+          -20054446.240000006,
+          -2406533.5488000005,
+          -2406533.5488000005,
+          -2406533.5488000005,
+          -2406533.5488000005,
+          -2406533.5488000005,
+          -2406533.5488000005,
+          18511797.091199998
+        ],
+        "pnlRows": [
+          {
+            "yr": 1,
+            "phase": "construction",
+            "isExitYear": false,
+            "interestExpense": 2406533.5488000005,
+            "principalPayment": 0,
+            "debtPayoffAtExit": 0,
+            "exitValue": 0
+          },
+          {
+            "yr": 2,
+            "phase": "construction",
+            "isExitYear": false,
+            "interestExpense": 2406533.5488000005,
+            "principalPayment": 0,
+            "debtPayoffAtExit": 0,
+            "exitValue": 0
+          },
+          {
+            "yr": 3,
+            "phase": "operation",
+            "isExitYear": false,
+            "interestExpense": 2406533.5488000005,
+            "principalPayment": 0,
+            "debtPayoffAtExit": 0,
+            "exitValue": 0
+          },
+          {
+            "yr": 4,
+            "phase": "operation",
+            "isExitYear": false,
+            "interestExpense": 2406533.5488000005,
+            "principalPayment": 0,
+            "debtPayoffAtExit": 0,
+            "exitValue": 0
+          },
+          {
+            "yr": 5,
+            "phase": "operation",
+            "isExitYear": false,
+            "interestExpense": 2406533.5488000005,
+            "principalPayment": 0,
+            "debtPayoffAtExit": 0,
+            "exitValue": 0
+          },
+          {
+            "yr": 6,
+            "phase": "operation",
+            "isExitYear": false,
+            "interestExpense": 2406533.5488000005,
+            "principalPayment": 0,
+            "debtPayoffAtExit": 0,
+            "exitValue": 0
+          },
+          {
+            "yr": 7,
+            "phase": "operation",
+            "isExitYear": true,
+            "interestExpense": 2406533.5488000005,
+            "principalPayment": 0,
+            "debtPayoffAtExit": 30081669.360000003,
+            "exitValue": 51000000
+          }
+        ]
+      }
+    },
+    "T04-offplan-no-lag": {
+      "label": "Off-plan sale with no escrow lag",
+      "datedCoverage": "BASELINE_ONLY",
+      "timing": {
+        "totalYears": 2,
+        "constructionYears": 2,
+        "operationYears": 0,
+        "holdStrategy": "exit_sale",
+        "isOffPlanSale": true,
+        "isSubdivisionPhased": false,
+        "isPhasedSaleMode": true,
+        "drawSchedule": null,
+        "vatWorkingCapitalRefundLagYears": 0,
+        "directSaleDeferredYear": null,
+        "directSaleDeferredAmt": 0,
+        "timeline": {
+          "t0": "2026-01-01",
+          "yearEnds": [
+            "2027-01-01",
+            "2028-01-01"
+          ],
+          "yearMidpoints": [
+            "2026-07-01",
+            "2027-07-01"
+          ]
+        },
+        "offPlanSchedule": [
+          {
+            "yr": 1,
+            "pct": 0.5,
+            "trancheRevenue": 25500000,
+            "trancheCosts": 0,
+            "tranchePrincipalPay": 15040834.680000002
+          },
+          {
+            "yr": 2,
+            "pct": 0.5,
+            "trancheRevenue": 25500000,
+            "trancheCosts": 0,
+            "tranchePrincipalPay": 15040834.680000002
+          }
+        ],
+        "absorptionSchedule": null,
+        "projectCF": [
+          -50136115.60000001,
+          25500000,
+          25500000
+        ],
+        "equityCF": [
+          -20054446.240000006,
+          8052631.771199999,
+          9255898.545599999
+        ],
+        "pnlRows": [
+          {
+            "yr": 1,
+            "phase": "construction",
+            "isExitYear": true,
+            "interestExpense": 2406533.5488000005,
+            "principalPayment": 0,
+            "debtPayoffAtExit": 15040834.680000002,
+            "exitValue": 25500000
+          },
+          {
+            "yr": 2,
+            "phase": "construction",
+            "isExitYear": true,
+            "interestExpense": 1203266.7744000002,
+            "principalPayment": 0,
+            "debtPayoffAtExit": 15040834.680000002,
+            "exitValue": 25500000
+          }
+        ]
+      }
+    },
+    "T05-debt-draw-schedule": {
+      "label": "Three-year 20/30/50 debt draw schedule",
+      "datedCoverage": "IMPLEMENTED",
+      "timing": {
+        "totalYears": 3,
+        "constructionYears": 3,
+        "operationYears": 0,
+        "holdStrategy": "exit_sale",
+        "isOffPlanSale": false,
+        "isSubdivisionPhased": false,
+        "isPhasedSaleMode": false,
+        "drawSchedule": [
+          0.2,
+          0.3,
+          0.5
+        ],
+        "vatWorkingCapitalRefundLagYears": 0,
+        "directSaleDeferredYear": null,
+        "directSaleDeferredAmt": 0,
+        "timeline": {
+          "t0": "2026-01-01",
+          "yearEnds": [
+            "2027-01-01",
+            "2028-01-01",
+            "2029-01-01"
+          ],
+          "yearMidpoints": [
+            "2026-07-01",
+            "2027-07-01",
+            "2028-07-01"
+          ]
+        },
+        "offPlanSchedule": null,
+        "absorptionSchedule": null,
+        "projectCF": [
+          -50136115.60000001,
+          0,
+          0,
+          51000000
+        ],
+        "equityCF": [
+          -20054446.240000006,
+          -240653.35488000006,
+          -842286.7420800001,
+          19113430.478399996
+        ],
+        "pnlRows": [
+          {
+            "yr": 1,
+            "phase": "construction",
+            "isExitYear": false,
+            "interestExpense": 240653.35488000006,
+            "principalPayment": 0,
+            "debtPayoffAtExit": 0,
+            "exitValue": 0
+          },
+          {
+            "yr": 2,
+            "phase": "construction",
+            "isExitYear": false,
+            "interestExpense": 842286.7420800001,
+            "principalPayment": 0,
+            "debtPayoffAtExit": 0,
+            "exitValue": 0
+          },
+          {
+            "yr": 3,
+            "phase": "construction",
+            "isExitYear": true,
+            "interestExpense": 1804900.1616000002,
+            "principalPayment": 0,
+            "debtPayoffAtExit": 30081669.360000003,
+            "exitValue": 51000000
+          }
+        ]
+      }
+    },
+    "T06-capitalized-interest": {
+      "label": "Capitalized construction interest",
+      "datedCoverage": "IMPLEMENTED_WITH_FINDING",
+      "timing": {
+        "totalYears": 2,
+        "constructionYears": 2,
+        "operationYears": 0,
+        "holdStrategy": "exit_sale",
+        "isOffPlanSale": false,
+        "isSubdivisionPhased": false,
+        "isPhasedSaleMode": false,
+        "drawSchedule": null,
+        "vatWorkingCapitalRefundLagYears": 0,
+        "directSaleDeferredYear": null,
+        "directSaleDeferredAmt": 0,
+        "timeline": {
+          "t0": "2026-01-01",
+          "yearEnds": [
+            "2027-01-01",
+            "2028-01-01"
+          ],
+          "yearMidpoints": [
+            "2026-07-01",
+            "2027-07-01"
+          ]
+        },
+        "offPlanSchedule": null,
+        "absorptionSchedule": null,
+        "projectCF": [
+          -50136115.60000001,
+          0,
+          51000000
+        ],
+        "equityCF": [
+          -20054446.240000006,
+          0,
+          18511797.091199998
+        ],
+        "pnlRows": [
+          {
+            "yr": 1,
+            "phase": "construction",
+            "isExitYear": false,
+            "interestExpense": 2406533.5488000005,
+            "principalPayment": 0,
+            "debtPayoffAtExit": 0,
+            "exitValue": 0
+          },
+          {
+            "yr": 2,
+            "phase": "construction",
+            "isExitYear": true,
+            "interestExpense": 2599056.232704,
+            "principalPayment": 0,
+            "debtPayoffAtExit": 32488202.908800002,
+            "exitValue": 51000000
+          }
+        ]
+      }
+    },
+    "T07-cash-interest": {
+      "label": "Cash construction interest",
+      "datedCoverage": "IMPLEMENTED",
+      "timing": {
+        "totalYears": 2,
+        "constructionYears": 2,
+        "operationYears": 0,
+        "holdStrategy": "exit_sale",
+        "isOffPlanSale": false,
+        "isSubdivisionPhased": false,
+        "isPhasedSaleMode": false,
+        "drawSchedule": null,
+        "vatWorkingCapitalRefundLagYears": 0,
+        "directSaleDeferredYear": null,
+        "directSaleDeferredAmt": 0,
+        "timeline": {
+          "t0": "2026-01-01",
+          "yearEnds": [
+            "2027-01-01",
+            "2028-01-01"
+          ],
+          "yearMidpoints": [
+            "2026-07-01",
+            "2027-07-01"
+          ]
+        },
+        "offPlanSchedule": null,
+        "absorptionSchedule": null,
+        "projectCF": [
+          -50136115.60000001,
+          0,
+          51000000
+        ],
+        "equityCF": [
+          -20054446.240000006,
+          -2406533.5488000005,
+          18511797.091199998
+        ],
+        "pnlRows": [
+          {
+            "yr": 1,
+            "phase": "construction",
+            "isExitYear": false,
+            "interestExpense": 2406533.5488000005,
+            "principalPayment": 0,
+            "debtPayoffAtExit": 0,
+            "exitValue": 0
+          },
+          {
+            "yr": 2,
+            "phase": "construction",
+            "isExitYear": true,
+            "interestExpense": 2406533.5488000005,
+            "principalPayment": 0,
+            "debtPayoffAtExit": 30081669.360000003,
+            "exitValue": 51000000
+          }
+        ]
+      }
+    },
+    "T08-offplan-lag1": {
+      "label": "Off-plan collection extends one year beyond nominal tranche",
+      "datedCoverage": "BASELINE_ONLY",
+      "timing": {
+        "totalYears": 4,
+        "constructionYears": 3,
+        "operationYears": 0,
+        "holdStrategy": "exit_sale",
+        "isOffPlanSale": true,
+        "isSubdivisionPhased": false,
+        "isPhasedSaleMode": true,
+        "drawSchedule": null,
+        "vatWorkingCapitalRefundLagYears": 0,
+        "directSaleDeferredYear": null,
+        "directSaleDeferredAmt": 0,
+        "timeline": {
+          "t0": "2026-01-01",
+          "yearEnds": [
+            "2027-01-01",
+            "2028-01-01",
+            "2029-01-01",
+            "2030-01-01"
+          ],
+          "yearMidpoints": [
+            "2026-07-01",
+            "2027-07-01",
+            "2028-07-01",
+            "2029-07-01"
+          ]
+        },
+        "offPlanSchedule": [
+          {
+            "yr": 2,
+            "pct": 0.3333333333333333,
+            "trancheRevenue": 17000000,
+            "trancheCosts": 0,
+            "tranchePrincipalPay": 10027223.120000001
+          },
+          {
+            "yr": 3,
+            "pct": 0.3333333333333333,
+            "trancheRevenue": 17000000,
+            "trancheCosts": 0,
+            "tranchePrincipalPay": 10027223.120000001
+          },
+          {
+            "yr": 4,
+            "pct": 0.3333333333333333,
+            "trancheRevenue": 17000000,
+            "trancheCosts": 0,
+            "tranchePrincipalPay": 10027223.120000001
+          }
+        ],
+        "absorptionSchedule": null,
+        "projectCF": [
+          -50136115.60000001,
+          0,
+          17000000,
+          17000000,
+          17000000
+        ],
+        "equityCF": [
+          -20054446.240000006,
+          -2406533.5488000005,
+          4566243.331199998,
+          5368421.180799998,
+          6170599.030399999
+        ],
+        "pnlRows": [
+          {
+            "yr": 1,
+            "phase": "construction",
+            "isExitYear": false,
+            "interestExpense": 2406533.5488000005,
+            "principalPayment": 0,
+            "debtPayoffAtExit": 0,
+            "exitValue": 0
+          },
+          {
+            "yr": 2,
+            "phase": "construction",
+            "isExitYear": true,
+            "interestExpense": 2406533.5488000005,
+            "principalPayment": 0,
+            "debtPayoffAtExit": 10027223.120000001,
+            "exitValue": 17000000
+          },
+          {
+            "yr": 3,
+            "phase": "construction",
+            "isExitYear": true,
+            "interestExpense": 1604355.6992000001,
+            "principalPayment": 0,
+            "debtPayoffAtExit": 10027223.120000001,
+            "exitValue": 17000000
+          },
+          {
+            "yr": 4,
+            "phase": "operation",
+            "isExitYear": true,
+            "interestExpense": 802177.8496000001,
+            "principalPayment": 0,
+            "debtPayoffAtExit": 10027223.120000001,
+            "exitValue": 17000000
+          }
+        ]
+      }
+    },
+    "T09-offplan-lag2-backloaded": {
+      "label": "Back-loaded off-plan with two-year escrow lag",
+      "datedCoverage": "BASELINE_ONLY",
+      "timing": {
+        "totalYears": 5,
+        "constructionYears": 3,
+        "operationYears": 0,
+        "holdStrategy": "exit_sale",
+        "isOffPlanSale": true,
+        "isSubdivisionPhased": false,
+        "isPhasedSaleMode": true,
+        "drawSchedule": null,
+        "vatWorkingCapitalRefundLagYears": 0,
+        "directSaleDeferredYear": null,
+        "directSaleDeferredAmt": 0,
+        "timeline": {
+          "t0": "2026-01-01",
+          "yearEnds": [
+            "2027-01-01",
+            "2028-01-01",
+            "2029-01-01",
+            "2030-01-01",
+            "2031-01-01"
+          ],
+          "yearMidpoints": [
+            "2026-07-01",
+            "2027-07-01",
+            "2028-07-01",
+            "2029-07-01",
+            "2030-07-01"
+          ]
+        },
+        "offPlanSchedule": [
+          {
+            "yr": 3,
+            "pct": 0.16666666666666666,
+            "trancheRevenue": 8500000,
+            "trancheCosts": 0,
+            "tranchePrincipalPay": 5013611.5600000005
+          },
+          {
+            "yr": 4,
+            "pct": 0.3333333333333333,
+            "trancheRevenue": 17000000,
+            "trancheCosts": 0,
+            "tranchePrincipalPay": 10027223.120000001
+          },
+          {
+            "yr": 5,
+            "pct": 0.5,
+            "trancheRevenue": 25500000,
+            "trancheCosts": 0,
+            "tranchePrincipalPay": 15040834.680000002
+          }
+        ],
+        "absorptionSchedule": null,
+        "projectCF": [
+          -50136115.60000001,
+          0,
+          0,
+          8500000,
+          17000000,
+          25500000
+        ],
+        "equityCF": [
+          -20054446.240000006,
+          -2406533.5488000005,
+          -2406533.5488000005,
+          1079854.8911999986,
+          4967332.255999999,
+          9255898.545599997
+        ],
+        "pnlRows": [
+          {
+            "yr": 1,
+            "phase": "construction",
+            "isExitYear": false,
+            "interestExpense": 2406533.5488000005,
+            "principalPayment": 0,
+            "debtPayoffAtExit": 0,
+            "exitValue": 0
+          },
+          {
+            "yr": 2,
+            "phase": "construction",
+            "isExitYear": false,
+            "interestExpense": 2406533.5488000005,
+            "principalPayment": 0,
+            "debtPayoffAtExit": 0,
+            "exitValue": 0
+          },
+          {
+            "yr": 3,
+            "phase": "construction",
+            "isExitYear": true,
+            "interestExpense": 2406533.5488000005,
+            "principalPayment": 0,
+            "debtPayoffAtExit": 5013611.5600000005,
+            "exitValue": 8500000
+          },
+          {
+            "yr": 4,
+            "phase": "operation",
+            "isExitYear": true,
+            "interestExpense": 2005444.6240000003,
+            "principalPayment": 0,
+            "debtPayoffAtExit": 10027223.120000001,
+            "exitValue": 17000000
+          },
+          {
+            "yr": 5,
+            "phase": "operation",
+            "isExitYear": true,
+            "interestExpense": 1203266.7744000002,
+            "principalPayment": 0,
+            "debtPayoffAtExit": 15040834.680000003,
+            "exitValue": 25500000
+          }
+        ]
+      }
+    },
+    "T10-vat-refund-lag0": {
+      "label": "Recoverable VAT with zero refund lag",
+      "datedCoverage": "BASELINE_ONLY",
+      "timing": {
+        "totalYears": 2,
+        "constructionYears": 2,
+        "operationYears": 0,
+        "holdStrategy": "exit_sale",
+        "isOffPlanSale": false,
+        "isSubdivisionPhased": false,
+        "isPhasedSaleMode": false,
+        "drawSchedule": null,
+        "vatWorkingCapitalRefundLagYears": 0,
+        "directSaleDeferredYear": null,
+        "directSaleDeferredAmt": 0,
+        "timeline": {
+          "t0": "2026-01-01",
+          "yearEnds": [
+            "2027-01-01",
+            "2028-01-01"
+          ],
+          "yearMidpoints": [
+            "2026-07-01",
+            "2027-07-01"
+          ]
+        },
+        "offPlanSchedule": null,
+        "absorptionSchedule": null,
+        "projectCF": [
+          -56156532.94000001,
+          3010208.6700000004,
+          54010208.67
+        ],
+        "equityCF": [
+          -26074863.58000001,
+          603675.1211999999,
+          21522005.761199996
+        ],
+        "pnlRows": [
+          {
+            "yr": 1,
+            "phase": "construction",
+            "isExitYear": false,
+            "interestExpense": 2406533.5488000005,
+            "principalPayment": 0,
+            "debtPayoffAtExit": 0,
+            "exitValue": 0
+          },
+          {
+            "yr": 2,
+            "phase": "construction",
+            "isExitYear": true,
+            "interestExpense": 2406533.5488000005,
+            "principalPayment": 0,
+            "debtPayoffAtExit": 30081669.360000003,
+            "exitValue": 51000000
+          }
+        ]
+      }
+    },
+    "T11-vat-refund-lag2": {
+      "label": "Recoverable VAT with two-year refund lag",
+      "datedCoverage": "BASELINE_ONLY",
+      "timing": {
+        "totalYears": 5,
+        "constructionYears": 3,
+        "operationYears": 2,
+        "holdStrategy": "exit_sale",
+        "isOffPlanSale": false,
+        "isSubdivisionPhased": false,
+        "isPhasedSaleMode": false,
+        "drawSchedule": null,
+        "vatWorkingCapitalRefundLagYears": 2,
+        "directSaleDeferredYear": null,
+        "directSaleDeferredAmt": 0,
+        "timeline": {
+          "t0": "2026-01-01",
+          "yearEnds": [
+            "2027-01-01",
+            "2028-01-01",
+            "2029-01-01",
+            "2030-01-01",
+            "2031-01-01"
+          ],
+          "yearMidpoints": [
+            "2026-07-01",
+            "2027-07-01",
+            "2028-07-01",
+            "2029-07-01",
+            "2030-07-01"
+          ]
+        },
+        "offPlanSchedule": null,
+        "absorptionSchedule": null,
+        "projectCF": [
+          -56156532.94000001,
+          0,
+          0,
+          2006805.7800000003,
+          2006805.7800000003,
+          53006805.78
+        ],
+        "equityCF": [
+          -26074863.58000001,
+          -2406533.5488000005,
+          -2406533.5488000005,
+          -399727.7688000002,
+          -399727.7688000002,
+          20518602.871199995
+        ],
+        "pnlRows": [
+          {
+            "yr": 1,
+            "phase": "construction",
+            "isExitYear": false,
+            "interestExpense": 2406533.5488000005,
+            "principalPayment": 0,
+            "debtPayoffAtExit": 0,
+            "exitValue": 0
+          },
+          {
+            "yr": 2,
+            "phase": "construction",
+            "isExitYear": false,
+            "interestExpense": 2406533.5488000005,
+            "principalPayment": 0,
+            "debtPayoffAtExit": 0,
+            "exitValue": 0
+          },
+          {
+            "yr": 3,
+            "phase": "construction",
+            "isExitYear": false,
+            "interestExpense": 2406533.5488000005,
+            "principalPayment": 0,
+            "debtPayoffAtExit": 0,
+            "exitValue": 0
+          },
+          {
+            "yr": 4,
+            "phase": "operation",
+            "isExitYear": false,
+            "interestExpense": 2406533.5488000005,
+            "principalPayment": 0,
+            "debtPayoffAtExit": 0,
+            "exitValue": 0
+          },
+          {
+            "yr": 5,
+            "phase": "operation",
+            "isExitYear": true,
+            "interestExpense": 2406533.5488000005,
+            "principalPayment": 0,
+            "debtPayoffAtExit": 30081669.360000003,
+            "exitValue": 51000000
+          }
+        ]
+      }
+    },
+    "T12-phased-subdivision": {
+      "label": "Four-year serviced-land absorption after construction",
+      "datedCoverage": "BASELINE_ONLY",
+      "timing": {
+        "totalYears": 6,
+        "constructionYears": 2,
+        "operationYears": 4,
+        "holdStrategy": "exit_sale",
+        "isOffPlanSale": false,
+        "isSubdivisionPhased": true,
+        "isPhasedSaleMode": true,
+        "drawSchedule": null,
+        "vatWorkingCapitalRefundLagYears": 0,
+        "directSaleDeferredYear": null,
+        "directSaleDeferredAmt": 0,
+        "timeline": {
+          "t0": "2026-01-01",
+          "yearEnds": [
+            "2027-01-01",
+            "2028-01-01",
+            "2029-01-01",
+            "2030-01-01",
+            "2031-01-01",
+            "2032-01-01"
+          ],
+          "yearMidpoints": [
+            "2026-07-01",
+            "2027-07-01",
+            "2028-07-01",
+            "2029-07-01",
+            "2030-07-01",
+            "2031-07-01"
+          ]
+        },
+        "offPlanSchedule": null,
+        "absorptionSchedule": [
+          {
+            "yr": 3,
+            "pct": 0.25,
+            "trancheRevenue": 7500000,
+            "trancheCosts": 0,
+            "tranchePrincipalPay": 2130000
+          },
+          {
+            "yr": 4,
+            "pct": 0.25,
+            "trancheRevenue": 7500000,
+            "trancheCosts": 0,
+            "tranchePrincipalPay": 2130000
+          },
+          {
+            "yr": 5,
+            "pct": 0.25,
+            "trancheRevenue": 7500000,
+            "trancheCosts": 0,
+            "tranchePrincipalPay": 2130000
+          },
+          {
+            "yr": 6,
+            "pct": 0.25,
+            "trancheRevenue": 7500000,
+            "trancheCosts": 0,
+            "tranchePrincipalPay": 2130000
+          }
+        ],
+        "projectCF": [
+          -14200000,
+          0,
+          0,
+          7500000,
+          7500000,
+          7500000,
+          7500000
+        ],
+        "equityCF": [
+          -5680000,
+          -681600,
+          -681600,
+          4688400,
+          4858800,
+          5029200,
+          5199600
+        ],
+        "pnlRows": [
+          {
+            "yr": 1,
+            "phase": "construction",
+            "isExitYear": false,
+            "interestExpense": 681600,
+            "principalPayment": 0,
+            "debtPayoffAtExit": 0,
+            "exitValue": 0
+          },
+          {
+            "yr": 2,
+            "phase": "construction",
+            "isExitYear": false,
+            "interestExpense": 681600,
+            "principalPayment": 0,
+            "debtPayoffAtExit": 0,
+            "exitValue": 0
+          },
+          {
+            "yr": 3,
+            "phase": "operation",
+            "isExitYear": true,
+            "interestExpense": 681600,
+            "principalPayment": 0,
+            "debtPayoffAtExit": 2130000,
+            "exitValue": 7500000
+          },
+          {
+            "yr": 4,
+            "phase": "operation",
+            "isExitYear": true,
+            "interestExpense": 511200,
+            "principalPayment": 0,
+            "debtPayoffAtExit": 2130000,
+            "exitValue": 7500000
+          },
+          {
+            "yr": 5,
+            "phase": "operation",
+            "isExitYear": true,
+            "interestExpense": 340800,
+            "principalPayment": 0,
+            "debtPayoffAtExit": 2130000,
+            "exitValue": 7500000
+          },
+          {
+            "yr": 6,
+            "phase": "operation",
+            "isExitYear": true,
+            "interestExpense": 170400,
+            "principalPayment": 0,
+            "debtPayoffAtExit": 2130000,
+            "exitValue": 7500000
+          }
+        ]
+      }
+    },
+    "T13-landbank": {
+      "label": "Four-year landbank hold",
+      "datedCoverage": "IMPLEMENTED",
+      "timing": {
+        "totalYears": 4,
+        "constructionYears": 0,
+        "operationYears": 4,
+        "holdStrategy": "exit_sale",
+        "isOffPlanSale": false,
+        "isSubdivisionPhased": false,
+        "isPhasedSaleMode": false,
+        "drawSchedule": null,
+        "vatWorkingCapitalRefundLagYears": 0,
+        "directSaleDeferredYear": null,
+        "directSaleDeferredAmt": 0,
+        "timeline": {
+          "t0": "2026-01-01",
+          "yearEnds": [
+            "2027-01-01",
+            "2028-01-01",
+            "2029-01-01",
+            "2030-01-01"
+          ],
+          "yearMidpoints": [
+            "2026-07-01",
+            "2027-07-01",
+            "2028-07-01",
+            "2029-07-01"
+          ]
+        },
+        "offPlanSchedule": null,
+        "absorptionSchedule": null,
+        "projectCF": [
+          -10000000,
+          -500000,
+          -500000,
+          -500000,
+          13104889.600000003
+        ],
+        "equityCF": [
+          -6000000,
+          -820000,
+          -820000,
+          -820000,
+          8784889.600000003
+        ],
+        "pnlRows": [
+          {
+            "yr": 1,
+            "phase": "operation",
+            "isExitYear": false,
+            "interestExpense": 320000,
+            "principalPayment": 0,
+            "debtPayoffAtExit": 0,
+            "exitValue": 0
+          },
+          {
+            "yr": 2,
+            "phase": "operation",
+            "isExitYear": false,
+            "interestExpense": 320000,
+            "principalPayment": 0,
+            "debtPayoffAtExit": 0,
+            "exitValue": 0
+          },
+          {
+            "yr": 3,
+            "phase": "operation",
+            "isExitYear": false,
+            "interestExpense": 320000,
+            "principalPayment": 0,
+            "debtPayoffAtExit": 0,
+            "exitValue": 0
+          },
+          {
+            "yr": 4,
+            "phase": "operation",
+            "isExitYear": true,
+            "interestExpense": 320000,
+            "principalPayment": 0,
+            "debtPayoffAtExit": 4000000,
+            "exitValue": 13604889.600000003
+          }
+        ]
+      }
+    },
+    "T14-one-year-project": {
+      "label": "One-year boundary case",
+      "datedCoverage": "IMPLEMENTED",
+      "timing": {
+        "totalYears": 1,
+        "constructionYears": 1,
+        "operationYears": 0,
+        "holdStrategy": "exit_sale",
+        "isOffPlanSale": false,
+        "isSubdivisionPhased": false,
+        "isPhasedSaleMode": false,
+        "drawSchedule": null,
+        "vatWorkingCapitalRefundLagYears": 0,
+        "directSaleDeferredYear": null,
+        "directSaleDeferredAmt": 0,
+        "timeline": {
+          "t0": "2026-01-01",
+          "yearEnds": [
+            "2027-01-01"
+          ],
+          "yearMidpoints": [
+            "2026-07-01"
+          ]
+        },
+        "offPlanSchedule": null,
+        "absorptionSchedule": null,
+        "projectCF": [
+          -50136115.60000001,
+          51000000
+        ],
+        "equityCF": [
+          -20054446.240000006,
+          18511797.091199998
+        ],
+        "pnlRows": [
+          {
+            "yr": 1,
+            "phase": "construction",
+            "isExitYear": true,
+            "interestExpense": 2406533.5488000005,
+            "principalPayment": 0,
+            "debtPayoffAtExit": 30081669.360000003,
+            "exitValue": 51000000
+          }
+        ]
+      }
+    },
+    "T15-senior-mezz": {
+      "label": "Senior/mezz sizing timing control",
+      "datedCoverage": "IMPLEMENTED",
+      "timing": {
+        "totalYears": 2,
+        "constructionYears": 2,
+        "operationYears": 0,
+        "holdStrategy": "exit_sale",
+        "isOffPlanSale": false,
+        "isSubdivisionPhased": false,
+        "isPhasedSaleMode": false,
+        "drawSchedule": null,
+        "vatWorkingCapitalRefundLagYears": 0,
+        "directSaleDeferredYear": null,
+        "directSaleDeferredAmt": 0,
+        "timeline": {
+          "t0": "2026-01-01",
+          "yearEnds": [
+            "2027-01-01",
+            "2028-01-01"
+          ],
+          "yearMidpoints": [
+            "2026-07-01",
+            "2027-07-01"
+          ]
+        },
+        "offPlanSchedule": null,
+        "absorptionSchedule": null,
+        "projectCF": [
+          -50136115.60000001,
+          0,
+          51000000
+        ],
+        "equityCF": [
+          -20054446.240000006,
+          -2647186.90368,
+          18271143.736319996
+        ],
+        "pnlRows": [
+          {
+            "yr": 1,
+            "phase": "construction",
+            "isExitYear": false,
+            "interestExpense": 2647186.90368,
+            "principalPayment": 0,
+            "debtPayoffAtExit": 0,
+            "exitValue": 0
+          },
+          {
+            "yr": 2,
+            "phase": "construction",
+            "isExitYear": true,
+            "interestExpense": 2647186.90368,
+            "principalPayment": 0,
+            "debtPayoffAtExit": 30081669.360000003,
+            "exitValue": 51000000
+          }
+        ]
+      }
+    },
+    "T16-refinance-close": {
+      "label": "Refinance-close at terminal year",
+      "datedCoverage": "BASELINE_ONLY",
+      "timing": {
+        "totalYears": 7,
+        "constructionYears": 2,
+        "operationYears": 5,
+        "holdStrategy": "refinance_close",
+        "isOffPlanSale": false,
+        "isSubdivisionPhased": false,
+        "isPhasedSaleMode": false,
+        "drawSchedule": null,
+        "vatWorkingCapitalRefundLagYears": 0,
+        "directSaleDeferredYear": null,
+        "directSaleDeferredAmt": 0,
+        "timeline": {
+          "t0": "2026-01-01",
+          "yearEnds": [
+            "2027-01-01",
+            "2028-01-01",
+            "2029-01-01",
+            "2030-01-01",
+            "2031-01-01",
+            "2032-01-01",
+            "2033-01-01"
+          ],
+          "yearMidpoints": [
+            "2026-07-01",
+            "2027-07-01",
+            "2028-07-01",
+            "2029-07-01",
+            "2030-07-01",
+            "2031-07-01",
+            "2032-07-01"
+          ]
+        },
+        "offPlanSchedule": null,
+        "absorptionSchedule": null,
+        "projectCF": [
+          -50136115.60000001,
+          0,
+          0,
+          4896000,
+          4896000,
+          4896000,
+          4896000,
+          66096000
+        ],
+        "equityCF": [
+          -20054446.240000006,
+          -2406533.5488000005,
+          -2406533.5488000005,
+          2489466.4511999995,
+          2489466.4511999995,
+          2489466.4511999995,
+          2489466.4511999995,
+          20661417.038397312
+        ],
+        "pnlRows": [
+          {
+            "yr": 1,
+            "phase": "construction",
+            "isExitYear": false,
+            "interestExpense": 2406533.5488000005,
+            "principalPayment": 0,
+            "debtPayoffAtExit": 0,
+            "exitValue": 0
+          },
+          {
+            "yr": 2,
+            "phase": "construction",
+            "isExitYear": false,
+            "interestExpense": 2406533.5488000005,
+            "principalPayment": 0,
+            "debtPayoffAtExit": 0,
+            "exitValue": 0
+          },
+          {
+            "yr": 3,
+            "phase": "operation",
+            "isExitYear": false,
+            "interestExpense": 2406533.5488000005,
+            "principalPayment": 0,
+            "debtPayoffAtExit": 0,
+            "exitValue": 0
+          },
+          {
+            "yr": 4,
+            "phase": "operation",
+            "isExitYear": false,
+            "interestExpense": 2406533.5488000005,
+            "principalPayment": 0,
+            "debtPayoffAtExit": 0,
+            "exitValue": 0
+          },
+          {
+            "yr": 5,
+            "phase": "operation",
+            "isExitYear": false,
+            "interestExpense": 2406533.5488000005,
+            "principalPayment": 0,
+            "debtPayoffAtExit": 0,
+            "exitValue": 0
+          },
+          {
+            "yr": 6,
+            "phase": "operation",
+            "isExitYear": false,
+            "interestExpense": 2406533.5488000005,
+            "principalPayment": 0,
+            "debtPayoffAtExit": 0,
+            "exitValue": 0
+          },
+          {
+            "yr": 7,
+            "phase": "operation",
+            "isExitYear": true,
+            "interestExpense": 2406533.5488000005,
+            "principalPayment": 0,
+            "debtPayoffAtExit": 30081669.360000003,
+            "exitValue": 61200000
+          }
+        ]
+      }
+    },
+    "T17-perpetual-hold-periodic-refi": {
+      "label": "Perpetual hold with periodic refinance",
+      "datedCoverage": "BASELINE_ONLY",
+      "timing": {
+        "totalYears": 9,
+        "constructionYears": 1,
+        "operationYears": 5,
+        "holdStrategy": "perpetual_hold",
+        "isOffPlanSale": false,
+        "isSubdivisionPhased": false,
+        "isPhasedSaleMode": false,
+        "drawSchedule": null,
+        "vatWorkingCapitalRefundLagYears": 0,
+        "directSaleDeferredYear": null,
+        "directSaleDeferredAmt": 0,
+        "timeline": {
+          "t0": "2026-01-01",
+          "yearEnds": [
+            "2027-01-01",
+            "2028-01-01",
+            "2029-01-01",
+            "2030-01-01",
+            "2031-01-01",
+            "2032-01-01",
+            "2033-01-01",
+            "2034-01-01",
+            "2035-01-01"
+          ],
+          "yearMidpoints": [
+            "2026-07-01",
+            "2027-07-01",
+            "2028-07-01",
+            "2029-07-01",
+            "2030-07-01",
+            "2031-07-01",
+            "2032-07-01",
+            "2033-07-01",
+            "2034-07-01"
+          ]
+        },
+        "offPlanSchedule": null,
+        "absorptionSchedule": null,
+        "projectCF": [
+          -50136115.60000001,
+          0,
+          4896000,
+          4896000,
+          4896000,
+          4896000,
+          4896000,
+          4896000,
+          4896000,
+          82911642.87966447
+        ],
+        "equityCF": [
+          -20054446.240000006,
+          -2406533.5488000005,
+          2489466.4511999995,
+          2489466.4511999995,
+          17878260.8901888,
+          1221619.0869504,
+          1221619.0869504,
+          3545477.6210277136,
+          996717.5800244594,
+          108286973.08965912
+        ],
+        "pnlRows": [
+          {
+            "yr": 1,
+            "phase": "construction",
+            "isExitYear": false,
+            "interestExpense": 2406533.5488000005,
+            "principalPayment": 0,
+            "debtPayoffAtExit": 0,
+            "exitValue": 0
+          },
+          {
+            "yr": 2,
+            "phase": "operation",
+            "isExitYear": false,
+            "interestExpense": 2406533.5488000005,
+            "principalPayment": 0,
+            "debtPayoffAtExit": 0,
+            "exitValue": 0
+          },
+          {
+            "yr": 3,
+            "phase": "operation",
+            "isExitYear": false,
+            "interestExpense": 2406533.5488000005,
+            "principalPayment": 0,
+            "debtPayoffAtExit": 0,
+            "exitValue": 0
+          },
+          {
+            "yr": 4,
+            "phase": "operation",
+            "isExitYear": false,
+            "interestExpense": 2406533.5488000005,
+            "principalPayment": 0,
+            "debtPayoffAtExit": 0,
+            "exitValue": 0
+          },
+          {
+            "yr": 5,
+            "phase": "operation",
+            "isExitYear": false,
+            "interestExpense": 3674380.9130496,
+            "principalPayment": 0,
+            "debtPayoffAtExit": 0,
+            "exitValue": 0
+          },
+          {
+            "yr": 6,
+            "phase": "operation",
+            "isExitYear": false,
+            "interestExpense": 3674380.9130496,
+            "principalPayment": 0,
+            "debtPayoffAtExit": 0,
+            "exitValue": 0
+          },
+          {
+            "yr": 7,
+            "phase": "operation",
+            "isExitYear": false,
+            "interestExpense": 3674380.9130496,
+            "principalPayment": 0,
+            "debtPayoffAtExit": 0,
+            "exitValue": 0
+          },
+          {
+            "yr": 8,
+            "phase": "operation",
+            "isExitYear": false,
+            "interestExpense": 3899282.4199755406,
+            "principalPayment": 0,
+            "debtPayoffAtExit": 0,
+            "exitValue": 0
+          },
+          {
+            "yr": 9,
+            "phase": "operation",
+            "isExitYear": true,
+            "interestExpense": 3899282.4199755406,
+            "principalPayment": 0,
+            "debtPayoffAtExit": 48741030.24969426,
+            "exitValue": 78015642.87966447
+          }
+        ]
+      }
+    },
+    "T18-high-leverage": {
+      "label": "High-leverage timing control",
+      "datedCoverage": "IMPLEMENTED",
+      "timing": {
+        "totalYears": 2,
+        "constructionYears": 2,
+        "operationYears": 0,
+        "holdStrategy": "exit_sale",
+        "isOffPlanSale": false,
+        "isSubdivisionPhased": false,
+        "isPhasedSaleMode": false,
+        "drawSchedule": null,
+        "vatWorkingCapitalRefundLagYears": 0,
+        "directSaleDeferredYear": null,
+        "directSaleDeferredAmt": 0,
+        "timeline": {
+          "t0": "2026-01-01",
+          "yearEnds": [
+            "2027-01-01",
+            "2028-01-01"
+          ],
+          "yearMidpoints": [
+            "2026-07-01",
+            "2027-07-01"
+          ]
+        },
+        "offPlanSchedule": null,
+        "absorptionSchedule": null,
+        "projectCF": [
+          -50136115.60000001,
+          0,
+          51000000
+        ],
+        "equityCF": [
+          -5013611.560000002,
+          -3609800.3232000005,
+          2267695.636799993
+        ],
+        "pnlRows": [
+          {
+            "yr": 1,
+            "phase": "construction",
+            "isExitYear": false,
+            "interestExpense": 3609800.3232000005,
+            "principalPayment": 0,
+            "debtPayoffAtExit": 0,
+            "exitValue": 0
+          },
+          {
+            "yr": 2,
+            "phase": "construction",
+            "isExitYear": true,
+            "interestExpense": 3609800.3232000005,
+            "principalPayment": 0,
+            "debtPayoffAtExit": 45122504.04000001,
+            "exitValue": 51000000
+          }
+        ]
+      }
+    }
+  }
+}
