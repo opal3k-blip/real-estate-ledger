@@ -1,7 +1,7 @@
 {
   "schemaVersion": "3B1-RECOVERY-V1",
   "acquisitionDate": "2026-01-01",
-  "fixtureCount": 18,
+  "fixtureCount": 19,
   "fixtures": {
     "T01-base-development": {
       "label": "Base development (2 construction years)",
@@ -276,7 +276,7 @@
     },
     "T04-offplan-no-lag": {
       "label": "Off-plan sale with no escrow lag",
-      "datedCoverage": "BASELINE_ONLY",
+      "datedCoverage": "IMPLEMENTED",
       "timing": {
         "totalYears": 2,
         "constructionYears": 2,
@@ -548,7 +548,7 @@
     },
     "T08-offplan-lag1": {
       "label": "Off-plan collection extends one year beyond nominal tranche",
-      "datedCoverage": "BASELINE_ONLY",
+      "datedCoverage": "IMPLEMENTED",
       "timing": {
         "totalYears": 4,
         "constructionYears": 3,
@@ -656,7 +656,7 @@
     },
     "T09-offplan-lag2-backloaded": {
       "label": "Back-loaded off-plan with two-year escrow lag",
-      "datedCoverage": "BASELINE_ONLY",
+      "datedCoverage": "IMPLEMENTED",
       "timing": {
         "totalYears": 5,
         "constructionYears": 3,
@@ -777,7 +777,7 @@
     },
     "T10-vat-refund-lag0": {
       "label": "Recoverable VAT with zero refund lag",
-      "datedCoverage": "BASELINE_ONLY",
+      "datedCoverage": "IMPLEMENTED",
       "timing": {
         "totalYears": 2,
         "constructionYears": 2,
@@ -837,7 +837,7 @@
     },
     "T11-vat-refund-lag2": {
       "label": "Recoverable VAT with two-year refund lag",
-      "datedCoverage": "BASELINE_ONLY",
+      "datedCoverage": "IMPLEMENTED",
       "timing": {
         "totalYears": 5,
         "constructionYears": 3,
@@ -936,7 +936,7 @@
     },
     "T12-phased-subdivision": {
       "label": "Four-year serviced-land absorption after construction",
-      "datedCoverage": "BASELINE_ONLY",
+      "datedCoverage": "IMPLEMENTED",
       "timing": {
         "totalYears": 6,
         "constructionYears": 2,
@@ -1599,6 +1599,70 @@
             "interestExpense": 3609800.3232000005,
             "principalPayment": 0,
             "debtPayoffAtExit": 45122504.04000001,
+            "exitValue": 51000000
+          }
+        ]
+      }
+    },
+    "T19-direct-sale-bank-lag2": {
+      "label": "Direct sale with 60% buyer-bank financing collected two years later",
+      "datedCoverage": "IMPLEMENTED",
+      "timing": {
+        "totalYears": 2,
+        "constructionYears": 2,
+        "operationYears": 0,
+        "holdStrategy": "exit_sale",
+        "isOffPlanSale": false,
+        "isSubdivisionPhased": false,
+        "isPhasedSaleMode": false,
+        "drawSchedule": null,
+        "vatWorkingCapitalRefundLagYears": 0,
+        "directSaleDeferredYear": 4,
+        "directSaleDeferredAmt": 11107078.254719999,
+        "timeline": {
+          "t0": "2026-01-01",
+          "yearEnds": [
+            "2027-01-01",
+            "2028-01-01"
+          ],
+          "yearMidpoints": [
+            "2026-07-01",
+            "2027-07-01"
+          ]
+        },
+        "offPlanSchedule": null,
+        "absorptionSchedule": null,
+        "projectCF": [
+          -50136115.60000001,
+          0,
+          39892921.74528,
+          0,
+          11107078.254719999
+        ],
+        "equityCF": [
+          -20054446.240000006,
+          -2406533.5488000005,
+          7404718.836479999,
+          0,
+          11107078.254719999
+        ],
+        "pnlRows": [
+          {
+            "yr": 1,
+            "phase": "construction",
+            "isExitYear": false,
+            "interestExpense": 2406533.5488000005,
+            "principalPayment": 0,
+            "debtPayoffAtExit": 0,
+            "exitValue": 0
+          },
+          {
+            "yr": 2,
+            "phase": "construction",
+            "isExitYear": true,
+            "interestExpense": 2406533.5488000005,
+            "principalPayment": 0,
+            "debtPayoffAtExit": 30081669.360000003,
             "exitValue": 51000000
           }
         ]

@@ -26,6 +26,10 @@ const cap=createFinancialEvent({scope:'x',sequence:1,date:'2026-12-31',type:FINA
 assert.deepEqual(eventEffects(cap),{projectCash:0,equityCash:0,debtBalance:8,financingCash:0});
 const refiFee=createFinancialEvent({scope:'x',sequence:2,date:'2026-12-31',type:FINANCIAL_EVENT_TYPES.REFINANCE_FEE,amount:3});
 assert.deepEqual(eventEffects(refiFee),{projectCash:0,equityCash:0,debtBalance:0,financingCash:-3});
+const directDeferral=createFinancialEvent({scope:'x',sequence:3,date:'2026-12-31',type:FINANCIAL_EVENT_TYPES.DIRECT_SALE_DEFERRAL,amount:25});
+assert.deepEqual(eventEffects(directDeferral),{projectCash:-25,equityCash:-25,debtBalance:0,financingCash:0});
+const directCollection=createFinancialEvent({scope:'x',sequence:4,date:'2028-12-31',type:FINANCIAL_EVENT_TYPES.DIRECT_SALE_COLLECTION,amount:25});
+assert.deepEqual(eventEffects(directCollection),{projectCash:25,equityCash:25,debtBalance:0,financingCash:0});
 assert.throws(()=>createFinancialEvent({date:'2026-01-01',type:FINANCIAL_EVENT_TYPES.DEBT_DRAW,amount:-1}),/INVALID_EVENT_AMOUNT/);
 assert.throws(()=>createFinancialEvent({date:'2026-13-01',type:FINANCIAL_EVENT_TYPES.DEBT_DRAW,amount:1}),/INVALID_EVENT_DATE/);
 

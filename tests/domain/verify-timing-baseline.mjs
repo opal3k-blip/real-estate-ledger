@@ -53,8 +53,8 @@ function timingFacts(c){
 assert.equal(expected.schemaVersion,'3B1-RECOVERY-V1');
 const C=loadCore();
 const fixtures=buildTimingFixtures(C);
-assert.equal(fixtures.length,18);
-assert.equal(expected.fixtureCount,18);
+assert.equal(fixtures.length,19);
+assert.equal(expected.fixtureCount,19);
 let pass=0;
 for(const f of fixtures){
   const frozen=expected.fixtures[f.id];
@@ -63,8 +63,9 @@ for(const f of fixtures){
   assert.equal(frozen.datedCoverage,f.datedCoverage,`${f.id}: coverage classification drift`);
   const actual=timingFacts(C.compute(f.input,f.scenarioKey));
   assert.deepEqual(actual,frozen.timing,`${f.id}: timing baseline drift`);
-  assert.equal(actual.projectCF.length,actual.totalYears+1,`${f.id}: projectCF horizon mismatch`);
-  assert.equal(actual.equityCF.length,actual.totalYears+1,`${f.id}: equityCF horizon mismatch`);
+  const cashHorizon=Math.max(actual.totalYears,actual.directSaleDeferredYear??actual.totalYears);
+  assert.equal(actual.projectCF.length,cashHorizon+1,`${f.id}: projectCF horizon mismatch`);
+  assert.equal(actual.equityCF.length,cashHorizon+1,`${f.id}: equityCF horizon mismatch`);
   assert.equal(actual.pnlRows.length,actual.totalYears,`${f.id}: pnl horizon mismatch`);
   assert.equal(actual.timeline.yearEnds.length,actual.totalYears,`${f.id}: dated timeline horizon mismatch`);
   pass++;
