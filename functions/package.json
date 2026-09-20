@@ -14,7 +14,7 @@
     "deploy": "firebase deploy --only functions"
   },
   "dependencies": {
-    "firebase-admin": "^12.6.0",
+    "firebase-admin": "^14.4.0",
     "firebase-functions": "^6.1.0",
     "nodemailer": "^10.0.10"
   },
