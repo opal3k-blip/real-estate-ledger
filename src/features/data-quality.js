@@ -2,55 +2,33 @@
    درجة جودة البيانات — Data Quality Score (Phase 1، النظام الرابع)
    ---------------------------------------------------------------------------
    نسبة اكتمال المدخلات الحرجة لكل فرصة (هل أُدخلت الأرقام أصلاً؟) — منفصلة
-   تماماً عن "العناية الواجبة" (هل تحقّقنا من صحة الأرقام؟). قائمة حقول ثابتة
-   (بعضها خاص بنوع الفرصة)، كل حقل إما "حرج" (يمنع الرفع للجنة الاستثمار عند
-   غيابه) أو "مهم" فقط (يُخصم من النسبة لكن لا يمنع الرفع).
-   قسم للقراءة فقط (لا نموذج تعديل هنا — يُعرَض تلقائياً من بيانات الفرصة
-   نفسها بعد كل حفظ عبر المعالج العادي). لا تعديل على منطق core.js الداخلي.
+   تماماً عن "العناية الواجبة" (هل تحقّقنا من صحة الأرقام؟).
+
+   Phase 2R-4B — Client Cutover: هذا الملف أصبح UI wrapper فقط. الحساب
+   الحتمي (deterministic) الحقيقي أصبح في src/domain/data-quality/
+   data-quality-engine.js (الجهة الرسمية الوحيدة له، بعد إثبات تطابقه
+   Shadow-Mode في Phase 2R-4A — 17/17). لا تغيير في أسماء أو توقيعات
+   الدوال المُصدَّرة هنا حتى لا تنكسر ملفات الاستيراد الحالية
+   (ai-analyst.js, ic-workflow.js, decision-confidence.js,
+   ic-decision-gate.js, ...). لا تعديل على منطق core.js الداخلي.
    ========================================================================= */
+import {
+  dataQualityStats as domainDataQualityStats,
+  fieldsFor as domainFieldsFor,
+  isFilled as domainIsFilled,
+} from '../domain/data-quality/data-quality-engine.js';
 
-function isFilled(v){
-  if(v==null) return false;
-  if(typeof v==='string') return v.trim()!=='';
-  if(typeof v==='number') return isFinite(v) && v>0;
-  return !!v;
-}
-
-/* appliesTo: null = كل الأنواع، وإلا 'income' | 'development' | 'landbank' فقط */
-const FIELD_DEFS = [
-  { path:'meta.name',              ar:'اسم الفرصة',               en:'Opportunity name',        critical:true,  appliesTo:null },
-  { path:'meta.city',              ar:'المدينة',                   en:'City',                     critical:true,  appliesTo:null },
-  { path:'meta.neighborhood',      ar:'الحي',                      en:'Neighborhood',             critical:false, appliesTo:null },
-  { path:'meta.analyst',           ar:'المحلل المسؤول',            en:'Responsible analyst',      critical:false, appliesTo:null },
-  { path:'land.area',              ar:'مساحة الأرض',               en:'Land area',                critical:true,  appliesTo:null },
-  { path:'land.price',             ar:'سعر متر الأرض',             en:'Land price/m²',            critical:true,  appliesTo:null },
-  { path:'land.far',               ar:'معامل البناء (FAR)',        en:'FAR',                      critical:true,  appliesTo:null },
-  { path:'financing.ltc',          ar:'نسبة التمويل إلى التكلفة',  en:'Financing LTC',            critical:false, appliesTo:null },
-  { path:'financing.saibor',       ar:'السايبور',                  en:'SAIBOR',                   critical:false, appliesTo:null },
-  { path:'financing.margin',       ar:'هامش البنك',                en:'Bank margin',              critical:false, appliesTo:null },
-  { path:'regulatory.offeringType',ar:'نوع الطرح',                 en:'Offering type',            critical:false, appliesTo:null },
-  { path:'income.rent',            ar:'الإيجار السنوي/م²',         en:'Annual rent/m²',           critical:true,  appliesTo:'income' },
-  { path:'income.occupancy',       ar:'نسبة الإشغال',              en:'Occupancy',                critical:true,  appliesTo:'income' },
-  { path:'development.salePrice',  ar:'سعر البيع المتوقع/م²',      en:'Expected sale price/m²',   critical:true,  appliesTo:'development' },
-  { path:'development.buildCost',  ar:'تكلفة البناء/م²',           en:'Build cost/m²',            critical:true,  appliesTo:'development' },
-  { path:'development.constructionYears', ar:'مدة الإنشاء',        en:'Construction duration',    critical:false, appliesTo:'development' },
-  { path:'landbank.appreciation',  ar:'معدل نمو قيمة الأرض',       en:'Land appreciation rate',   critical:true,  appliesTo:'landbank' },
-  { path:'landbank.holdingYears',  ar:'مدة الاحتفاظ',              en:'Holding period',           critical:false, appliesTo:'landbank' },
-];
-
-function fieldsFor(oppType){
-  return FIELD_DEFS.filter(f => f.appliesTo===null || f.appliesTo===oppType);
-}
-
+/* توقيع قديم (core, d) يبقى كما هو للمستوردين الحاليين؛ core لم تعد
+   مُستخدَمة فعلياً (الحساب لا يعتمد على واجهة core) لكنها تبقى في
+   التوقيع للتوافق الخلفي فقط. */
 function dataQualityStats(core, d){
-  const fields = fieldsFor(d.meta.oppType);
-  let filled = 0, criticalMissing = [];
-  fields.forEach(f=>{
-    const v = core.getPath(d, f.path);
-    if(isFilled(v)) filled++;
-    else if(f.critical) criticalMissing.push(f);
-  });
-  return { total: fields.length, filled, pct: fields.length? filled/fields.length : 0, criticalMissing, fields };
+  return domainDataQualityStats(d);
+}
+function fieldsFor(oppType){
+  return domainFieldsFor(oppType);
+}
+function isFilled(v){
+  return domainIsFilled(v);
 }
 
 export function registerDataQuality(core){

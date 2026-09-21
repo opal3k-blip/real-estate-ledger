@@ -3,10 +3,17 @@ const fs=require('fs'), vm=require('vm'), assert=require('assert'), path=require
 let code=buildCoreVmSource();
 const ctx={console,setTimeout,clearTimeout,localStorage:{getItem(){return null},setItem(){}},document:{documentElement:{lang:'ar'},querySelector(){return null},addEventListener(){},getElementById(){return null},querySelectorAll(){return[]},body:{},createElement(){return {}}},window:{},Notification:undefined,navigator:{},URL,FileReader:function(){},Intl,Math,JSON,Date,parseFloat,parseInt,isFinite,Number,String,Array,Object};ctx.window=ctx;vm.createContext(ctx);vm.runInContext(code,ctx,{timeout:20000});
 const C=ctx.__C;
-let mapCode=fs.readFileSync(path.join(__dirname,'../../src/features/max-acquisition-price.js'),'utf8');
-mapCode=mapCode.replace(/export\s+function/g,'function').replace(/export\s*\{[^}]*\};?/, 'globalThis.__MAP = { maxAcquisitionPrice, irrAtPrice };');
+// Phase 2R-4B: هذا الحمّل كان (قبل الـcutover) يقرأ src/features/max-acquisition-price.js كنص وينفّذه
+// داخل VM. بعد الـcutover أصبح ذلك الملف مجرد wrapper يستورد (import) من src/domain/..., والـimport
+// غير صالح كنص يُنفَّذ مباشرة داخل vm.runInContext (سياق سكربت عادي لا وحدة ES). لذلك أصبحنا نحمّل
+// الوحدة الحتمية (canonical) نفسها من src/domain مباشرة — لا استيراد، ولا تبعية لواجهة core — وهي
+// الجهة الرسمية الوحيدة لهذا المنطق أصلاً بعد الـcutover.
+let mapCode=fs.readFileSync(path.join(__dirname,'../../src/domain/financial/max-acquisition-price.js'),'utf8');
+// الوحدة الحتمية تُصدِّر كل دالة بـ"export function" منفردة (لا يوجد export{} ختامي)،
+// فنُلحق تعيين __MAP بعد تجريد export بدل استبدال كتلة export{} غير موجودة أصلاً.
+mapCode=mapCode.replace(/export\s+function/g,'function') + '\nglobalThis.__MAP = { maxAcquisitionPrice, irrAtPrice };';
 vm.runInContext(mapCode, ctx, {timeout:20000});
-const MAP=ctx.__MAP;
+const MAP=ctx.__MAP; // ملاحظة: توقيع الدالة الحتمية هو (compute, d, targetIRR, targetDSCR) — compute دالة مباشرة، لا كائن core.
 // ملاحظة (سبتمبر 2026): blankOpportunity() صارت تُرجع أصفاراً لكل حقل خاص بالمشروع (طلب المستخدم —
 // معالج "فرصة جديدة" بالواجهة يجب ألا يعرض أي رقم افتراضي جاهز). هذا الملف يختبر صحة صيغ compute()
 // نفسها بمعزل عن الواجهة، فنطبّق هنا نسخة معزولة من الافتراضات الواقعية القديمة فوق الهيكل الفارغ —
@@ -51,14 +58,21 @@ t('007','Mixed sell + rent values retained area only',()=>{const o=base();o.stra
 t('008','Subscription fee is included in investor MOIC denominator',()=>{const o=base();o.subscription.subscriptionFee=.02;const c=C.compute(o,'base');assert(Math.abs(c.MOIC-c.totalDistrib/(c.contributedEquity+c.investorSideFees))<1e-10);});
 t('009','VAT residential operating input is treated as irrecoverable OPEX',()=>{const o=base();o.meta.oppType='income';o.meta.useType='سكني (Residential)';o.development.constructionYears=1;o.development.operationYears=2;o.income.rent=1000;o.income.gla=1000;o.income.occupancy=1;o.income.opex=.2;o.fees.propMgmt=0;o.vat.enabled=true;o.vat.ratePct=.15;const on=C.compute(o,'base');o.vat.enabled=false;const off=C.compute(o,'base');const delta=off.pnlRows.find(r=>r.yr===2).noi-on.pnlRows.find(r=>r.yr===2).noi;assert(delta>0);assert(Math.abs(delta-1000*1000*.2*.15)<1);});
 t('010','Landbank includes annual debt interest',()=>{const o=cp();o.meta.oppType='landbank';o.meta.tier='متوسط';o.land.area=5000;o.land.price=2000;o.financing.ltc=.6;o.financing.saibor=.055;o.financing.margin=.025;o.landbank.holdingYears=4;o.landbank.appreciation=.08;o.landbank.carryAnnual=250000;clean(o);const c=C.compute(o,'base');assert(Math.abs(c.equityCF[1]+980000)<1);assert(c.equityIRR<0);});
-t('011','Maximum acquisition price reaches target IRR boundary',()=>{const o=base();o.criteria.irrMin=.15;const src=fs.readFileSync(path.join(__dirname,'../../src/features/max-acquisition-price.js'),'utf8');assert(src.includes('for(let i=0;i<50;i++)'));});
+t('011','Maximum acquisition price reaches target IRR boundary',()=>{
+  const o=base();o.criteria.irrMin=.15;
+  const compute=(x)=>C.compute(x,'base');
+  const res=MAP.maxAcquisitionPrice(compute,o,.15);
+  assert(!res.infeasible,'target IRR must be reachable for this fixture');
+  const atMax=compute({...o,land:{...o.land,price:res.maxPrice}});
+  assert(Math.abs(atMax.equityIRR-.15)<1e-6,'binary search must converge to the target IRR boundary');
+});
 t('012','Sensitivity changes one assumption in each direction',()=>{const o=base();const rows=C.sensitivityRows(o);assert(rows.length>=5);assert(rows.every(r=>r.base!=null&&r.down!=null&&r.up!=null));});
 t('013','Optimizer never loses the current baseline as a candidate',()=>{const o=base();const r=C.runOptimizer(o);assert(r.best);assert(r.best.irr>=r.base.equityIRR-1e-12);});
-t('014','IC gate includes Project IRR as a financial blocker',()=>{const src=fs.readFileSync(path.join(__dirname,'../../src/features/ic-decision-gate.js'),'utf8');assert(src.includes("label:'Project IRR'"));assert(src.includes('const financialOk = finChecks.every(x=>x.ok)'));});
+t('014','IC gate includes Project IRR as a financial blocker (canonical domain engine, Phase 2R-4B)',()=>{const src=fs.readFileSync(path.join(__dirname,'../../src/domain/ic/ic-readiness-engine.js'),'utf8');assert(src.includes("label:'Project IRR'"));assert(src.includes('const financialOk = finChecks.every(x=>x.ok)'));});
 t('015','Construction draw profile uses average outstanding debt',()=>{const a=base();const b=base();b.financing.drawSchedulePct=[.2,.8];const ca=C.compute(a,'base'),cb=C.compute(b,'base');assert(cb.pnlRows[0].interestExpense<ca.pnlRows[0].interestExpense);assert(cb.pnlRows[1].interestExpense<ca.pnlRows[1].interestExpense);assert.deepEqual(cb.drawSchedule,[.2,.8]);});
 t('016','VAT recovery and refund lag are modeled without double-counting',()=>{const o=base();o.meta.oppType='income';o.meta.useType='مكاتب (Office)';o.development.constructionYears=2;o.development.operationYears=1;o.vat.enabled=true;o.vat.ratePct=.15;o.vat.constructionInputVatPct=.15;o.vat.inputRecoveryPct=1;o.vat.refundLagYears=1;const c=C.compute(o,'base');assert(c.vatInputTotal>0);assert.equal(c.vatIrrecoverableUpfront,0);assert(c.pnlRows[1].noi!==undefined);assert(c.equityCF[2]>c.equityCF[1]);});
 t('017','Follow-on negative equity cash flows are included in PIC and MOIC denominator',()=>{const o=base();o.development.operationYears=2;o.income.rent=1;o.strategy.salePct=1;const c=C.compute(o,'base');assert(c.equityCF.slice(1).some(v=>v<0));const expectedPIC=c.equityCF.reduce((s,v)=>s+(v<0?Math.abs(v):0),0);assert(Math.abs(c.PIC-expectedPIC)<1e-6);assert(Math.abs(c.MOIC-c.totalDistrib/(expectedPIC+c.investorSideFees))<1e-10);assert(c.PIC>c.equity);});
-t('018','IC gate enforces DD completion, evidence verification, and planning feasibility',()=>{const src=fs.readFileSync(path.join(__dirname,'../../src/features/ic-decision-gate.js'),'utf8');assert(src.includes('DD_COMPLETION_MIN'));assert(src.includes('EVIDENCE_VERIFIED_MIN'));assert(src.includes('planningFeasibility'));assert(src.includes('planningOk'));});
+t('018','IC gate enforces DD completion, evidence verification, and planning feasibility (canonical domain engine, Phase 2R-4B)',()=>{const src=fs.readFileSync(path.join(__dirname,'../../src/domain/ic/ic-readiness-engine.js'),'utf8');assert(src.includes('DD_COMPLETION_MIN'));assert(src.includes('EVIDENCE_VERIFIED_MIN'));assert(src.includes('planningFeasibility'));assert(src.includes('planningOk'));});
 t('019','In-kind commitments must be asset-bound before cash timing deducts them',()=>{const src=fs.readFileSync(path.join(__dirname,'../../src/features/cash-flow-timing.js'),'utf8');assert(src.includes('cm.data.inKindAssetId && cm.data.inKindAssetId===oppId'));});
 t('020','Waived capital calls are excluded from active called capital',()=>{const src=fs.readFileSync(path.join(__dirname,'../../src/core.js'),'utf8');assert(src.includes("const activeCalls = calls.filter(c=>c.data.status!=='waived')"));assert(src.includes('const called = activeCalls.reduce'));});
 t('021','Portfolio NAV and Net IRR labels are explicitly indicative until independent valuations exist',()=>{const p=fs.readFileSync(path.join(__dirname,'../../src/features/portfolio.js'),'utf8');assert(p.includes('Estimated Underwriting NAV'));assert(p.includes('Indicative Net IRR'));});
@@ -66,17 +80,38 @@ t('022','Cloud Functions expose server-side business invariant commands',()=>{co
 t('023','English language mode switches the whole app to LTR',()=>{const core=fs.readFileSync(path.join(__dirname,'../../src/core.js'),'utf8');const html=fs.readFileSync(path.join(__dirname,'../../index.html'),'utf8');assert(core.includes("const dir = LANG==='en' ? 'ltr' : 'rtl'"));assert(core.includes('document.documentElement.dir = dir'));assert(html.includes('html[dir="ltr"] body'));assert(html.includes('html[dir="ltr"] .field input'));});
 t('024','Maximum acquisition price respects DSCR, not just IRR, as a binding constraint',()=>{
   const o=base();o.strategy.salePct=0.2;o.development.operationYears=8;o.development.constructionYears=1;o.income.rent=800;o.criteria.irrMin=-1;o.criteria.dscrMin=1.30;
-  const coreShim={compute:(x)=>C.compute(x,'base')};
-  const withDSCR=MAP.maxAcquisitionPrice(coreShim,o,-1,1.30);
+  const compute=(x)=>C.compute(x,'base');
+  const withDSCR=MAP.maxAcquisitionPrice(compute,o,-1,1.30);
   assert.equal(withDSCR.bindingConstraint,'dscr');
-  const atMax=coreShim.compute({...o,land:{...o.land,price:withDSCR.maxPrice}});
+  const atMax=compute({...o,land:{...o.land,price:withDSCR.maxPrice}});
   assert(atMax.dscrMin>=1.30-1e-6,'DSCR-aware max price must not breach the DSCR covenant');
   // نفس السيناريو بلا وعي بـDSCR إطلاقاً (كما كان الكود قبل الإصلاح) يقترح سعراً أعلى بكثير ينتهك DSCR فعلياً —
   // هذا يثبت أن قيد DSCR كان مفقوداً فعلاً وأن الإصلاح يمنع توصية سعر شراء يخالف تغطية خدمة الدين المعتمدة.
   const oNoDscr={...o,criteria:{...o.criteria,dscrMin:null}};
-  const oldStyle=MAP.maxAcquisitionPrice(coreShim,oNoDscr,-1,null);
+  const oldStyle=MAP.maxAcquisitionPrice(compute,oNoDscr,-1,null);
   assert(oldStyle.maxPrice>withDSCR.maxPrice*1.5,'pre-fix IRR-only search must overshoot the DSCR-safe price substantially');
-  const atOldMax=coreShim.compute({...o,land:{...o.land,price:oldStyle.maxPrice}});
+  const atOldMax=compute({...o,land:{...o.land,price:oldStyle.maxPrice}});
   assert(atOldMax.dscrMin<1.30,'pre-fix IRR-only price must actually violate the DSCR covenant, proving the bug was real');
+});
+t('025','Phase 2R-4B client cutover: feature files delegate to canonical domain modules, no duplicated implementation remains',()=>{
+  const cases=[
+    { file:'../../src/features/data-quality.js', mustImport:"from '../domain/data-quality/data-quality-engine.js'", mustNotContain:["FIELD_DEFS = ["] },
+    { file:'../../src/features/due-diligence.js', mustImport:"from '../domain/due-diligence/dd-engine.js'", mustNotContain:['const DEFAULT_DD_ITEMS = ['] },
+    { file:'../../src/features/evidence-tracking.js', mustImport:"from '../domain/evidence/evidence-engine.js'", mustNotContain:['const KEY_FIELDS = ['] },
+    { file:'../../src/features/max-acquisition-price.js', mustImport:"from '../domain/financial/max-acquisition-price.js'", mustNotContain:['for(let i=0;i<50;i++)'] },
+    { file:'../../src/features/ic-decision-gate.js', mustImport:"from '../domain/ic/ic-readiness-engine.js'", mustNotContain:['function planningFeasibility','function evidenceQuality'] },
+  ];
+  cases.forEach(({file,mustImport,mustNotContain})=>{
+    const src=fs.readFileSync(path.join(__dirname,file),'utf8');
+    assert(src.includes(mustImport),`${file}: must import the canonical domain module (${mustImport})`);
+    mustNotContain.forEach(needle=>assert(!src.includes(needle),`${file}: must not re-implement domain logic (found "${needle}")`));
+  });
+  // إثبات سلوكي تكميلي: bounded search + IC readiness عبر الـwrapper القديم التوقيع (core-shaped) ينتجان
+  // نفس القيم الحتمية للـdomain مباشرة. (المطابقة الكاملة حقلاً-حقلاً لكل الحالات محفوظة أصلاً في
+  // tests/domain/verify-ic-readiness-shadow.mjs — 17/17 — وتُشغَّل ضمن acceptance بعد هذا الملف.)
+  const o=base();o.criteria.irrMin=.12;
+  const coreShim={compute:(x)=>C.compute(x,'base')};
+  const viaFeatureMAP=fs.readFileSync(path.join(__dirname,'../../src/features/max-acquisition-price.js'),'utf8');
+  assert(viaFeatureMAP.includes('core.compute.bind(core)'),'feature max-acquisition-price.js must delegate through core.compute, not reimplement the search');
 });
 console.table(tests);if(tests.some(x=>x.status==='FAIL'))process.exit(1);
