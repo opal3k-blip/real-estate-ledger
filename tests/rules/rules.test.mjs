@@ -284,20 +284,44 @@ for(const coll of LEDGER_COLLECTIONS){
   assert(true, '🔒 حتى الأدمن لا يقدر يحذف إدخال أداء فعلي محفوظ');
 }
 
-// ==================== ٨) سجل قرارات لجنة الاستثمار المؤسسي (icDecisions) — append-only ====================
-{
-  const db = ctxFor(ANALYST_OWNER).firestore();
-  await assertFails(setDoc(doc(db,'icDecisions','ICD-ANALYST'), { oppId:'OPP-1', decision:{decision:'approve'} }));
-  assert(true, '🔒 محلل عادي لا يقدر إنشاء سجل قرار IC مؤسسي');
-}
-{
-  const db = ctxFor(SENIOR_IC).firestore();
-  await assertSucceeds(setDoc(doc(db,'icDecisions','ICD-1'), { oppId:'OPP-1', decision:{decision:'approve'}, recordedBy:SENIOR_IC }));
-  assert(true, '⚠️ فجوة قائمة: Senior IC يستطيع إنشاء icDecisions من العميل؛ هذا توصيف للقواعد الحالية وليس إثبات server-only.');
-  await assertFails(updateDoc(doc(db,'icDecisions','ICD-1'), { 'decision.decision':'reject' }));
-  assert(true, '🔒 سجل قرار IC غير قابل للتعديل');
+// ==================== ٨) IC audit: server-only writes; team reads ====================
+// Rules-disabled seeding represents an existing server record. This is not a
+// callable integration test; approveOpportunity logic has its own Functions tests.
+await testEnv.withSecurityRulesDisabled(async ctx=>{
+  await setDoc(doc(ctx.firestore(),'icDecisions','ICD-1'), {
+    oppId:'OPP-1', decision:{decision:'approve'}, recordedBy:SENIOR_IC,
+    source:'approveOpportunity', version:2,
+  });
+});
+for(const [role,email] of [['analyst',ANALYST_OWNER],['senior_ic',SENIOR_IC],['fund_manager',FUND_MANAGER],['admin',ADMIN]]){
+  const db = ctxFor(email).firestore();
+  const forgedId = `ICD-FORGED-${role}`;
+  await assertFails(setDoc(doc(db,'icDecisions',forgedId), {
+    oppId:'OPP-1', decision:{decision:'approve',decidedBy:email}, recordedBy:email,
+    readiness:{ready:true,gates:{}}, evaluation:{engineVersion:'forged',inputHash:'forged'},
+    source:'approveOpportunity', version:2,
+  }));
+  assert(true, `🔒 ${role}: إنشاء سجل IC مصطنع من العميل مرفوض حتى بتنسيق سجل الخادم`);
+  const missing = await assertSucceeds(getDoc(doc(db,'icDecisions',forgedId)));
+  assert(!missing.exists(), `${role}: لم تُنشأ وثيقة القرار المرفوضة`);
+  await assertFails(updateDoc(doc(db,'icDecisions','ICD-1'), {'decision.decision':'reject'}));
+  assert(true, `🔒 ${role}: تعديل سجل IC موجود مرفوض`);
   await assertFails(deleteDoc(doc(db,'icDecisions','ICD-1')));
-  assert(true, '🔒 سجل قرار IC غير قابل للحذف');
+  assert(true, `🔒 ${role}: حذف سجل IC موجود مرفوض`);
+  const existing = await assertSucceeds(getDoc(doc(db,'icDecisions','ICD-1')));
+  assert(existing.exists() && existing.data().decision.decision==='approve', `${role}: القراءة مسموحة وسجل الخادم محفوظ`);
+  // The forged decision must not become a valid source for an approved UW version.
+  await assertFails(setDoc(doc(db,'underwritingVersions',`UWV-FORGED-${role}`), {
+    oppId:'OPP-1', stage:'v4_ic_approved', trigger:'ic_decision', savedBy:email,
+    savedAt:'2026-09-22T00:00:00.000Z', sourceDecisionId:forgedId, metrics:{equityIRR:9},
+  }));
+  assert(true, `🔒 ${role}: لا يمكن إنشاء نسخة اعتماد استناداً إلى القرار المصطنع المرفوض`);
+}
+for(const [label,context] of [['outsider',ctxFor(OUTSIDER)],['anonymous',testEnv.unauthenticatedContext()]]){
+  const db = context.firestore();
+  await assertFails(getDoc(doc(db,'icDecisions','ICD-1')));
+  await assertFails(setDoc(doc(db,'icDecisions',`ICD-${label}`), {oppId:'OPP-1',decision:{decision:'approve'}}));
+  assert(true, `🔒 ${label}: قراءة سجل IC وإنشاؤه مرفوضان`);
 }
 
 // ==================== ٩) محرك ربط رأس المال (المرحلة الخامسة): capitalAllocation — مدير صندوق فأعلى فقط، حتى لمالك الفرصة نفسه ====================
@@ -561,6 +585,6 @@ for(const coll of LEDGER_COLLECTIONS){
 }
 
 console.log(failures? `\n${failures} FAILURE(S)` : '\nALL PASSED (current-rules expectations; real Firestore emulator)');
-console.warn('OPEN SECURITY ITEMS: client icDecisions creation; opportunity creation with IC data; documented admin IC bypass. Passing this suite is NOT server-only certification.');
+console.warn('OPEN SECURITY ITEMS: opportunity creation with IC data; documented admin IC bypass; fund creation with assetIds; ledger creation exceptions. Passing this suite is NOT full server-only certification.');
 await testEnv.cleanup();
 process.exit(failures?1:0);

@@ -63,7 +63,7 @@ service cloud.firestore {
     }
 
     // نقطة ٧-٢: صلاحية اعتماد لجنة الاستثمار (canApproveIC في roles-permissions.js) — عضو لجنة
-    // استثمار أول فأعلى. تبقى مُعرَّفة هنا (تُستخدم في underwritingVersions/icDecisions أدناه)
+    // استثمار أول فأعلى. تبقى مُعرَّفة هنا (تُستخدم في underwritingVersions أدناه)
     // رغم أن مسار اعتماد القرار نفسه (icOnlyChange سابقاً) أُلغي تماماً — انظر تعليق P0 أدناه.
     function currentRoleIsSeniorICOrAbove() {
       return isAllowlisted() && currentRole() in ['senior_ic','fund_manager'];
@@ -403,11 +403,11 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
-    // سجل قرارات لجنة الاستثمار المؤسسي — append-only: إنشاء لعضو لجنة أول فأعلى، قراءة للفريق، ولا تعديل/حذف.
+    // IC audit records are written only by trusted server code using Admin SDK.
+    // No client role, including admin, may fabricate, update or delete an audit.
     match /icDecisions/{id} {
       allow read: if isAuthorized();
-      allow create: if currentRoleIsSeniorICOrAbove() || isAdminEmail();
-      allow update, delete: if false;
+      allow create, update, delete: if false;
     }
   }
 }
