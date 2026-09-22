@@ -92,6 +92,20 @@ service cloud.firestore {
     }
     // ============================================================================
 
+    // Phase 2R-4D2 supersedes the historical admin-bypass note above.
+    // Existing decisions remain server-owned, including for administrators.
+    // Empty legacy IC shapes can be normalized by the ordinary editor.
+    function emptyClientIc(data) {
+      let ic = data.get('ic', {});
+      return ic is map && ic.keys().hasOnly(['decisions'])
+        && ic.get('decisions', []) is list
+        && ic.get('decisions', []).size() == 0;
+    }
+    function preservesIc(before, after) {
+      return !changesIc(before, after)
+        || (emptyClientIc(before) && emptyClientIc(after));
+    }
+
     // ==================== المرحلة الخامسة (محرك ربط رأس المال) ====================
     // نقطة ٥-١: capitalAllocation (targetEquity/maxAllocation/priority/committeeNote) حقل
     // حجز رأسمال فعلي على مستوى الصندوق (كم من رأس مال الصندوق مخصَّص لهذه الفرصة تحديداً) —
@@ -121,15 +135,17 @@ service cloud.firestore {
     // رأس مال).
     match /opportunities/{oppId} {
       allow read: if isAuthorized();
-      allow create: if isAuthorized() && attributionHonest();
-      allow update: if attributionHonest() && (
+      allow create: if isAuthorized() && attributionHonest()
+        && emptyClientIc(request.resource.data);
+      allow update: if attributionHonest()
+        && preservesIc(resource.data, request.resource.data) && (
              isAdminEmail()
           || (isAllowlisted() && ownsOpp(resource.data)
-                && !changesCapitalAllocation(resource.data, request.resource.data)
-                && !changesIc(resource.data, request.resource.data))
+                && !changesCapitalAllocation(resource.data, request.resource.data))
           || (isFundManagerOrAbove() && capitalAllocationOnlyChange(resource.data, request.resource.data))
       );
-      allow delete: if isAdminEmail() || (isAllowlisted() && ownsOpp(resource.data));
+      allow delete: if emptyClientIc(resource.data)
+        && (isAdminEmail() || (isAllowlisted() && ownsOpp(resource.data)));
     }
 
     // أعضاء الفريق المصرَّح لهم — إدارة (إضافة/إزالة/تعديل المدة) للمسؤول فقط.

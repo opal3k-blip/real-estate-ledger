@@ -6,7 +6,7 @@
 // على حدة، بدل الاعتماد على إخفاء الأزرار في الواجهة.
 import { initializeTestEnvironment, assertSucceeds, assertFails } from '@firebase/rules-unit-testing';
 import { readFileSync } from 'fs';
-import { doc, setDoc, updateDoc, deleteDoc, getDoc } from 'firebase/firestore';
+import { doc, setDoc, updateDoc, deleteDoc, getDoc, deleteField, writeBatch } from 'firebase/firestore';
 
 let failures = 0;
 function assert(cond, msg){ if(!cond){ console.error('FAIL:', msg); failures++; } else { console.log('ok  :', msg); } }
@@ -550,19 +550,14 @@ for(const [label,context] of [['outsider',ctxFor(OUTSIDER)],['anonymous',testEnv
   assert(true, '🔒 [السيناريو المسمّى: analyst direct IC mutation] حتى مالك الفرصة نفسه (محلل) لا يقدر يعدّل حقل ic مباشرة من العميل — changesIc() تحجب الحقل بالكامل عن مسار ownsOpp؛ المسار الوحيد المتبقي هو updateIcConditionStatus عبر Cloud Function');
 }
 {
-  // ملاحظة تصميمية مهمة تُختبَر هنا صراحة (وتُفرّق هذا القسم عن القسم ١٤ التالي): isAdminEmail()
-  // هو OR-فرع مستقل تماماً بذاته في allow update لـopportunities (بلا أي AND مع !changesIc) —
-  // فالأدمن *يقدر فعلاً* يعدّل ic مباشرة من العميل بتصميم متعمَّد (نفس امتياز "بلا قيد إضافي"
-  // الذي يملكه على كل حقول الفرصة)، بخلاف fund.assetIds في القسم ١٤ حيث لا يوجد أي استثناء
-  // أدمن إطلاقاً. هذا الفارق التصميمي بين الحقلين موثَّق في تعليق firestore.rules نفسه.
   await testEnv.withSecurityRulesDisabled(async (ctx)=>{
     await setDoc(doc(ctx.firestore(),'opportunities','OPP-1'), baseOpp(ANALYST_OWNER, []));
   });
   const db = ctxFor(ADMIN).firestore();
   const attempt = baseOpp(ANALYST_OWNER, [{ decision:'approve', reasons:[], conditions:[], decidedBy:ADMIN, decidedAt:'x' }]);
   attempt.meta.updatedBy = ADMIN;
-  await assertSucceeds(setDoc(doc(db,'opportunities','OPP-1'), attempt));
-  assert(true, 'ℹ️ الأدمن *يقدر* يعدّل ic مباشرة من العميل (isAdminEmail() فرع مستقل بلا قيد changesIc) — هذا بتصميم متعمَّد يطابق امتيازه العام على بقية حقول الفرصة، ويُذكَر هنا صراحة لتوثيق الفارق عن حالة fund.assetIds في القسم التالي حيث لا استثناء أدمن إطلاقاً');
+  await assertFails(setDoc(doc(db,'opportunities','OPP-1'), attempt));
+  assert(true, 'Phase 4D2: admin cannot fabricate opportunity IC directly.');
 }
 
 // ==================== ١٤) [تغطية دائمة — طلب صريح من المستخدم ضمن P0: Trusted Transaction Layer]
@@ -584,7 +579,52 @@ for(const [label,context] of [['outsider',ctxFor(OUTSIDER)],['anonymous',testEnv
   assert(true, '✅ تعديل أي حقل آخر غير assetIds في نفس الوثيقة يبقى مسموحاً للأدمن — القيد ينصبّ على حقل assetIds تحديداً فقط، لا على الوثيقة كاملة');
 }
 
+
+// Phase 2R-4D2: creation, preservation and deletion across every authorized role.
+const importedDecision = { decision:'approve', reasons:['historical fixture'], conditions:[], decidedBy:SENIOR_IC, decidedAt:'2025-01-01' };
+for(const [role, email] of [['owner',ANALYST_OWNER],['senior',SENIOR_IC],['manager',FUND_MANAGER],['admin',ADMIN]]){
+  const db = ctxFor(email).firestore();
+  const prefix = `D2-${role}`;
+  for(const [kind, ic] of [['approved',{decisions:[importedDecision]}],['null',null],['string','approved'],['map',{decisions:{}}],['extra',{decisions:[],status:'approved'}]]){
+    await assertFails(setDoc(doc(db,'opportunities',`${prefix}-bad-${kind}`), {...baseOpp(email),ic}));
+    assert(!(await getDoc(doc(db,'opportunities',`${prefix}-bad-${kind}`))).exists(), `${role}: rejected ${kind} create leaves no document`);
+  }
+  const ref = doc(db,'opportunities',`${prefix}-empty`);
+  await assertSucceeds(setDoc(ref,baseOpp(email)));
+  await assertSucceeds(updateDoc(ref,{'land.price':2300,'meta.updatedBy':email}));
+  await assertSucceeds(deleteDoc(ref));
+  const legacy = baseOpp(email); delete legacy.ic;
+  const legacyRef = doc(db,'opportunities',`${prefix}-legacy`);
+  await assertSucceeds(setDoc(legacyRef,legacy));
+  await assertSucceeds(updateDoc(legacyRef,{ic:{decisions:[]},'meta.updatedBy':email}));
+  await assertSucceeds(deleteDoc(legacyRef));
+  const approvedRef = doc(db,'opportunities',`${prefix}-approved`);
+  const approved = baseOpp(email,[importedDecision]);
+  // Admin SDK fixture only; this is not a callable integration test.
+  await testEnv.withSecurityRulesDisabled(ctx=>setDoc(doc(ctx.firestore(),'opportunities',`${prefix}-approved`),approved));
+  await assertSucceeds(updateDoc(approvedRef,{'land.price':2400,'meta.updatedBy':email}));
+  await assertSucceeds(setDoc(approvedRef,{...approved,land:{area:1000,price:2500}}));
+  await assertFails(updateDoc(approvedRef,{'ic.decisions':[],'meta.updatedBy':email}));
+  await assertFails(updateDoc(approvedRef,{ic:deleteField(),'meta.updatedBy':email}));
+  const withoutIc = {...approved}; delete withoutIc.ic;
+  await assertFails(setDoc(approvedRef,withoutIc));
+  await assertFails(deleteDoc(approvedRef));
+  const batch = writeBatch(db);
+  batch.delete(approvedRef); batch.set(approvedRef,baseOpp(email));
+  await assertFails(batch.commit());
+  const saved = (await getDoc(approvedRef)).data();
+  assert(JSON.stringify(saved.ic)===JSON.stringify(approved.ic) && saved.land.price===2500,
+    `${role}: existing IC survives edits; clearing, removal and delete/recreate denied`);
+}
+for(const db of [ctxFor(OUTSIDER).firestore(),testEnv.unauthenticatedContext().firestore()]){
+  await assertFails(setDoc(doc(db,'opportunities','D2-unauthorized'),baseOpp(OUTSIDER)));
+}
+// Fail closed for malformed historical IC, without blocking ordinary owner edits.
+await testEnv.withSecurityRulesDisabled(ctx=>setDoc(doc(ctx.firestore(),'opportunities','D2-malformed'),{...baseOpp(ANALYST_OWNER),ic:null}));
+await assertSucceeds(updateDoc(doc(ctxFor(ANALYST_OWNER).firestore(),'opportunities','D2-malformed'),{'land.price':2600,'meta.updatedBy':ANALYST_OWNER}));
+await assertFails(deleteDoc(doc(ctxFor(ADMIN).firestore(),'opportunities','D2-malformed')));
+
 console.log(failures? `\n${failures} FAILURE(S)` : '\nALL PASSED (current-rules expectations; real Firestore emulator)');
-console.warn('OPEN SECURITY ITEMS: opportunity creation with IC data; documented admin IC bypass; fund creation with assetIds; ledger creation exceptions. Passing this suite is NOT full server-only certification.');
+console.warn('OPEN SECURITY ITEMS: fund creation with assetIds; ledger creation exceptions. Passing this suite is NOT full server-only certification.');
 await testEnv.cleanup();
 process.exit(failures?1:0);
