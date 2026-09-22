@@ -1,0 +1,16 @@
+{
+  "schema": 1,
+  "engineVersion": "581360990c3363dc57b971aed06c8342884ea41ad89091431f8bfe64e071f6d6",
+  "files": {
+    "package.json": "89c47db7851f89caec72da4f215ebc21cf1e294aeef3b45d2583562d846ab035",
+    "src/domain/data-quality/data-quality-engine.js": "e83d1574c1be8750fbe38c6a7b8aee52e8a6ced8b9e05eeb557a4e539aa05591",
+    "src/domain/due-diligence/dd-engine.js": "5cfd3716c40cc2d9c4db65ab49b4790ded291af2f03557cd3121b3baa44868f5",
+    "src/domain/evidence/evidence-engine.js": "41eed3b8bdb79bd897548589fb38f18a0dd0ad07a7bd3746574160dcc3499c4e",
+    "src/domain/financial/financial-context.js": "101bfeac04d91356b486aee9a3bf27fd513622167068dde24be608251005910f",
+    "src/domain/financial/financial-engine.js": "d3a10015490b47b5988ef134d08e091258c5cc85de1a023e2e6c78906e7f7fa3",
+    "src/domain/financial/max-acquisition-price.js": "75557cdfcf3cb8458ba7179f355f2ff7c6120132c5b625d7385254df79605436",
+    "src/domain/ic/ic-readiness-engine.js": "0c8868f6cf54e58aa199634777d361970fefbd0420b125a2773f5041d25a3f40",
+    "src/domain/planning/planning-engine.js": "77a0008566836a14f6839a7e6938a68dc4d36e311f9755c5915dddeebc3ba985",
+    "src/features/ic-decision-gate.js": "04ff8e40e1d41d5f084d02e068c0b5c5bdddb30645b846c1ba7488511bcce7b4"
+  }
+}

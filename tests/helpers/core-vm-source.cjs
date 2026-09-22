@@ -10,6 +10,13 @@ function buildCoreVmSource(options = {}) {
   const extraExports = Array.isArray(options.extraExports) ? options.extraExports : [];
   let coreCode = fs.readFileSync(CORE_PATH, 'utf8');
   let engineCode = fs.readFileSync(ENGINE_PATH, 'utf8');
+  const contextPath = path.join(ROOT, 'src/domain/financial/financial-context.js');
+  const contextImport = /^import \{[^\n]+baseBlankOpportunity \} from '\.\/domain\/financial\/financial-context\.js';$/m;
+  if (!contextImport.test(coreCode)) throw new Error('core-vm-source: canonical financial context import missing');
+  coreCode = coreCode.replace(contextImport, '');
+  const contextCode = fs.readFileSync(contextPath, 'utf8')
+    .replace(/export const /g, 'const ').replace(/export function /g, 'function ')
+    .replace('function blankOpportunity()', 'function baseBlankOpportunity()');
 
   if (!CORE_ENGINE_IMPORT_RE.test(coreCode)) {
     throw new Error('core-vm-source: expected canonical financial-engine import was not found in src/core.js');
@@ -27,7 +34,7 @@ function buildCoreVmSource(options = {}) {
   }
   coreCode = coreCode.replace(/export\s*\{/, `globalThis.__C = {${extras}`);
 
-  return `${engineCode}\n${coreCode}`;
+  return `${contextCode}\n${engineCode}\n${coreCode}`;
 }
 
 module.exports = { ROOT, buildCoreVmSource };

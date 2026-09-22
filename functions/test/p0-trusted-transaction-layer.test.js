@@ -245,16 +245,16 @@ function seedOpp(id, owner) {
   });
 
   console.log('\n== تحقق ارتدادي (regression) على approveOpportunity وlinkAssetToFund ==');
-  await test('approveOpportunity لا تزال تعمل كما كانت (لم تُكسَر بإضافة requireAuthorized)', async () => {
+  await test('approveOpportunity rejects fabricated client readiness for an incomplete saved opportunity', async () => {
     seedTeam();
     seedOpp('OPP10', ANALYST);
-    const resp = await fns.approveOpportunity(req(SENIOR_IC, {
+    await expectThrow(() => fns.approveOpportunity(req(SENIOR_IC, {
       oppId: 'OPP10',
       decision: { decision: 'approve' },
       readiness: { ready: true, gates: {} },
       reasons: [], conditions: [],
-    }));
-    assert.ok(resp.decisionId);
+    })), 'failed-precondition', 'fabricated readiness');
+    assert.strictEqual(Object.keys(db.__all('icDecisions')).length, 0);
   });
   await test('linkAssetToFund لا تزال تعمل كما كانت', async () => {
     seedTeam();

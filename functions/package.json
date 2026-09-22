@@ -8,10 +8,12 @@
     "node": "20"
   },
   "scripts": {
-    "lint": "node --check index.js",
-    "test": "node test/p0-trusted-transaction-layer.test.js",
+    "build:domain": "node scripts/build-domain.cjs",
+    "check:domain": "node scripts/build-domain.cjs --check",
+    "lint": "node --check index.js && node --check trusted-ic.cjs && npm run check:domain",
+    "test": "npm run check:domain && node test/p0-trusted-transaction-layer.test.js && node test/trusted-ic.test.cjs",
     "test:p0": "node test/p0-trusted-transaction-layer.test.js",
-    "deploy": "firebase deploy --only functions"
+    "deploy": "npm run build:domain && npm test && firebase deploy --only functions"
   },
   "dependencies": {
     "firebase-admin": "^12.6.0",

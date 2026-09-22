@@ -193,8 +193,8 @@ export function registerICWorkflow(core){
           const callable = firebase.functions().httpsCallable('approveOpportunity');
           const resp = await callable({
             oppId,
-            decision: { decision, overridden, gateReasonsAtDecision },
-            readiness: (typeof gate!=='undefined' && gate) ? gate : null,
+            // The server derives readiness and audit fields from its saved snapshot.
+            decision: { decision },
             reasons, conditions, override: overrideChecked,
           });
           decisionId = resp && resp.data ? resp.data.decisionId : null;

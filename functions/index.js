@@ -40,6 +40,7 @@ const { onDocumentWritten } = require('firebase-functions/v2/firestore');
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const { initializeApp } = require('firebase-admin/app');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
+const { recompute: recomputeIC } = require('./trusted-ic.cjs');
 
 initializeApp();
 const db = getFirestore();
@@ -210,29 +211,28 @@ async function allocatedElsewhereTx(tx, fund, excludeOppId) {
   return total;
 }
 
-/* ⚠️ TEMPORARY TRUST BOUNDARY (P0 — Trusted Transaction Layer، قرار معماري صريح من المستخدم):
-   `readiness` أدناه لا يزال بيانات "يُصرِّح بها العميل" (نتيجة icReadiness(core, draft) المحسوبة
-   في المتصفح) لا يُعاد حسابها هنا على الخادم — basicReadinessOk() تتحقق فقط من *شكل* الكائن
-   (ready===true وكل بوابة داخله ok!==false)، لا من صحة الأرقام المالية/DD/الأدلة/التخطيط/التسعير
-   التي أنتجت تلك النتيجة أصلاً. هذا يعني: عميل يتلاعب بواجهته (لا بـ Firestore مباشرة — ذلك
-   مقفول الآن) لا يزال يقدر نظرياً يُرسل `readiness:{ready:true, gates:{}}` مصطنعة لهذه الدالة.
-   القرار الصريح لهذه المرحلة (بعد نقاش معماري كامل مع المستخدم) هو تأجيل الإصلاح الكامل لمرحلة
-   منفصلة تماماً: "P0 — Shared Domain Engine Extraction" (استخراج src/domain/{financial-engine,
-   ic-readiness, evidence-engine, dd-engine, planning-engine}.js من core.js لتُستهلَك حرفياً من
-   المتصفح وهذه الدالة معاً، فتصبح إعادة الحساب هنا ممكنة بلا تكرار منطق) — رُفض عمداً بناء نسخة
-   Node مبسَّطة/موازية الآن لهذه الحسابات (كانت ستصبح "محرك خامس متضارب"، بالضبط النمط الذي أزالته
-   مراحل Canonical Metrics Consolidation السابقة). لذلك هذه الدالة تُغلق فقط مسارات الكتابة
-   المباشرة على Firestore (opportunity.ic لم يعد قابلاً للكتابة من العميل إطلاقاً — انظر
-   firestore.rules)، وتُبقي basicReadinessOk() كحارس شكلي مؤقت حتى إنجاز مرحلة استخراج المحرك. */
+/* Phase 2R-4C: saved opportunity inputs are read and recomputed inside the
+   decision transaction. Client readiness, metrics and audit identity are ignored.
+   A justified override applies only to computed policy failures, never a failed
+   calculation or undefined financial metrics. */
 exports.approveOpportunity = onCall(async (request) => {
   const email = requireEmail(request);
   await requireRole(email, 'senior_ic');
-  const { oppId, decision, readiness, reasons, conditions, override } = request.data || {};
-  if (!oppId || !decision || !decision.decision) throw new HttpsError('invalid-argument', 'oppId and decision are required.');
-  if (APPROVAL_DECISIONS.has(decision.decision) && !basicReadinessOk(readiness)) {
-    const hasJustifiedOverride = override === true && Array.isArray(reasons) && reasons.length > 0;
-    if (!hasJustifiedOverride) throw new HttpsError('failed-precondition', 'Approval requires passing IC readiness or a justified override.');
+  const { oppId, decision, reasons = [], conditions = [], override } = request.data || {};
+  const allowed = new Set(['approve', 'approve_conditions', 'revise', 'hold', 'reject']);
+  if (typeof oppId !== 'string' || !oppId.trim() || oppId.includes('/') || !decision || !allowed.has(decision.decision)) {
+    throw new HttpsError('invalid-argument', 'A valid oppId and IC decision are required.');
   }
+  if (!Array.isArray(reasons) || reasons.length > 100 || reasons.some(r => typeof r !== 'string' || r.length > 4000)) {
+    throw new HttpsError('invalid-argument', 'Reasons must be text.');
+  }
+  const cleanReasons = reasons.map(r => r.trim()).filter(Boolean);
+  if (!Array.isArray(conditions) || conditions.length > 100 || conditions.some(c => !c || typeof c.text !== 'string' || !c.text.trim() || c.text.length > 4000 ||
+    (c.owner != null && (typeof c.owner !== 'string' || c.owner.length > 300)) ||
+    (c.dueDate != null && (typeof c.dueDate !== 'string' || (c.dueDate !== '' && !/^\d{4}-\d{2}-\d{2}$/.test(c.dueDate)))))) {
+    throw new HttpsError('invalid-argument', 'Conditions must contain text, owner and an optional YYYY-MM-DD due date.');
+  }
+  const cleanConditions = conditions.map(c => ({ text: c.text.trim(), owner: (c.owner || '').trim(), dueDate: c.dueDate || '', status: 'pending' }));
 
   const oppRef = db.collection('opportunities').doc(oppId);
   const icRef = db.collection('icDecisions').doc();
@@ -240,30 +240,52 @@ exports.approveOpportunity = onCall(async (request) => {
     const oppSnap = await tx.get(oppRef);
     if (!oppSnap.exists) throw new HttpsError('not-found', 'Opportunity not found.');
     const opp = oppSnap.data() || {};
-    const icDecision = Object.assign({}, decision, {
-      reasons: Array.isArray(reasons) ? reasons : [],
-      conditions: Array.isArray(conditions) ? conditions : [],
+    const nowMs = Date.now();
+    let evaluated;
+    try { evaluated = await recomputeIC(opp, nowMs); }
+    catch (error) {
+      console.error('Trusted IC calculation failed', error.message);
+      throw new HttpsError('failed-precondition', 'Server IC calculation could not complete. Review the saved opportunity and domain deployment.');
+    }
+    const approving = APPROVAL_DECISIONS.has(decision.decision);
+    if (approving && evaluated.invalidMetrics.length) {
+      throw new HttpsError('failed-precondition', 'Approval requires valid financial metrics.', { invalidMetrics: evaluated.invalidMetrics });
+    }
+    const overridden = approving && !evaluated.readiness.ready && override === true && cleanReasons.length > 0;
+    if (approving && !evaluated.readiness.ready && !overridden) {
+      throw new HttpsError('failed-precondition', 'Approval requires server IC readiness or an explicit written override.', { readiness: evaluated.audit.readiness });
+    }
+    const icDecision = {
+      decision: decision.decision,
+      reasons: cleanReasons,
+      conditions: cleanConditions,
       decidedBy: email,
-      decidedAt: new Date().toISOString(),
-      readiness: readiness || null,
-      overridden: override === true,
-    });
+      decidedAt: new Date(nowMs).toISOString(),
+      readiness: evaluated.audit.readiness,
+      readinessSchema: 'canonical-ic-v1',
+      gateReasonsAtDecision: overridden ? evaluated.legacyReasons : [],
+      engineVersion: evaluated.audit.engineVersion,
+      inputHash: evaluated.audit.inputHash,
+      decisionId: icRef.id,
+      overridden,
+    };
     const ic = opp.ic || {};
     const decisions = Array.isArray(ic.decisions) ? ic.decisions.slice() : [];
     decisions.push(icDecision);
     tx.update(oppRef, {
       ic: Object.assign({}, ic, { decisions }),
       'meta.updatedBy': email,
-      'meta.updatedAt': new Date().toISOString().slice(0, 10),
+      'meta.updatedAt': new Date(nowMs).toISOString().slice(0, 10),
     });
     tx.set(icRef, {
       oppId,
       decision: icDecision,
-      readiness: readiness || null,
+      readiness: evaluated.audit.readiness,
+      evaluation: evaluated.audit,
       recordedBy: email,
       recordedAt: FieldValue.serverTimestamp(),
       source: 'approveOpportunity',
-      version: 1,
+      version: 2,
     });
   });
   return { ok: true, decisionId: icRef.id };
