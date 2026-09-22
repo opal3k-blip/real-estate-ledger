@@ -51,6 +51,18 @@ function baseOpp(createdBy, decisions){
 
 function ctxFor(email){ return testEnv.authenticatedContext(email, { email }); }
 
+// Fixture setup only: these writes do NOT test the callable or a real transition.
+// Each rejected client transition leaves the old state unchanged. Seed the next
+// state explicitly so subsequent tests actually exercise approved/posted records.
+async function seedLedgerStatus(collection, id, status){
+  await testEnv.withSecurityRulesDisabled(async ctx=>{
+    const ref = doc(ctx.firestore(), collection, id);
+    await updateDoc(ref, { status });
+    if((await getDoc(ref)).data().status !== status) throw new Error('Ledger fixture state mismatch');
+  });
+}
+
+
 // ==================== ١) attributionHonest + ownsOpp: تعديل عادي على فرصة ====================
 {
   const db = ctxFor(ANALYST_OWNER).firestore();
@@ -76,11 +88,11 @@ function ctxFor(email){ return testEnv.authenticatedContext(email, { email }); }
   });
   const db = ctxFor(SENIOR_IC).firestore();
   const newDecisions = [{ decision:'approve', reasons:['جيدة'], conditions:[], decidedBy:SENIOR_IC, decidedAt:'2026-09-09T10:00:00Z' }];
-  await assertSucceeds(setDoc(doc(db,'opportunities','OPP-1'), {
+  await assertFails(setDoc(doc(db,'opportunities','OPP-1'), {
     ...baseOpp(ANALYST_OWNER, newDecisions),
     meta: { ...baseOpp(ANALYST_OWNER, newDecisions).meta, updatedBy: SENIOR_IC, updatedAt:'2026-09-09' },
   }));
-  assert(true, '✅ الإصلاح الجوهري: عضو لجنة استثمار أول (senior_ic)، وهو *ليس* مالك الفرصة، يقدر الآن يسجّل قرار لجنة (ic فقط) — هذا كان مستحيلاً تماماً بالقاعدة القديمة (ownsOpp فقط)، وهو جوهر الثغرة رقم ١ التي رصدها المستخدم');
+  assert(true, '🔒 Senior IC لا يكتب opportunity.ic مباشرة من العميل؛ الاعتماد عبر approveOpportunity.');
 }
 {
   // نفس عضو اللجنة، لكن يحاول (في نفس الطلب) تغيير حقل مالي غير ic — يجب أن يُرفض بالكامل
@@ -92,7 +104,7 @@ function ctxFor(email){ return testEnv.authenticatedContext(email, { email }); }
   sneaky.land.price = 1; // محاولة تغيير حقل مالي بجانب قرار اللجنة
   sneaky.meta.updatedBy = SENIOR_IC;
   await assertFails(setDoc(doc(db,'opportunities','OPP-1'), sneaky));
-  assert(true, '🔒 icOnlyChange تمنع عضو اللجنة (غير المالك) من تمرير أي تغيير مالي/تشغيلي آخر (land.price هنا) "مُخبَّأً" بجانب قرار اللجنة في نفس الطلب — الصلاحية الجديدة ضيّقة تماماً كما صُمِّمت');
+  assert(true, '🔒 عضو اللجنة غير المالك لا يستطيع تمرير قرار IC مع تغيير مالي من العميل.');
 }
 {
   // محلل عادي (غير لجنة، غير مالك) يحاول محاكاة نفس مسار "قرار لجنة" بلا أي دور — يجب أن يُرفض
@@ -103,7 +115,7 @@ function ctxFor(email){ return testEnv.authenticatedContext(email, { email }); }
   const attempt = baseOpp(ANALYST_OWNER, [{ decision:'approve', reasons:[], conditions:[], decidedBy:ANALYST_OTHER, decidedAt:'x' }]);
   attempt.meta.updatedBy = ANALYST_OTHER;
   await assertFails(setDoc(doc(db,'opportunities','OPP-1'), attempt));
-  assert(true, '🔒 محلل عادي بلا دور لجنة استثمار (currentRole=analyst الافتراضي) لا يقدر يسجّل "قرار لجنة" على فرصة لا يملكها — icOnlyChange تتطلب دوراً حقيقياً في team_roles، لا مجرد تنسيق الحقول');
+  assert(true, '🔒 محلل غير مالك لا يستطيع تسجيل قرار IC مباشرة من العميل أيضاً.');
 }
 
 // ==================== ٣) دفتر الصندوق (investors/funds/...) — مدير صندوق فأعلى فقط للكتابة ====================
@@ -281,7 +293,7 @@ for(const coll of LEDGER_COLLECTIONS){
 {
   const db = ctxFor(SENIOR_IC).firestore();
   await assertSucceeds(setDoc(doc(db,'icDecisions','ICD-1'), { oppId:'OPP-1', decision:{decision:'approve'}, recordedBy:SENIOR_IC }));
-  assert(true, '✅ Senior IC يقدر إنشاء سجل قرار IC مؤسسي');
+  assert(true, '⚠️ فجوة قائمة: Senior IC يستطيع إنشاء icDecisions من العميل؛ هذا توصيف للقواعد الحالية وليس إثبات server-only.');
   await assertFails(updateDoc(doc(db,'icDecisions','ICD-1'), { 'decision.decision':'reject' }));
   assert(true, '🔒 سجل قرار IC غير قابل للتعديل');
   await assertFails(deleteDoc(doc(db,'icDecisions','ICD-1')));
@@ -344,52 +356,56 @@ for(const coll of LEDGER_COLLECTIONS){
   assert(true, '🔒 حتى مدير الصندوق لا يقدر يعدّل التزام (commitment) — مُرحَّل من لحظة إنشائه، لا نافذة تعديل بعده مهما كانت صغيرة');
   await assertFails(deleteDoc(doc(dbFM,'commitments','CMT-1')));
   assert(true, '🔒 حتى مدير الصندوق لا يقدر يحذف التزام — التصحيح الوحيد المسموح هو قيد عكسي جديد');
-  await assertSucceeds(setDoc(doc(dbFM,'commitments','CMT-1-REV'), { fundId:'FND-1', investorId:'INV-1', commitmentAmount:-1000000, dateCommitted:'2026-01-02', contributionType:'cash', notes:'تصحيح', reversalOfId:'CMT-1' }));
-  assert(true, '✅ مدير الصندوق يقدر إنشاء قيد عكسي (سجل جديد بمبلغ سالب وreversalOfId) بدل تعديل الأصل — هذا التصحيح المحاسبي الصحيح الوحيد');
+  await assertFails(setDoc(doc(dbFM,'commitments','CMT-1-REV'), { fundId:'FND-1', investorId:'INV-1', commitmentAmount:-1000000, dateCommitted:'2026-01-02', contributionType:'cash', notes:'تصحيح', reversalOfId:'CMT-1' }));
+  assert(true, '🔒 إنشاء قيد التزام عكسي من العميل مرفوض؛ التصحيح عبر reverseTransaction.');
   await assertFails(setDoc(doc(dbFM,'commitments','CMT-NEG-NORMAL'), { fundId:'FND-1', investorId:'INV-1', commitmentAmount:-100000, dateCommitted:'2026-01-03', contributionType:'cash', reversalOfId:null }));
   assert(true, '🔒 لا يمكن إنشاء التزام سالب كسجل عادي — السالب مسموح فقط كقيد عكسي مرتبط');
 }
 {
-  // capitalCalls: "مسودة" بينما status=='pending' (تعديل/حذف حر كما كان)، تُرحَّل نهائياً عند 'paid'/'waived'
+  // capitalCalls: client updates are denied in every state; allowed draft deletion is separate.
   await testEnv.withSecurityRulesDisabled(async (ctx)=>{
     await setDoc(doc(ctx.firestore(),'capitalCalls','CC-1'), { fundId:'FND-1', investorId:'INV-1', callNumber:1, callDate:'2026-01-01', amount:500000, status:'pending', linkedCommitmentId:null, reversalOfId:null });
   });
   const dbFM = ctxFor(FUND_MANAGER).firestore();
-  await assertSucceeds(updateDoc(doc(dbFM,'capitalCalls','CC-1'), { amount: 600000 }));
-  assert(true, '✅ نداء رأسمال بحالة "pending" (مسودة لم تُرحَّل بعد) يبقى قابلاً للتعديل الحر كما كان دائماً');
+  await assertFails(updateDoc(doc(dbFM,'capitalCalls','CC-1'), { amount: 600000 }));
+  assert(true, '🔒 تعديل مبلغ نداء pending من العميل مرفوض أيضاً بعد P0.');
   // المرحلة ٦-ب: لا يمكن الترحيل المباشر pending → paid بعد الآن — يجب المرور ببوابة الاعتماد أولاً
   await assertFails(updateDoc(doc(dbFM,'capitalCalls','CC-1'), { status: 'paid' }));
   assert(true, '🔒 لا يمكن تخطّي بوابة الاعتماد: pending → paid مباشرة مرفوض حتى لمدير الصندوق');
-  await assertSucceeds(updateDoc(doc(dbFM,'capitalCalls','CC-1'), { status: 'approved', approvedBy:FUND_MANAGER, approvedAt:'2026-01-02' }));
-  assert(true, '✅ pending → approved (خطوة الاعتماد الإلزامية) مسموحة');
-  await assertSucceeds(updateDoc(doc(dbFM,'capitalCalls','CC-1'), { status: 'paid' }));
-  assert(true, '✅ ترحيل النداء (approved → paid) مسموح — هذا هو الانتقال المسموح الوحيد بعد الاعتماد، ونقطة القفل النهائي');
+  await assertFails(updateDoc(doc(dbFM,'capitalCalls','CC-1'), { status: 'approved', approvedBy:FUND_MANAGER, approvedAt:'2026-01-02' }));
+  assert(true, '🔒 انتقال pending → approved من العميل مرفوض؛ التنفيذ عبر transitionLedgerRecord.');
+  await seedLedgerStatus('capitalCalls', 'CC-1', 'approved');
+  await assertFails(updateDoc(doc(dbFM,'capitalCalls','CC-1'), { status: 'paid' }));
+  assert(true, '🔒 انتقال approved → paid من العميل مرفوض؛ التنفيذ عبر transitionLedgerRecord.');
+  await seedLedgerStatus('capitalCalls', 'CC-1', 'paid');
   await assertFails(updateDoc(doc(dbFM,'capitalCalls','CC-1'), { amount: 700000 }));
   assert(true, '🔒 بعد الترحيل (status=="paid") لا يقدر مدير الصندوق تعديل النداء إطلاقاً، ولو لمجرد تصحيح رقم');
   await assertFails(setDoc(doc(dbFM,'capitalCalls','CC-NEG-NORMAL'), { fundId:'FND-1', investorId:'INV-1', callNumber:2, callDate:'2026-01-05', amount:-100000, status:'pending', linkedCommitmentId:null, reversalOfId:null }));
   assert(true, '🔒 لا يمكن إنشاء نداء رأس مال سالب كمسودة عادية — يجب استخدام قيد عكسي');
-  await assertSucceeds(setDoc(doc(dbFM,'capitalCalls','CC-REV-NEG'), { fundId:'FND-1', investorId:'INV-1', callNumber:3, callDate:'2026-01-06', amount:-100000, status:'paid', linkedCommitmentId:null, reversalOfId:'CC-1' }));
-  assert(true, '✅ النداء السالب مسموح فقط عندما يكون قيداً عكسياً مرتبطاً بسجل أصلي');
+  await assertFails(setDoc(doc(dbFM,'capitalCalls','CC-REV-NEG'), { fundId:'FND-1', investorId:'INV-1', callNumber:3, callDate:'2026-01-06', amount:-100000, status:'paid', linkedCommitmentId:null, reversalOfId:'CC-1' }));
+  assert(true, '🔒 إنشاء نداء عكسي paid من العميل مرفوض، حتى مع reversalOfId.');
   await assertFails(deleteDoc(doc(dbFM,'capitalCalls','CC-1')));
   assert(true, '🔒 ولا حذفه أيضاً — التصحيح الوحيد قيد عكسي جديد');
-  await assertSucceeds(setDoc(doc(dbFM,'capitalCalls','CC-1-REV'), { fundId:'FND-1', investorId:'INV-1', callNumber:1, callDate:'2026-01-03', amount:-700000, status:'paid', linkedCommitmentId:null, notes:'تصحيح', reversalOfId:'CC-1' }));
-  assert(true, '✅ إنشاء قيد نداء رأسمال عكسي (مبلغ سالب) نجح — يصفّر الأثر في fundLedgerSummary/investorLedgerRows دون لمس السجل الأصلي');
+  await assertFails(setDoc(doc(dbFM,'capitalCalls','CC-1-REV'), { fundId:'FND-1', investorId:'INV-1', callNumber:1, callDate:'2026-01-03', amount:-700000, status:'paid', linkedCommitmentId:null, notes:'تصحيح', reversalOfId:'CC-1' }));
+  assert(true, '🔒 لا يمكن إنشاء تصحيح رأسمالي مباشر؛ القيد العكسي يمر بالخادم.');
 }
 {
-  // distributions: نفس منطق capitalCalls — "مسودة" بينما status=='declared'، تُرحَّل عند 'paid'
+  // distributions: client updates are denied; posted fixtures below are seeded with rules disabled.
   await testEnv.withSecurityRulesDisabled(async (ctx)=>{
     await setDoc(doc(ctx.firestore(),'distributions','DST-1'), { fundId:'FND-1', investorId:'INV-1', distDate:'2026-01-01', amount:300000, type:'عائد رأس المال (Return of Capital)', status:'declared', reversalOfId:null });
   });
   const dbFM = ctxFor(FUND_MANAGER).firestore();
-  await assertSucceeds(updateDoc(doc(dbFM,'distributions','DST-1'), { amount: 350000 }));
-  assert(true, '✅ توزيعة بحالة "declared" (مسودة) تبقى قابلة للتعديل الحر');
+  await assertFails(updateDoc(doc(dbFM,'distributions','DST-1'), { amount: 350000 }));
+  assert(true, '🔒 تعديل مبلغ توزيعة declared من العميل مرفوض بعد P0.');
   // المرحلة ٦-ب: لا يمكن الترحيل المباشر declared → paid بعد الآن — يجب المرور ببوابة الاعتماد أولاً
   await assertFails(updateDoc(doc(dbFM,'distributions','DST-1'), { status: 'paid' }));
   assert(true, '🔒 لا يمكن تخطّي بوابة الاعتماد: declared → paid مباشرة مرفوض حتى لمدير الصندوق');
-  await assertSucceeds(updateDoc(doc(dbFM,'distributions','DST-1'), { status: 'approved', approvedBy:FUND_MANAGER, approvedAt:'2026-01-02' }));
-  assert(true, '✅ declared → approved (خطوة الاعتماد الإلزامية) مسموحة');
-  await assertSucceeds(updateDoc(doc(dbFM,'distributions','DST-1'), { status: 'paid' }));
-  assert(true, '✅ ترحيل التوزيعة (approved → paid) مسموح — نقطة القفل النهائي بعد الاعتماد');
+  await assertFails(updateDoc(doc(dbFM,'distributions','DST-1'), { status: 'approved', approvedBy:FUND_MANAGER, approvedAt:'2026-01-02' }));
+  assert(true, '🔒 انتقال declared → approved من العميل مرفوض؛ التنفيذ عبر الخادم.');
+  await seedLedgerStatus('distributions', 'DST-1', 'approved');
+  await assertFails(updateDoc(doc(dbFM,'distributions','DST-1'), { status: 'paid' }));
+  assert(true, '🔒 انتقال approved → paid للتوزيعة من العميل مرفوض.');
+  await seedLedgerStatus('distributions', 'DST-1', 'paid');
   await assertFails(updateDoc(doc(dbFM,'distributions','DST-1'), { amount: 400000 }));
   assert(true, '🔒 بعد الترحيل (status=="paid") التوزيعة غير قابلة للتعديل إطلاقاً');
   await assertFails(deleteDoc(doc(dbFM,'distributions','DST-1')));
@@ -421,12 +437,14 @@ for(const coll of LEDGER_COLLECTIONS){
   assert(true, '🔒 لا يمكن تخطّي بوابة الاعتماد: نداء "pending" لا يقدر يتحول مباشرة إلى "paid" في طلب واحد');
   await assertFails(updateDoc(doc(dbFM,'capitalCalls','CC-GATE-1'), { status:'waived' }));
   assert(true, '🔒 ولا مباشرة إلى "waived" أيضاً — نفس البوابة بالضبط');
-  await assertSucceeds(updateDoc(doc(dbFM,'capitalCalls','CC-GATE-1'), { status:'approved', approvedBy:FUND_MANAGER, approvedAt:'2026-01-02' }));
-  assert(true, '✅ الانتقال الوحيد المسموح من "pending": إلى "approved" فقط، مع تسجيل معتمِد/توقيت الاعتماد للتدقيق');
+  await assertFails(updateDoc(doc(dbFM,'capitalCalls','CC-GATE-1'), { status:'approved', approvedBy:FUND_MANAGER, approvedAt:'2026-01-02' }));
+  assert(true, '🔒 حتى خطوة الاعتماد pending → approved يجب أن تمر بالخادم.');
+  await seedLedgerStatus('capitalCalls', 'CC-GATE-1', 'approved');
   await assertFails(updateDoc(doc(dbFM,'capitalCalls','CC-GATE-1'), { status:'paid', amount:999999 }));
   assert(true, '🔒 بعد الاعتماد، أي تغيير حقل آخر (المبلغ هنا) بجانب الترحيل إلى "paid" في نفس الطلب مرفوض بالكامل — القيمة مُثبَّتة فعلاً عند الاعتماد');
-  await assertSucceeds(updateDoc(doc(dbFM,'capitalCalls','CC-GATE-1'), { status:'paid' }));
-  assert(true, '✅ ترحيل نظيف (status فقط) من "approved" إلى "paid" ينجح — نقطة القفل النهائي كما في المرحلة السادسة');
+  await assertFails(updateDoc(doc(dbFM,'capitalCalls','CC-GATE-1'), { status:'paid' }));
+  assert(true, '🔒 الانتقال approved → paid مرفوض من العميل حتى دون تغيير المبلغ.');
+  await seedLedgerStatus('capitalCalls', 'CC-GATE-1', 'paid');
   await assertFails(updateDoc(doc(dbFM,'capitalCalls','CC-GATE-1'), { status:'waived' }));
   assert(true, '🔒 بعد الترحيل النهائي (paid) لا رجوع ولا انتقال آخر إطلاقاً — يطابق قفل المرحلة السادسة تماماً');
 }
@@ -436,8 +454,8 @@ for(const coll of LEDGER_COLLECTIONS){
   assert(true, '🔒 إنشاء نداء رأسمال جديد (يدوي عادي) مباشرة بحالة "paid" مرفوض — يجب أن يبدأ "pending" دائماً ويمر عبر البوابة');
   await assertSucceeds(setDoc(doc(dbFM,'capitalCalls','CC-GATE-PENDING-OK'), { fundId:'FND-1', investorId:'INV-1', callNumber:3, callDate:'2026-01-01', amount:100000, status:'pending', linkedCommitmentId:null, reversalOfId:null }));
   assert(true, '✅ إنشاء نداء رأسمال جديد بحالة "pending" (البداية الصحيحة) ينجح كما هو متوقَّع');
-  await assertSucceeds(setDoc(doc(dbFM,'capitalCalls','CC-GATE-REVERSAL-OK'), { fundId:'FND-1', investorId:'INV-1', callNumber:4, callDate:'2026-01-01', amount:-100000, status:'paid', linkedCommitmentId:null, reversalOfId:'CC-GATE-PENDING-OK' }));
-  assert(true, '✅ استثناء القيد العكسي محفوظ: قيد عكسي (reversalOfId) يُنشَأ مباشرة بحالة "paid" بلا حاجة لبوابة الاعتماد — يمثّل تصحيحاً على أمر مُنفَّذ فعلاً، لا نداءً جديداً');
+  await assertFails(setDoc(doc(dbFM,'capitalCalls','CC-GATE-REVERSAL-OK'), { fundId:'FND-1', investorId:'INV-1', callNumber:4, callDate:'2026-01-01', amount:-100000, status:'paid', linkedCommitmentId:null, reversalOfId:'CC-GATE-PENDING-OK' }));
+  assert(true, '🔒 القيد العكسي ليس استثناءً لكتابة العميل؛ إنشاؤه عبر reverseTransaction.');
   await assertSucceeds(setDoc(doc(dbFM,'capitalCalls','CC-GATE-INKIND-OK'), { fundId:'FND-1', investorId:'INV-1', callNumber:5, callDate:'2026-01-01', amount:200000, status:'paid', linkedCommitmentId:'CMT-SOME', reversalOfId:null }));
   assert(true, '✅ استثناء النقل العيني التلقائي محفوظ: نداء برقم linkedCommitmentId يُنشَأ مباشرة "paid" بلا بوابة اعتماد — ناتج تنفيذي لالتزام مُرحَّل بالفعل، ليس نداءً يحتاج اعتماداً مستقلاً');
 }
@@ -448,12 +466,14 @@ for(const coll of LEDGER_COLLECTIONS){
   const dbFM = ctxFor(FUND_MANAGER).firestore();
   await assertFails(updateDoc(doc(dbFM,'distributions','DST-GATE-1'), { status:'paid' }));
   assert(true, '🔒 نفس البوابة على التوزيعات: "declared" لا يقدر يتحول مباشرة إلى "paid"');
-  await assertSucceeds(updateDoc(doc(dbFM,'distributions','DST-GATE-1'), { status:'approved', approvedBy:FUND_MANAGER, approvedAt:'2026-01-02' }));
-  assert(true, '✅ الانتقال المسموح من "declared": إلى "approved" فقط');
+  await assertFails(updateDoc(doc(dbFM,'distributions','DST-GATE-1'), { status:'approved', approvedBy:FUND_MANAGER, approvedAt:'2026-01-02' }));
+  assert(true, '🔒 اعتماد التوزيعة declared → approved مرفوض من العميل.');
+  await seedLedgerStatus('distributions', 'DST-GATE-1', 'approved');
   await assertFails(updateDoc(doc(dbFM,'distributions','DST-GATE-1'), { status:'paid', amount:1 }));
   assert(true, '🔒 بعد الاعتماد، لا يجوز تمرير تغيير حقل آخر بجانب الترحيل النهائي');
-  await assertSucceeds(updateDoc(doc(dbFM,'distributions','DST-GATE-1'), { status:'paid' }));
-  assert(true, '✅ ترحيل نظيف من "approved" إلى "paid" ينجح للتوزيعات أيضاً');
+  await assertFails(updateDoc(doc(dbFM,'distributions','DST-GATE-1'), { status:'paid' }));
+  assert(true, '🔒 ترحيل التوزيعة approved → paid مرفوض من العميل حتى دون تغيير المبلغ.');
+  await seedLedgerStatus('distributions', 'DST-GATE-1', 'paid');
 }
 
 // ==================== ١٢) تكامل Monday.com — إعدادات أدمن + قائمة انتظار append-only ====================
@@ -540,6 +560,7 @@ for(const coll of LEDGER_COLLECTIONS){
   assert(true, '✅ تعديل أي حقل آخر غير assetIds في نفس الوثيقة يبقى مسموحاً للأدمن — القيد ينصبّ على حقل assetIds تحديداً فقط، لا على الوثيقة كاملة');
 }
 
-console.log(failures? `\n${failures} FAILURE(S)` : '\nALL PASSED (against a real Firestore emulator, not a mock)');
+console.log(failures? `\n${failures} FAILURE(S)` : '\nALL PASSED (current-rules expectations; real Firestore emulator)');
+console.warn('OPEN SECURITY ITEMS: client icDecisions creation; opportunity creation with IC data; documented admin IC bypass. Passing this suite is NOT server-only certification.');
 await testEnv.cleanup();
 process.exit(failures?1:0);
