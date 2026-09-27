@@ -624,7 +624,48 @@ await testEnv.withSecurityRulesDisabled(ctx=>setDoc(doc(ctx.firestore(),'opportu
 await assertSucceeds(updateDoc(doc(ctxFor(ANALYST_OWNER).firestore(),'opportunities','D2-malformed'),{'land.price':2600,'meta.updatedBy':ANALYST_OWNER}));
 await assertFails(deleteDoc(doc(ctxFor(ADMIN).firestore(),'opportunities','D2-malformed')));
 
+// Phase 2R-4D3: fund asset links cannot be injected at create or erased by delete.
+for(const [role,email] of [['manager',FUND_MANAGER],['admin',ADMIN]]){
+  const db=ctxFor(email).firestore();
+  for(const [shape,data] of [['empty',{name:'New fund',assetIds:[]}],['absent',{name:'Legacy fund'}]]){
+    const ref=doc(db,'funds',`D3-${role}-${shape}`);
+    await assertSucceeds(setDoc(ref,data));
+    await assertSucceeds(updateDoc(ref,{name:'Edited empty fund'}));
+    await assertSucceeds(deleteDoc(ref));
+    assert(!(await getDoc(ref)).exists(),`${role}: ${shape} fund create/edit/delete allowed`);
+  }
+  for(const [shape,ids] of [['linked',['OPP-1']],['null',null],['string','OPP-1'],['map',{}]]){
+    const ref=doc(db,'funds',`D3-${role}-invalid-${shape}`);
+    await assertFails(setDoc(ref,{name:'Invalid create',assetIds:ids}));
+    assert(!(await getDoc(ref)).exists(),`${role}: ${shape} assetIds creation rejected`);
+  }
+  const id=`D3-${role}-linked`, ref=doc(db,'funds',id);
+  // Fixture setup only, not proof of the callable's authorization or transaction.
+  await testEnv.withSecurityRulesDisabled(ctx=>setDoc(doc(ctx.firestore(),'funds',id),{name:'Linked fund',assetIds:['OPP-1']}));
+  await assertSucceeds(updateDoc(ref,{name:'Edited linked fund'}));
+  await assertSucceeds(setDoc(ref,{name:'Full save linked fund',assetIds:['OPP-1']}));
+  await assertFails(updateDoc(ref,{assetIds:[]}));
+  await assertFails(updateDoc(ref,{assetIds:deleteField()}));
+  await assertFails(setDoc(ref,{name:'Replace without links'}));
+  await assertFails(deleteDoc(ref));
+  const batch=writeBatch(db);batch.delete(ref);batch.set(ref,{name:'Recreated',assetIds:[]});
+  await assertFails(batch.commit());
+  const saved=(await getDoc(ref)).data();
+  assert(saved.name==='Full save linked fund' && JSON.stringify(saved.assetIds)==='["OPP-1"]',
+    `${role}: linked fund keeps assets after rejected mutations and delete/recreate`);
+  const malformed=doc(db,'funds',`D3-${role}-malformed`);
+  await testEnv.withSecurityRulesDisabled(ctx=>setDoc(doc(ctx.firestore(),'funds',`D3-${role}-malformed`),{name:'Legacy malformed',assetIds:null}));
+  await assertFails(deleteDoc(malformed));
+  assert(true,`${role}: malformed legacy fund deletion denied`);
+}
+for(const [role,db] of [['analyst',ctxFor(ANALYST_OWNER).firestore()],['senior',ctxFor(SENIOR_IC).firestore()],['outsider',ctxFor(OUTSIDER).firestore()],['anonymous',testEnv.unauthenticatedContext().firestore()]]){
+  await assertFails(setDoc(doc(db,'funds',`D3-denied-${role}`),{name:'Unauthorized',assetIds:[]}));
+  await assertFails(deleteDoc(doc(db,'funds','D3-manager-linked')));
+  assert(true,`${role}: fund create/delete still denied`);
+}
+await assertSucceeds(getDoc(doc(ctxFor(ANALYST_OWNER).firestore(),'funds','D3-manager-linked')));
+
 console.log(failures? `\n${failures} FAILURE(S)` : '\nALL PASSED (current-rules expectations; real Firestore emulator)');
-console.warn('OPEN SECURITY ITEMS: fund creation with assetIds; ledger creation exceptions. Passing this suite is NOT full server-only certification.');
+console.warn('OPEN SECURITY ITEMS: ledger creation exceptions; linked-fund lifecycle and underwriting metric authority. Passing this suite is NOT full server-only certification.');
 await testEnv.cleanup();
 process.exit(failures?1:0);

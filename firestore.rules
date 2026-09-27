@@ -232,11 +232,17 @@ service cloud.firestore {
     function changesAssetIds(before, after) {
       return after.diff(before).affectedKeys().hasAny(['assetIds']);
     }
+    // Phase 2R-4D3: clients may create/delete only funds with no linked assets.
+    // Missing assetIds is supported for legacy empty funds; malformed values fail closed.
+    function fundHasNoAssets(data) {
+      let ids = data.get('assetIds', []);
+      return ids is list && ids.size() == 0;
+    }
     match /funds/{id} {
       allow read: if isAuthorized();
-      allow create: if isFundManagerOrAbove();
+      allow create: if isFundManagerOrAbove() && fundHasNoAssets(request.resource.data);
       allow update: if isFundManagerOrAbove() && !changesAssetIds(resource.data, request.resource.data);
-      allow delete: if isFundManagerOrAbove();
+      allow delete: if isFundManagerOrAbove() && fundHasNoAssets(resource.data);
     }
 
     // ⚠️ إعادة هندسة محاسبية كاملة (المرحلة السادسة)، ثم P0 — Trusted Transaction Layer فوقها:
