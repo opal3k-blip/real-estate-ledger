@@ -90,6 +90,17 @@ service cloud.firestore {
     function changesIc(before, after) {
       return after.diff(before).affectedKeys().hasAny(['ic']);
     }
+    // 📋 نقطة مفتوحة مُسجَّلة صراحة (قرار المستخدم أثناء مراجعة P0 — Trusted Transaction Layer):
+    // isAdminEmail() أعلاه في allow update لـopportunities هو OR-فرع مستقل بلا أي شرط changesIc،
+    // أي أن الأدمن *يقدر فعلياً* اليوم يعدّل ic.decisions مباشرة من Firestore client. هذا مقصود
+    // حالياً (يطابق امتياز الأدمن العام على بقية حقول الفرصة)، لكنه لا يتوافق مع هدف "Server-only
+    // investment decision" الكامل عند 99%+. القرار المطلوب قبل الشهادة النهائية (final
+    // certification): إغلاق هذا المسار حتى للأدمن — لا bypass صامت من العميل — واستبداله بصلاحية
+    // Cloud Function مخصَّصة (Break-glass Function بتدقيق صريح) إن احتاج الأدمن تعديلاً استثنائياً.
+    // لا تُنفَّذ هذه النقطة الآن ضمن Shared Domain Engine Extraction — مُسجَّلة فقط. مُوثَّقة أيضاً
+    // في tests/rules/rules.test.mjs (قسم "analyst direct IC mutation") حيث الاختبار الحالي يثبت
+    // السلوك الحالي (نجاح الأدمن) صراحة كي لا يُفهَم لاحقاً كسهو غير مقصود.
+    // ============================================================================
     // ============================================================================
 
     // Phase 2R-4D2 supersedes the historical admin-bypass note above.
@@ -260,7 +271,9 @@ service cloud.firestore {
     //    allow update: if false بالكامل، لا استثناء (لا توجد أي ميزة "تعديل مسودة حرة" فعلية في
     //    الواجهة لهذين النوعين أصلاً — تحقَّقنا من عدم وجود أي زر if-edit لهما في core.js قبل هذا
     //    التضييق، فلا ميزة تُكسَر بإغلاق update بالكامل).
-    //  • transactions: سجل تدقيق (Audit Trail) — append-only بالكامل كما كان، بلا تغيير.
+    //  • transactions: سجل تدقيق (Audit Trail) — append-only كما كان؛ ومنذ 2R-4D4-A، الإنشاء نفسه
+    //    (لأنواع commitment/capitalCall/distribution) يجب أن يطابق سجلاً حقيقياً موجوداً فعلاً بنفس
+    //    الصندوق والمبلغ، لا أي محتوى حر (انظر transactionMatchesRecord أدناه).
     match /commitments/{id} {
       allow read: if isAuthorized();
       allow create: if isFundManagerOrAbove()
@@ -271,28 +284,72 @@ service cloud.firestore {
     function ledgerAmountOk(data) {
       return data.get('reversalOfId', null) != null ? data.amount < 0 : data.amount >= 0;
     }
+    // Phase 2R-4D4-A: نداء عيني تلقائي (linkedCommitmentId) لم يعد كافياً وجود المعرّف وحده — يجب أن
+    // يشير فعلاً إلى التزام in_kind حقيقي موجود بنفس الصندوق/المستثمر وبنفس المبلغ بالضبط، وأن يُنشأ
+    // 'paid' دائماً (الحالة الوحيدة التي ينتجها المسار الفعلي في core.js عند حفظ التزام عيني). قبل
+    // هذا التحقق كان أي معرّف نصي (حتى لمستند غير موجود) يكفي لتمرير أي حالة/مبلغ.
+    function linkedCommitmentOk(data) {
+      let cid = data.get('linkedCommitmentId', null);
+      return cid != null
+        && exists(/databases/$(database)/documents/commitments/$(cid))
+        && get(/databases/$(database)/documents/commitments/$(cid)).data.fundId == data.fundId
+        && get(/databases/$(database)/documents/commitments/$(cid)).data.investorId == data.investorId
+        && get(/databases/$(database)/documents/commitments/$(cid)).data.contributionType == 'in_kind'
+        && get(/databases/$(database)/documents/commitments/$(cid)).data.commitmentAmount == data.amount
+        && data.status == 'paid';
+    }
     match /capitalCalls/{id} {
       allow read: if isAuthorized();
-      // إنشاء عادي (يدوي) يجب أن يبدأ 'pending' دائماً، أو يكون نداء النقل العيني التلقائي
-      // (linkedCommitmentId، من منطق if-save الموجود لالتزام عيني — ناتج تنفيذي للالتزام نفسه
-      // لحظة توثيقه، ليس نداءً يحتاج اعتماداً مستقلاً). لا إنشاء عكسي مباشر بعد الآن (أعلاه).
-      allow create: if isFundManagerOrAbove() && ledgerAmountOk(request.resource.data) && (
-             request.resource.data.get('status', null) == 'pending'
-          || request.resource.data.get('linkedCommitmentId', null) != null
+      // إنشاء عادي (يدوي) يجب أن يبدأ 'pending' دائماً بلا ربط عيني، أو يكون نداء النقل العيني
+      // التلقائي المتحقَّق أعلاه. لا إنشاء عكسي مباشر بعد الآن مهما كانت الحالة (2R-4D4-A: كان
+      // ممكناً سابقاً بحقل reversalOfId مع status='pending' ومبلغ سالب مفبرك بالكامل من العميل،
+      // دون المرور بـreverseTransaction إطلاقاً ولا أي تحقق أن الأصل موجود أو لم يُعكَس من قبل).
+      allow create: if isFundManagerOrAbove()
+        && request.resource.data.get('reversalOfId', null) == null
+        && ledgerAmountOk(request.resource.data) && (
+             (request.resource.data.get('status', null) == 'pending'
+               && request.resource.data.get('linkedCommitmentId', null) == null)
+          || linkedCommitmentOk(request.resource.data)
       );
       allow update: if false;
       allow delete: if isFundManagerOrAbove() && resource.data.status == 'pending' && resource.data.linkedCommitmentId == null;
     }
     match /distributions/{id} {
       allow read: if isAuthorized();
-      allow create: if isFundManagerOrAbove() && ledgerAmountOk(request.resource.data)
+      // 2R-4D4-A: نفس إغلاق reversalOfId المباشر من العميل المطبَّق على capitalCalls أعلاه —
+      // 'declared' مع reversalOfId ومبلغ سالب مفبرك كان يمر بلا أي تحقق من reverseTransaction.
+      allow create: if isFundManagerOrAbove()
+        && request.resource.data.get('reversalOfId', null) == null
+        && ledgerAmountOk(request.resource.data)
         && request.resource.data.get('status', null) == 'declared';
       allow update: if false;
       allow delete: if isFundManagerOrAbove() && resource.data.status == 'declared';
     }
+    // Phase 2R-4D4-A: سجل التدقيق (transactions) كان يقبل أي محتوى من مدير الصندوق بلا أي تحقق أنه
+    // يعكس فعلاً حركة حقيقية موجودة — الآن، لأنواع دفتر الأستاذ الثلاثة (commitment/capitalCall/
+    // distribution) يجب أن يطابق سجلاً حقيقياً موجوداً فعلاً بنفس الصندوق والمبلغ بالضبط. النوع
+    // 'assetLink' يبقى بلا هذا التحقق الإضافي: مصدره الحقيقي الوحيد في الإنتاج هو Cloud Function
+    // linkAssetToFund التي تكتب transactions بصلاحيات Admin SDK (تتجاوز هذه القواعد أصلاً)، والمسار
+    // الاحتياطي في العميل بلا Firebase حقيقي لا يقدر أصلاً على تغيير funds.assetIds مباشرة (محظور في
+    // قاعدة funds أعلاه)، فسجل assetLink مزوَّر من هذا المسار مضلِّل فقط، لا يفتح أي صلاحية أو سيولة.
+    function ledgerRecordAmount(coll, rid) {
+      let rec = get(/databases/$(database)/documents/$(coll)/$(rid)).data;
+      return coll == 'commitments' ? rec.commitmentAmount : rec.amount;
+    }
+    function transactionMatchesRecord(data) {
+      let t = data.get('type', null);
+      let rid = data.get('relatedId', null);
+      let coll = t == 'commitment' ? 'commitments' : (t == 'capitalCall' ? 'capitalCalls' : (t == 'distribution' ? 'distributions' : null));
+      return coll != null && rid != null && exists(/databases/$(database)/documents/$(coll)/$(rid))
+        && get(/databases/$(database)/documents/$(coll)/$(rid)).data.fundId == data.fundId
+        && ledgerRecordAmount(coll, rid) == data.amount;
+    }
     match /transactions/{id} {
       allow read: if isAuthorized();
-      allow create: if isFundManagerOrAbove();
+      allow create: if isFundManagerOrAbove() && (
+             request.resource.data.get('type', null) == 'assetLink'
+          || transactionMatchesRecord(request.resource.data)
+      );
       allow update, delete: if false;
     }
 

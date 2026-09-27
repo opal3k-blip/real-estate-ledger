@@ -4,6 +4,13 @@
 //   npx firebase-tools emulators:exec --only firestore "node rules.test.mjs"
 // يغطي بالضبط ما طلبه المستخدم: اختبار كل قاعدة ضد Analyst/Senior IC/Fund Manager/Admin كلٌ
 // على حدة، بدل الاعتماد على إخفاء الأزرار في الواجهة.
+//
+// 📋 حالة معروفة حالياً في بيئة التطوير السحابية لهذه الجلسة (غير موجودة بالضرورة على جهازك):
+// `npm test` هنا يفشل بخطأ "Cannot find module '.../stream-json/src/filters/Pick'" — تعارض
+// إصدار بين firebase-tools (يتوقع stream-json@^1.7.3 بمسارات قديمة) وstream-json@3.6.0 المثبَّت
+// فعلياً عبر overrides في package.json. functions/test/p0-trusted-transaction-layer.test.js
+// (اختبارات fakes بلا محاكي) لا تُغني عن هذا الملف لإغلاق Security Rules نهائياً — أعد تشغيل هذا
+// الملف فعلياً (عبر محاكي حقيقي يعمل) قبل أي "شهادة نهائية" لطبقة القواعد.
 import { initializeTestEnvironment, assertSucceeds, assertFails } from '@firebase/rules-unit-testing';
 import { readFileSync } from 'fs';
 import { doc, setDoc, updateDoc, deleteDoc, getDoc, deleteField, writeBatch } from 'firebase/firestore';
@@ -128,8 +135,14 @@ function ledgerValidCreateShape(coll){
   if(coll==='commitments') return { fundId:'FND-1', investorId:'INV-1', commitmentAmount:1, dateCommitted:'2026-01-01', contributionType:'cash', reversalOfId:null };
   if(coll==='capitalCalls') return { fundId:'FND-1', investorId:'INV-1', callNumber:99, callDate:'2026-01-01', amount:1, status:'pending', linkedCommitmentId:null, reversalOfId:null };
   if(coll==='distributions') return { fundId:'FND-1', investorId:'INV-1', distDate:'2026-01-01', amount:1, status:'declared', reversalOfId:null };
+  // 2R-4D4-A: transactions لم تعد تقبل أي محتوى حر — يجب أن تطابق سجلاً حقيقياً موجوداً (انظر
+  // التزام CMT-LEDGER-LOOP-REF المزروع قبل هذه الحلقة تحديداً لأجل هذه الحالة).
+  if(coll==='transactions') return { type:'commitment', action:'create', relatedId:'CMT-LEDGER-LOOP-REF', fundId:'FND-1', amount:1, at:'2026-01-01T00:00:00.000Z', by:FUND_MANAGER, version:1 };
   return { name:'test' };
 }
+await testEnv.withSecurityRulesDisabled(async (ctx)=>{
+  await setDoc(doc(ctx.firestore(),'commitments','CMT-LEDGER-LOOP-REF'), { fundId:'FND-1', investorId:'INV-1', commitmentAmount:1, dateCommitted:'2026-01-01', contributionType:'cash', reversalOfId:null });
+});
 for(const coll of LEDGER_COLLECTIONS){
   {
     const db = ctxFor(ANALYST_OWNER).firestore();
@@ -448,6 +461,21 @@ for(const [label,context] of [['outsider',ctxFor(OUTSIDER)],['anonymous',testEnv
   await assertSucceeds(setDoc(doc(dbFM,'transactions','TXN-2'), { type:'assetLink', action:'create', relatedId:'OPP-1', fundId:'FND-1', amount:0, at:'2026-01-02T00:00:00.000Z', by:FUND_MANAGER, version:1 }));
   assert(true, '✅ إنشاء سجل تدقيق جديد يبقى مسموحاً كما كان (append-only يعني إضافة حرة، لا منع كتابة)');
 }
+{
+  // Phase 2R-4D4-A: transactions يجب أن يطابق سجلاً حقيقياً موجوداً فعلاً — لم يعد كافياً أن يكون
+  // منشئه مدير صندوق فقط. CMT-1/DST-1 مُنشأة في القسم ١٠ أعلاه وما زالت موجودة (محاولات حذفها فشلت).
+  const dbFM = ctxFor(FUND_MANAGER).firestore();
+  await assertFails(setDoc(doc(dbFM,'transactions','TXN-FAKE-RELATED'), { type:'capitalCall', action:'create', relatedId:'CC-DOES-NOT-EXIST', fundId:'FND-1', amount:1, at:'2026-01-03T00:00:00.000Z', by:FUND_MANAGER, version:1 }));
+  assert(true, '🔒 2R-4D4-A: سجل تدقيق يشير إلى نداء رأس مال غير موجود مرفوض — لم يعد أي relatedId نصي كافياً');
+  await assertFails(setDoc(doc(dbFM,'transactions','TXN-WRONG-FUND'), { type:'commitment', action:'create', relatedId:'CMT-1', fundId:'FND-OTHER', amount:1000000, at:'2026-01-03T00:00:00.000Z', by:FUND_MANAGER, version:1 }));
+  assert(true, '🔒 2R-4D4-A: سجل تدقيق يطابق معرّف سجل حقيقي لكن بصندوق مختلف عن صندوق السجل الفعلي مرفوض');
+  await assertFails(setDoc(doc(dbFM,'transactions','TXN-WRONG-AMOUNT'), { type:'commitment', action:'create', relatedId:'CMT-1', fundId:'FND-1', amount:999999999, at:'2026-01-03T00:00:00.000Z', by:FUND_MANAGER, version:1 }));
+  assert(true, '🔒 2R-4D4-A: سجل تدقيق بمبلغ لا يطابق مبلغ السجل الحقيقي المُشار إليه مرفوض — لا تضخيم مبلغ مفبرك');
+  await assertSucceeds(setDoc(doc(dbFM,'transactions','TXN-COMMITMENT-OK'), { type:'commitment', action:'create', relatedId:'CMT-1', fundId:'FND-1', amount:1000000, at:'2026-01-03T00:00:00.000Z', by:FUND_MANAGER, version:1 }));
+  assert(true, '✅ 2R-4D4-A: سجل تدقيق يطابق التزاماً حقيقياً بنفس الصندوق والمبلغ بالضبط ينجح كما هو متوقَّع');
+  await assertSucceeds(setDoc(doc(dbFM,'transactions','TXN-DISTRIBUTION-OK'), { type:'distribution', action:'create', relatedId:'DST-1', fundId:'FND-1', amount:300000, at:'2026-01-03T00:00:00.000Z', by:FUND_MANAGER, version:1 }));
+  assert(true, '✅ 2R-4D4-A: سجل تدقيق يطابق توزيعة حقيقية بنفس الصندوق والمبلغ ينجح كما هو متوقَّع');
+}
 
 // ==================== ١١) بوابة الاعتماد الصريحة والمنفصلة (المرحلة السادسة-ب، بطلب صريح
 // من المستخدم: "نعم، أضف بوابة اعتماد منفصلة"): pending/declared → approved → paid/waived —
@@ -480,8 +508,23 @@ for(const [label,context] of [['outsider',ctxFor(OUTSIDER)],['anonymous',testEnv
   assert(true, '✅ إنشاء نداء رأسمال جديد بحالة "pending" (البداية الصحيحة) ينجح كما هو متوقَّع');
   await assertFails(setDoc(doc(dbFM,'capitalCalls','CC-GATE-REVERSAL-OK'), { fundId:'FND-1', investorId:'INV-1', callNumber:4, callDate:'2026-01-01', amount:-100000, status:'paid', linkedCommitmentId:null, reversalOfId:'CC-GATE-PENDING-OK' }));
   assert(true, '🔒 القيد العكسي ليس استثناءً لكتابة العميل؛ إنشاؤه عبر reverseTransaction.');
-  await assertSucceeds(setDoc(doc(dbFM,'capitalCalls','CC-GATE-INKIND-OK'), { fundId:'FND-1', investorId:'INV-1', callNumber:5, callDate:'2026-01-01', amount:200000, status:'paid', linkedCommitmentId:'CMT-SOME', reversalOfId:null }));
-  assert(true, '✅ استثناء النقل العيني التلقائي محفوظ: نداء برقم linkedCommitmentId يُنشَأ مباشرة "paid" بلا بوابة اعتماد — ناتج تنفيذي لالتزام مُرحَّل بالفعل، ليس نداءً يحتاج اعتماداً مستقلاً');
+  await assertFails(setDoc(doc(dbFM,'capitalCalls','CC-GATE-REVERSAL-PENDING'), { fundId:'FND-1', investorId:'INV-1', callNumber:6, callDate:'2026-01-01', amount:-100000, status:'pending', linkedCommitmentId:null, reversalOfId:'CC-GATE-PENDING-OK' }));
+  assert(true, '🔒 2R-4D4-A: قيد عكسي مفبرك بحالة "pending" (بدل "paid") مرفوض أيضاً — هذه بالضبط كانت الثغرة الفعلية قبل هذه المرحلة (ledgerAmountOk وshرط status=="pending" كانا يكفيان معاً بلا أي حظر صريح لـreversalOfId)');
+  await assertFails(setDoc(doc(dbFM,'capitalCalls','CC-GATE-INKIND-FAKE'), { fundId:'FND-1', investorId:'INV-1', callNumber:7, callDate:'2026-01-01', amount:50000, status:'paid', linkedCommitmentId:'CMT-DOES-NOT-EXIST', reversalOfId:null }));
+  assert(true, '🔒 2R-4D4-A: linkedCommitmentId يشير إلى مستند التزام غير موجود مرفوض — لم يعد أي معرّف نصي كافياً بحد ذاته');
+  await testEnv.withSecurityRulesDisabled(async (ctx)=>{
+    await setDoc(doc(ctx.firestore(),'commitments','CMT-INKIND-1'), { fundId:'FND-1', investorId:'INV-1', commitmentAmount:200000, dateCommitted:'2026-01-01', contributionType:'in_kind', reversalOfId:null });
+    await setDoc(doc(ctx.firestore(),'commitments','CMT-INKIND-OTHERFUND'), { fundId:'FND-OTHER', investorId:'INV-1', commitmentAmount:200000, dateCommitted:'2026-01-01', contributionType:'in_kind', reversalOfId:null });
+    await setDoc(doc(ctx.firestore(),'commitments','CMT-CASH-1'), { fundId:'FND-1', investorId:'INV-1', commitmentAmount:200000, dateCommitted:'2026-01-01', contributionType:'cash', reversalOfId:null });
+  });
+  await assertFails(setDoc(doc(dbFM,'capitalCalls','CC-GATE-INKIND-WRONGFUND'), { fundId:'FND-1', investorId:'INV-1', callNumber:8, callDate:'2026-01-01', amount:200000, status:'paid', linkedCommitmentId:'CMT-INKIND-OTHERFUND', reversalOfId:null }));
+  assert(true, '🔒 2R-4D4-A: linkedCommitmentId يشير لالتزام حقيقي لكن بصندوق مختلف عن صندوق النداء مرفوض');
+  await assertFails(setDoc(doc(dbFM,'capitalCalls','CC-GATE-INKIND-CASH'), { fundId:'FND-1', investorId:'INV-1', callNumber:9, callDate:'2026-01-01', amount:200000, status:'paid', linkedCommitmentId:'CMT-CASH-1', reversalOfId:null }));
+  assert(true, '🔒 2R-4D4-A: linkedCommitmentId يشير لالتزام حقيقي لكنه نقدي (cash) لا عيني مرفوض');
+  await assertFails(setDoc(doc(dbFM,'capitalCalls','CC-GATE-INKIND-AMOUNTMISMATCH'), { fundId:'FND-1', investorId:'INV-1', callNumber:10, callDate:'2026-01-01', amount:999, status:'paid', linkedCommitmentId:'CMT-INKIND-1', reversalOfId:null }));
+  assert(true, '🔒 2R-4D4-A: مبلغ النداء لا يطابق مبلغ الالتزام العيني المرتبط بالضبط مرفوض');
+  await assertSucceeds(setDoc(doc(dbFM,'capitalCalls','CC-GATE-INKIND-REAL-OK'), { fundId:'FND-1', investorId:'INV-1', callNumber:11, callDate:'2026-01-01', amount:200000, status:'paid', linkedCommitmentId:'CMT-INKIND-1', reversalOfId:null }));
+  assert(true, '✅ 2R-4D4-A: نداء نقل عيني مطابق فعلاً لالتزام in_kind حقيقي (نفس الصندوق/المستثمر/المبلغ) ينجح كما هو متوقَّع — استثناء النقل العيني التلقائي محفوظ، لكن متحقَّق منه الآن لا معرّف حر');
 }
 {
   await testEnv.withSecurityRulesDisabled(async (ctx)=>{
@@ -498,6 +541,8 @@ for(const [label,context] of [['outsider',ctxFor(OUTSIDER)],['anonymous',testEnv
   await assertFails(updateDoc(doc(dbFM,'distributions','DST-GATE-1'), { status:'paid' }));
   assert(true, '🔒 ترحيل التوزيعة approved → paid مرفوض من العميل حتى دون تغيير المبلغ.');
   await seedLedgerStatus('distributions', 'DST-GATE-1', 'paid');
+  await assertFails(setDoc(doc(dbFM,'distributions','DST-GATE-REVERSAL-DECLARED'), { fundId:'FND-1', investorId:'INV-1', distDate:'2026-01-01', amount:-50000, type:'x', status:'declared', reversalOfId:'DST-GATE-1', approvedBy:null, approvedAt:null }));
+  assert(true, '🔒 2R-4D4-A: قيد توزيعة عكسي مفبرك بحالة "declared" مرفوض — نفس ثغرة capitalCalls بالضبط قبل هذه المرحلة');
 }
 
 // ==================== ١٢) تكامل Monday.com — إعدادات أدمن + قائمة انتظار append-only ====================
