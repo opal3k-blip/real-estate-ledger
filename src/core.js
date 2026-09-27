@@ -875,14 +875,18 @@ function fundLedgerSummary(fundId){
   const activeCalls = calls.filter(c=>c.data.status!=='waived');
   const called = activeCalls.reduce((a,c)=>a+n(c.data.amount),0);
   const paidIn = calls.filter(c=>c.data.status==='paid').reduce((a,c)=>a+n(c.data.amount),0);
+  // Phase 2R-4D4-B: paidIn أعلاه (يشمل نداءات النقل العيني) يبقى كما هو لأغراض DPI/التقارير
+  // الرأسمالية (بلا تغيير) — deployableCash وحدها تستخدم cashPaidIn الذي يستبعد أي نداء مرتبط
+  // بمساهمة عينية (linkedCommitmentId)، لأن قيمة الأرض ليست سيولة نقدية قابلة للنشر في استثمار جديد.
+  const cashPaidIn = calls.filter(c=>c.data.status==='paid' && !c.data.linkedCommitmentId).reduce((a,c)=>a+n(c.data.amount),0);
   const dists = distributionsFor(fundId);
   const distPaid = dists.filter(d=>d.data.status==='paid').reduce((a,d)=>a+n(d.data.amount),0);
   const dpi = paidIn>0? distPaid/paidIn : null;
   const { totalEquity, totalValue } = fundEquityAndValue(fundId);
   const calledPct = committed>0? called/committed : null;
-  const deployableCash = Math.max(0, paidIn - distPaid);
+  const deployableCash = Math.max(0, cashPaidIn - distPaid);
   const overcalled = Math.max(0, paidIn - committed);
-  return { committed, called, calledPct, paidIn, distPaid, dpi, totalEquity, totalValue, deployableCash, overcalled };
+  return { committed, called, calledPct, paidIn, distPaid, dpi, totalEquity, totalValue, deployableCash, overcalled, cashPaidIn };
 }
 
 /* =========================================================================
@@ -3218,8 +3222,18 @@ function renderFundDetail(fundId){
         ${ifForm.draft.contributionType==='in_kind'? `<div class="field"><label><span>${T('الأصل/الفرصة المرتبطة بالمساهمة العينية','Asset linked to in-kind contribution')}</span></label><select name="inKindAssetId"><option value="">${T('غير مرتبطة بأصل محدد','Not tied to a specific asset')}</option>${(fund.data.assetIds||[]).map(oid=>{ const opp=opportunities.find(o=>o.id===oid); return `<option value="${oid}" ${ifForm.draft.inKindAssetId===oid?'selected':''}>${esc((opp&&opp.data&&opp.data.meta&&opp.data.meta.name)||oid)}</option>`; }).join('')}</select></div>` : ''}
         ${ifForm.draft.reversalOfId? ifField('سبب العكس/التصحيح','Reversal / Correction Reason','notes', ifForm.draft.notes) : ''}
       </div>
-      ${ifForm.draft.contributionType==='in_kind'? `<p class="note" style="margin:6px 0 0;">${T('تُسجَّل المساهمة العينية كمنقولة بالكامل عند الحفظ، ويجب ربطها بأصل واحد عند استخدامها في تحليل الاحتياج النقدي حتى لا تُخصم مرتين عبر أكثر من فرصة.','An in-kind contribution is recorded as fully transferred on save, and should be tied to one asset when used in cash-need analysis to avoid double deduction across multiple opportunities.')}</p>` : ''}
+      ${ifForm.draft.contributionType==='in_kind'? `<p class="note" style="margin:6px 0 0;">${T('يسجَّل هذا فقط تعهُّد المساهمة العينية (الوعد بنقل الأصل) — النقل الفعلي وتاريخه والأصل المستلَم يُوثَّقان لاحقاً عبر زر "تنفيذ النقل" في جدول الالتزامات بعد الحفظ.','This only records the in-kind pledge (the promise to transfer the asset) — the actual transfer, its date, and the received asset are documented afterward via the "Execute Transfer" button in the commitments table.')}</p>` : ''}
       <div style="display:flex; gap:8px; margin-top:8px;"><button class="btn btn-primary btn-sm" data-action="if-save" data-kind="commitment">💾 ${T('حفظ','Save')}</button><button class="btn btn-ghost btn-sm" data-action="if-cancel-form">${T('إلغاء','Cancel')}</button></div>
+    </div>` : '';
+  const execInKindForm = ifForm && ifForm.kind==='executeInKind' ? `
+    <div class="panel" style="margin:10px 0; background:var(--surface-2);">
+      <p class="note" style="margin:0 0 8px;">${T(`تسجيل تنفيذ فعلي لمساهمة عينية بالقيمة المتفَق عليها مسبقاً (${fmtSAR(ifForm.draft.commitmentAmount)}) — القيمة نفسها غير قابلة للتعديل هنا؛ أي تغيير في القيمة المعتمدة يحتاج قيداً عكسياً للالتزام الأصلي بدل تعديل التنفيذ. أدخل تاريخ النقل الفعلي والأصل الذي استُلمت المساهمة من أجله.`,`Recording the actual execution of an in-kind contribution at its previously agreed value (${fmtSAR(ifForm.draft.commitmentAmount)}) — that value cannot be edited here; changing the approved value requires a reversal of the original commitment, not an edit to the execution. Enter the actual transfer date and the asset this contribution was received for.`)}</p>
+      <div class="grid3">
+        ${ifField('تاريخ النقل الفعلي','Actual Transfer Date','callDate', ifForm.draft.callDate, {type:'date'})}
+        <div class="field"><label><span>${T('الأصل المستلَم من أجله','Asset Received For')}</span></label><select name="inKindAssetId" data-if-field="inKindAssetId"><option value="">${T('اختر أصلاً...','Select an asset...')}</option>${((STORE.funds.find(f=>f.id===ifForm.draft.fundId)||{}).data?.assetIds||[]).map(oid=>{ const opp=opportunities.find(o=>o.id===oid); return `<option value="${oid}" ${ifForm.draft.inKindAssetId===oid?'selected':''}>${esc((opp&&opp.data&&opp.data.meta&&opp.data.meta.name)||oid)}</option>`; }).join('')}</select></div>
+      </div>
+      ${((STORE.funds.find(f=>f.id===ifForm.draft.fundId)||{}).data?.assetIds||[]).length===0? `<p class="note" style="margin:6px 0 0; color:var(--danger,#b00);">${T('لا توجد أصول مرتبطة بهذا الصندوق بعد — اربط الفرصة المستهدفة بالصندوق (قسم "الأصول المرتبطة" أعلاه) قبل تسجيل التنفيذ.','No assets are linked to this fund yet — link the target opportunity to the fund (the "Linked Assets" section above) before recording execution.')}</p>` : ''}
+      <div style="display:flex; gap:8px; margin-top:8px;"><button class="btn btn-primary btn-sm" data-action="if-save" data-kind="executeInKind">💾 ${T('تأكيد التنفيذ','Confirm Execution')}</button><button class="btn btn-ghost btn-sm" data-action="if-cancel-form">${T('إلغاء','Cancel')}</button></div>
     </div>` : '';
   const ccForm = ifForm && ifForm.kind==='capitalCall' ? `
     <div class="panel" style="margin:10px 0; background:var(--surface-2);">
@@ -3278,16 +3292,27 @@ function renderFundDetail(fundId){
 
     <p class="step-sub" style="margin-top:20px;">${T('التزامات المستثمرين (Commitments)','Investor Commitments')}</p>
     ${cmtForm}
-    ${!cmtForm? `<button class="btn btn-sm" data-action="if-open-form" data-kind="commitment" data-fund="${fundId}">＋ ${T('التزام جديد','New Commitment')}</button>`:''}
+    ${execInKindForm}
+    ${!cmtForm && !execInKindForm? `<button class="btn btn-sm" data-action="if-open-form" data-kind="commitment" data-fund="${fundId}">＋ ${T('التزام جديد','New Commitment')}</button>`:''}
     <div class="tablewrap" style="margin-top:8px;"><table class="db">
       <thead><tr><th>${T('المستثمر','Investor')}</th><th>${T('النوع','Type')}</th><th>${T('المبلغ / القيمة','Amount / Value')}</th><th>${T('التاريخ','Date')}</th><th></th></tr></thead>
       <tbody>
-        ${cmts.length===0? `<tr><td colspan="5" style="text-align:center; color:var(--ink-faint); padding:16px;">${T('لا توجد التزامات بعد','No commitments yet')}</td></tr>` : cmts.map(c=>`
+        ${cmts.length===0? `<tr><td colspan="5" style="text-align:center; color:var(--ink-faint); padding:16px;">${T('لا توجد التزامات بعد','No commitments yet')}</td></tr>` : cmts.map(c=>{
+          // Phase 2R-4D4-B: نقل عيني منفَّذ = يوجد نداء رأس مال (paid) مرتبط بهذا الالتزام
+          // (linkedCommitmentId) — لم يعد يُنشأ تلقائياً عند الحفظ، بل عبر زر "تنفيذ النقل" أدناه.
+          const exec = calls.find(cc=>cc.data.linkedCommitmentId===c.id);
+          return `
           <tr><td>${esc(investorName(c.data.investorId))}${c.data.reversalOfId? ` <span class="note" style="font-size:11px;" title="${T('قيد عكسي','reversal entry')}">↩️</span>`:''}</td>
           <td>${c.data.contributionType==='in_kind'? `<span class="badge" title="${esc(c.data.inKindDescription||'')}">🏗️ ${T('عيني','In-Kind')}</span>${c.data.inKindDescription? ` <span class="note" style="font-size:11px;">— ${esc(c.data.inKindDescription)}</span>`:''}${c.data.inKindAssetId? ` <span class="note" style="font-size:11px;">(${esc((opportunities.find(o=>o.id===c.data.inKindAssetId)?.data?.meta?.name)||c.data.inKindAssetId)})</span>`:''}` : `<span class="badge">💵 ${T('نقدي','Cash')}</span>`}</td>
           <td class="num mono">${fmtSAR(c.data.commitmentAmount)}</td><td class="mono">${esc(c.data.dateCommitted)}</td>
-          <td><button class="btn btn-sm btn-ghost" data-action="if-reverse" data-kind="commitment" data-id="${c.id}" title="${T('التزام مُرحَّل — لا يمكن حذفه؛ أنشئ قيد عكسي بدل ذلك','Posted commitment — cannot be deleted; create a reversal entry instead')}">↩️</button></td></tr>
-        `).join('')}
+          <td style="display:flex; gap:4px; align-items:center; flex-wrap:wrap;">
+            ${c.data.contributionType==='in_kind' && !c.data.reversalOfId ? (exec
+              ? `<span class="badge" title="${T('تاريخ التنفيذ','Execution date')}: ${esc(exec.data.callDate)}">✅ ${T('مُنفَّذ','Executed')} <span class="note" style="font-size:11px;">${esc(exec.data.callDate)}</span></span>`
+              : `<button class="btn btn-sm" data-action="if-open-execute-inkind" data-id="${c.id}" title="${T('تسجيل تنفيذ نقل الملكية العينية فعلياً (تاريخ ووثيقة النقل)','Record the actual in-kind transfer execution (date and asset)')}">🏗️ ${T('تنفيذ النقل','Execute Transfer')}</button>`
+            ) : ''}
+            <button class="btn btn-sm btn-ghost" data-action="if-reverse" data-kind="commitment" data-id="${c.id}" title="${T('التزام مُرحَّل — لا يمكن حذفه؛ أنشئ قيد عكسي بدل ذلك','Posted commitment — cannot be deleted; create a reversal entry instead')}">↩️</button>
+          </td></tr>
+        `;}).join('')}
       </tbody>
     </table></div>
 
@@ -3801,6 +3826,30 @@ document.addEventListener('click', async (e)=>{
     render();
     return;
   }
+  if(action==='if-open-execute-inkind'){
+    // Phase 2R-4D4-B: فتح نموذج تنفيذ نقل عيني — القيمة (commitmentAmount) تُنسَخ من الالتزام
+    // ولا تُعرَض كحقل قابل للتعديل (انظر execInKindForm)، فلا مجال لتزييف "القيمة المعتمدة" هنا؛
+    // الحقول القابلة للتعديل فقط هما تاريخ النقل الفعلي والأصل المستلَم من أجله.
+    const id = el.dataset.id;
+    const rec = STORE.commitments.find(r=>r.id===id);
+    if(!rec) return;
+    if(rec.data.contributionType!=='in_kind'){ return; }
+    if(STORE.capitalCalls.some(cc=>cc.data.linkedCommitmentId===id)){
+      alert(T('تم تنفيذ نقل هذه المساهمة العينية مسبقاً.','This in-kind contribution has already been executed.'));
+      return;
+    }
+    ifForm = { kind:'executeInKind', editId:null, draft:{
+      commitmentId: id,
+      fundId: rec.data.fundId,
+      investorId: rec.data.investorId,
+      commitmentAmount: rec.data.commitmentAmount,
+      inKindDescription: rec.data.inKindDescription||'',
+      callDate: todayStr(),
+      inKindAssetId: rec.data.inKindAssetId||'',
+    }};
+    render();
+    return;
+  }
   if(action==='if-edit'){
     const kind = el.dataset.kind, id = el.dataset.id;
     const rec = STORE[ifCollFor(kind)].find(r=>r.id===id);
@@ -3850,6 +3899,35 @@ document.addEventListener('click', async (e)=>{
   if(action==='if-save'){
     if(!ifForm) return;
     ifReadForm();
+    // Phase 2R-4D4-B: تنفيذ نقل عيني — مسار مستقل تماماً عن التدفق العام أدناه (لا يمر بـifCollFor/
+    // persistIfRecord العام على مستوى commitment، لأن الالتزام نفسه غير قابل للتعديل أصلاً). ينشئ
+    // نداء رأس مال 'paid' واحداً مرتبطاً (linkedCommitmentId) بنفس شكل المسار القديم بالضبط (حتى
+    // يستمر PIC/DPI/TVPI القائم يعمل بلا لمس)، لكن بفعل صريح موثَّق بدل توليد تلقائي عند الحفظ.
+    if(ifForm.kind==='executeInKind'){
+      const draft = ifForm.draft;
+      if(!draft.inKindAssetId){ alert(T('اختر الأصل المستلَم قبل تأكيد التنفيذ.','Select the received asset before confirming execution.')); return; }
+      if(!draft.callDate){ alert(T('أدخل تاريخ النقل الفعلي قبل تأكيد التنفيذ.','Enter the actual transfer date before confirming execution.')); return; }
+      if(STORE.capitalCalls.some(cc=>cc.data.linkedCommitmentId===draft.commitmentId)){
+        alert(T('تم تنفيذ نقل هذه المساهمة العينية مسبقاً.','This in-kind contribution has already been executed.'));
+        ifForm = null; render(); return;
+      }
+      const ccId = uid('CC');
+      const ccRec = { id: ccId, data: Object.assign(blankCapitalCall(draft.fundId), {
+        investorId: draft.investorId,
+        amount: draft.commitmentAmount,
+        callDate: draft.callDate,
+        callNumber: 1,
+        status: 'paid',
+        notes: T('تنفيذ مساهمة عينية موثَّق — '+(draft.inKindDescription||''),'Documented in-kind contribution execution — '+(draft.inKindDescription||'')),
+        linkedCommitmentId: draft.commitmentId,
+        inKindAssetId: draft.inKindAssetId,
+      }) };
+      await persistIfRecord('capitalCalls', ccRec);
+      await logIfTransaction({ type:'capitalCall', action:'create', relatedId:ccId, fundId:draft.fundId, investorId:draft.investorId, amount:draft.commitmentAmount });
+      ifForm = null;
+      render();
+      return;
+    }
     const kind = ifForm.kind, coll = ifCollFor(kind);
     const now = todayStr();
     if(kind==='investor' || kind==='fund'){
@@ -3922,39 +4000,15 @@ document.addEventListener('click', async (e)=>{
     if(isNew && (kind==='capitalCall' || kind==='distribution')){
       await logIfTransaction({ type:kind, action:'create', relatedId:id, fundId:ifForm.draft.fundId, investorId:ifForm.draft.investorId, amount:ifForm.draft.amount });
     }
-    // مساهمة عينية (In-Kind) — استثناء core.js الضيّق نفسه (محرك التدفقات النقدية): بدل تعديل
-    // fundLedgerSummary/investorLedgerRows لفهم نوعين من الالتزام، نُبقيهما بلا تغيير عبر
-    // توليد/تحديث/حذف سجل capitalCalls واحد مربوط (linkedCommitmentId) ومُعلَّم 'paid' تلقائياً
-    // يمثّل نقل ملكية الأرض دفعة واحدة — فيستمر كل حساب PIC/DPI/TVPI القائم يعمل بلا لمس.
-    if(kind==='commitment'){
-      const existingLinkedCall = STORE.capitalCalls.find(cc=>cc.data.linkedCommitmentId===id);
-      if(ifForm.draft.contributionType==='in_kind'){
-        if(existingLinkedCall){
-          existingLinkedCall.data.amount = ifForm.draft.commitmentAmount;
-          existingLinkedCall.data.callDate = ifForm.draft.dateCommitted;
-          existingLinkedCall.data.investorId = ifForm.draft.investorId;
-          existingLinkedCall.data.fundId = ifForm.draft.fundId;
-          existingLinkedCall.data.status = 'paid';
-          await persistIfRecord('capitalCalls', existingLinkedCall);
-        } else {
-          const ccId = uid('CC');
-          const ccRec = { id: ccId, data: Object.assign(blankCapitalCall(ifForm.draft.fundId), {
-            investorId: ifForm.draft.investorId,
-            amount: ifForm.draft.commitmentAmount,
-            callDate: ifForm.draft.dateCommitted,
-            callNumber: 1,
-            status: 'paid',
-            notes: T('نقل ملكية عينية تلقائي عند حفظ الالتزام — '+(ifForm.draft.inKindDescription||''),'Auto-generated in-kind transfer on commitment save — '+(ifForm.draft.inKindDescription||'')),
-            linkedCommitmentId: id,
-          }) };
-          await persistIfRecord('capitalCalls', ccRec);
-          await logIfTransaction({ type:'capitalCall', action:'create', relatedId:ccId, fundId:ifForm.draft.fundId, investorId:ifForm.draft.investorId, amount:ifForm.draft.commitmentAmount });
-        }
-      } else if(existingLinkedCall){
-        // تغيّر النوع من عيني إلى نقدي عند التعديل — نحذف نداء رأس المال التلقائي المرتبط
-        await deleteIfRecord('capitalCalls', existingLinkedCall.id);
-      }
-    }
+    // Phase 2R-4D4-B: حفظ الالتزام العيني يسجّل التعهّد (الوعد بنقل الأصل) فقط الآن — لم يعد يُنشئ
+    // تلقائياً نداء رأس مال 'paid' يمثّل نقلاً لم يحدث بعد فعلياً (كان المسار القديم يُنشئه فور
+    // الحفظ، فيُحسَب ضمن السيولة القابلة للنشر وكأن الأرض نقد فعلي — ثغرة اقتصادية موثَّقة في
+    // PHASE_2R_4D3_FUND_ASSET_RULES.md وأُغلقت هنا). التنفيذ الفعلي (نقل ملكية الأرض) أصبح إجراءً
+    // مستقلاً وموثَّقاً (زر "تنفيذ النقل" في جدول الالتزامات، يُعالَج في فرع if-save المخصَّص
+    // لـexecuteInKind أعلى هذه الدالة) يسجّل تاريخ النقل والأصل صراحة، ويُنشئ عندها فقط نداء رأس
+    // المال المرتبط (linkedCommitmentId). لا حذف تلقائي هنا أيضاً: الالتزامات غير قابلة للتعديل أو
+    // الحذف في firestore.rules أصلاً (allow update, delete: if false)، فتغيّر نوع المساهمة بعد
+    // الحفظ غير ممكن عبر هذا المسار.
     ifForm = null;
     render();
     return;
@@ -3964,7 +4018,7 @@ document.addEventListener('click', async (e)=>{
     if(kind==='capitalCall'){
       const rec = STORE.capitalCalls.find(r=>r.id===id);
       if(rec && rec.data.linkedCommitmentId){
-        alert(T('هذه دفعة مرتبطة تلقائياً بمساهمة عينية — لحذفها احذف الالتزام (Commitment) نفسه من قائمة التزامات المستثمرين.','This capital call is auto-linked to an in-kind commitment — delete the commitment itself from the Investor Commitments list instead.'));
+        alert(T('هذه دفعة مرتبطة بتنفيذ مساهمة عينية — لا يمكن حذفها مباشرة (firestore.rules تمنع ذلك لأي نداء منفَّذ)؛ استخدم زر العكس (↩️) لتصحيحها إن لزم.','This capital call is linked to an in-kind contribution execution — it cannot be deleted directly (firestore.rules blocks that for any posted call); use the reverse (↩️) action to correct it if needed.'));
         return;
       }
     }

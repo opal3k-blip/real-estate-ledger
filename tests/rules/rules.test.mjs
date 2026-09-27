@@ -523,8 +523,27 @@ for(const [label,context] of [['outsider',ctxFor(OUTSIDER)],['anonymous',testEnv
   assert(true, '🔒 2R-4D4-A: linkedCommitmentId يشير لالتزام حقيقي لكنه نقدي (cash) لا عيني مرفوض');
   await assertFails(setDoc(doc(dbFM,'capitalCalls','CC-GATE-INKIND-AMOUNTMISMATCH'), { fundId:'FND-1', investorId:'INV-1', callNumber:10, callDate:'2026-01-01', amount:999, status:'paid', linkedCommitmentId:'CMT-INKIND-1', reversalOfId:null }));
   assert(true, '🔒 2R-4D4-A: مبلغ النداء لا يطابق مبلغ الالتزام العيني المرتبط بالضبط مرفوض');
-  await assertSucceeds(setDoc(doc(dbFM,'capitalCalls','CC-GATE-INKIND-REAL-OK'), { fundId:'FND-1', investorId:'INV-1', callNumber:11, callDate:'2026-01-01', amount:200000, status:'paid', linkedCommitmentId:'CMT-INKIND-1', reversalOfId:null }));
-  assert(true, '✅ 2R-4D4-A: نداء نقل عيني مطابق فعلاً لالتزام in_kind حقيقي (نفس الصندوق/المستثمر/المبلغ) ينجح كما هو متوقَّع — استثناء النقل العيني التلقائي محفوظ، لكن متحقَّق منه الآن لا معرّف حر');
+  await assertFails(setDoc(doc(dbFM,'capitalCalls','CC-GATE-INKIND-NOASSET'), { fundId:'FND-1', investorId:'INV-1', callNumber:11, callDate:'2026-01-01', amount:200000, status:'paid', linkedCommitmentId:'CMT-INKIND-1', reversalOfId:null }));
+  assert(true, '🔒 2R-4D4-B: نداء نقل عيني بلا inKindAssetId مرفوض الآن — التنفيذ يجب أن يوثِّق الأصل المستلَم، لا مجرد نقل بلا إثبات');
+  await assertFails(setDoc(doc(dbFM,'capitalCalls','CC-GATE-INKIND-FAKEASSET'), { fundId:'FND-1', investorId:'INV-1', callNumber:12, callDate:'2026-01-01', amount:200000, status:'paid', linkedCommitmentId:'CMT-INKIND-1', inKindAssetId:'OPP-DOES-NOT-EXIST', reversalOfId:null }));
+  assert(true, '🔒 2R-4D4-B: inKindAssetId يشير لمستند opportunities غير موجود مرفوض');
+  await assertFails(setDoc(doc(dbFM,'capitalCalls','CC-GATE-INKIND-NOCALLDATE'), { fundId:'FND-1', investorId:'INV-1', callNumber:13, amount:200000, status:'paid', linkedCommitmentId:'CMT-INKIND-1', inKindAssetId:'OPP-1', reversalOfId:null }));
+  assert(true, '🔒 2R-4D4-B: نداء نقل عيني بلا تاريخ نقل فعلي (callDate) مرفوض — التوثيق يتطلّب تاريخاً لا قيمة فقط');
+  await assertSucceeds(setDoc(doc(dbFM,'capitalCalls','CC-GATE-INKIND-REAL-OK'), { fundId:'FND-1', investorId:'INV-1', callNumber:14, callDate:'2026-01-01', amount:200000, status:'paid', linkedCommitmentId:'CMT-INKIND-1', inKindAssetId:'OPP-1', reversalOfId:null }));
+  assert(true, '✅ 2R-4D4-B: نداء نقل عيني مطابق فعلاً لالتزام in_kind حقيقي (نفس الصندوق/المستثمر/المبلغ) مع تاريخ نقل وأصل مستلَم موثَّقين (كلاهما جزء من التنفيذ المستقل الجديد، لا التوليد التلقائي القديم) ينجح كما هو متوقَّع');
+}
+{
+  // Phase 2R-4D4-B: انتحال حقل "by" في transactions — كان ممكناً قبل هذه المرحلة (transactionMatchesRecord
+  // لا تتحقق من هوية الكاتب، فقط من أن السجل المشار إليه حقيقي)؛ أُغلق عبر transactionAttributionHonest.
+  const dbFM2 = ctxFor(FUND_MANAGER).firestore();
+  await assertFails(setDoc(doc(dbFM2,'transactions','TXN-FORGED-BY'), { type:'commitment', action:'create', relatedId:'CMT-1', fundId:'FND-1', amount:1000000, at:'2026-01-04T00:00:00.000Z', by:'someone-else@x.com', version:1 }));
+  assert(true, '🔒 2R-4D4-B: transactions بحقل "by" منتحَل (لا يطابق بريد الكاتب الفعلي) مرفوض الآن — قبل هذه المرحلة كانت مطابقة السجل الأصلي وحدها كافية بلا تحقق من هوية الكاتب');
+  // قيد معروف ومفتوح عمداً هنا (لم يُغلَق في 2R-4D4-A ولا 2R-4D4-B): مطابقة سجل حقيقي لا تمنع أكثر
+  // من سجل transactions واحد يشير لنفس relatedId — لا فحص تكرار في القواعد. يحتاج معرّف مستند حتمي
+  // أو آلية تفرّد مخصَّصة، مؤجَّل لمرحلة لاحقة (انظر PHASE_2R_4D4A_LEDGER_CREATION_RULES.md).
+  await assertSucceeds(setDoc(doc(dbFM2,'transactions','TXN-DUPLICATE-1'), { type:'commitment', action:'create', relatedId:'CMT-1', fundId:'FND-1', amount:1000000, at:'2026-01-04T00:00:01.000Z', by:FUND_MANAGER, version:1 }));
+  await assertSucceeds(setDoc(doc(dbFM2,'transactions','TXN-DUPLICATE-2'), { type:'commitment', action:'create', relatedId:'CMT-1', fundId:'FND-1', amount:1000000, at:'2026-01-04T00:00:02.000Z', by:FUND_MANAGER, version:1 }));
+  assert(true, '⚠️ قيد معروف ومفتوح عمداً: سجلان مختلفان في transactions يشيران لنفس relatedId/fundId/amount الحقيقيين ينجحان كلاهما — matchesRecord لا يمنع تكرار سجل التدقيق، فقط يمنع الإشارة لسجل غير موجود أو مبلغ/صندوق غير مطابقَين');
 }
 {
   await testEnv.withSecurityRulesDisabled(async (ctx)=>{

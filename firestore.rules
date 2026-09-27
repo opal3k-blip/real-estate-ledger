@@ -288,15 +288,22 @@ service cloud.firestore {
     // يشير فعلاً إلى التزام in_kind حقيقي موجود بنفس الصندوق/المستثمر وبنفس المبلغ بالضبط، وأن يُنشأ
     // 'paid' دائماً (الحالة الوحيدة التي ينتجها المسار الفعلي في core.js عند حفظ التزام عيني). قبل
     // هذا التحقق كان أي معرّف نصي (حتى لمستند غير موجود) يكفي لتمرير أي حالة/مبلغ.
+    // Phase 2R-4D4-B: تنفيذ نقل ملكية عيني أصبح إجراءً مستقلاً وموثّقاً (بدل توليد تلقائي عند حفظ
+    // الالتزام) — يجب أن يحمل تاريخ نقل فعلي (callDate) وأصلاً حقيقياً موجوداً (inKindAssetId يشير
+    // لمستند opportunities موجود فعلاً)، وإلا فالنداء "موثّق" بالاسم فقط بلا أي إثبات فعلي.
     function linkedCommitmentOk(data) {
       let cid = data.get('linkedCommitmentId', null);
+      let assetId = data.get('inKindAssetId', null);
       return cid != null
         && exists(/databases/$(database)/documents/commitments/$(cid))
         && get(/databases/$(database)/documents/commitments/$(cid)).data.fundId == data.fundId
         && get(/databases/$(database)/documents/commitments/$(cid)).data.investorId == data.investorId
         && get(/databases/$(database)/documents/commitments/$(cid)).data.contributionType == 'in_kind'
         && get(/databases/$(database)/documents/commitments/$(cid)).data.commitmentAmount == data.amount
-        && data.status == 'paid';
+        && data.status == 'paid'
+        && data.get('callDate', null) != null
+        && assetId != null
+        && exists(/databases/$(database)/documents/opportunities/$(assetId));
     }
     match /capitalCalls/{id} {
       allow read: if isAuthorized();
@@ -344,9 +351,17 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/$(coll)/$(rid)).data.fundId == data.fundId
         && ledgerRecordAmount(coll, rid) == data.amount;
     }
+    // Phase 2R-4D4-B: مطابقة السجل الأصلي (transactionMatchesRecord) وحدها لا تمنع (أ) أكثر من سجل
+    // transactions واحد يشير لنفس relatedId (لا فحص تكرار — قيد معروف، يحتاج معرّف مستند حتمي أو
+    // عداد تفرّد، مؤجّل لمرحلة لاحقة)، ولا (ب) انتحال حقل "by" — أُغلقت (ب) هنا فقط عبر
+    // transactionAttributionHonest، بنفس نمط attributionHonest() المستخدم لـopportunities.
+    function transactionAttributionHonest(data) {
+      return data.get('by', null) != null
+        && data.by.lower() == request.auth.token.email.lower();
+    }
     match /transactions/{id} {
       allow read: if isAuthorized();
-      allow create: if isFundManagerOrAbove() && (
+      allow create: if isFundManagerOrAbove() && transactionAttributionHonest(request.resource.data) && (
              request.resource.data.get('type', null) == 'assetLink'
           || transactionMatchesRecord(request.resource.data)
       );

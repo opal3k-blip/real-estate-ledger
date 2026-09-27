@@ -368,7 +368,10 @@ exports.linkAssetToFund = onCall(async (request) => {
     const paidSnap = await tx.get(db.collection('capitalCalls').where('fundId', '==', fundId).where('status', '==', 'paid'));
     const distSnap = await tx.get(db.collection('distributions').where('fundId', '==', fundId).where('status', '==', 'paid'));
     let paidIn = 0; let distPaid = 0;
-    paidSnap.forEach((doc) => { paidIn += n((doc.data() || {}).amount); });
+    // Phase 2R-4D4-B: نداءات رأس المال المرتبطة بمساهمة عينية (linkedCommitmentId) تمثّل نقل
+    // ملكية أصل (مثل أرض) لا نقداً فعلياً — تُستبعد من السيولة القابلة للنشر (deployable) رغم
+    // بقائها ضمن رأس المال المسدّد (paidIn) لأغراض PIC/DPI/TVPI على مستوى المستثمر (غير مُغيّر هنا).
+    paidSnap.forEach((doc) => { const d = doc.data() || {}; if (!d.linkedCommitmentId) paidIn += n(d.amount); });
     distSnap.forEach((doc) => { distPaid += n((doc.data() || {}).amount); });
     const allocated = await allocatedElsewhereTx(tx, fund, oppId);
     const deployable = Math.max(0, paidIn - distPaid - allocated);
