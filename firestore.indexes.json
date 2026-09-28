@@ -42,6 +42,15 @@
       ]
     },
     {
+      "collectionGroup": "capitalCalls",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "fundId", "order": "ASCENDING" },
+        { "fieldPath": "inKindAssetId", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "mondayTaskQueue",
       "queryScope": "COLLECTION",
       "fields": [

@@ -199,14 +199,26 @@ async function paidCallsForInvestorTx(tx, fundId, investorId) {
   return total;
 }
 
-async function allocatedElsewhereTx(tx, fund, excludeOppId) {
+async function allocatedElsewhereTx(tx, fundId, fund, excludeOppId) {
   const ids = (fund.assetIds || []).filter((id) => id !== excludeOppId);
   let total = 0;
   for (const id of ids) {
     const oppSnap = await tx.get(db.collection('opportunities').doc(id));
     if (!oppSnap.exists) continue;
     const alloc = ((oppSnap.data() || {}).capitalAllocation) || {};
-    total += n(alloc.targetEquity);
+    const targetEquity = n(alloc.targetEquity);
+    // Phase 2R-4D4-C (land-first, two-asset correction — see linkAssetToFund's own
+    // earmarkedForThisAsset comment below): a linked asset's executed in-kind earmark covers
+    // ONLY its own targetEquity and never draws on the fund's shared cash pool. Subtracting that
+    // asset's FULL targetEquity here, as before, wrongly counted its land value as cash already
+    // consumed — a second time — against every OTHER asset evaluated afterward: an already-linked,
+    // fully land-funded asset would zero out cash availability for a later, genuinely cash-funded
+    // asset (order-dependent; empirically confirmed before this fix with a real two-asset scenario).
+    // Only the asset's CASH portion (targetEquity minus its own paid, eligible in-kind coverage,
+    // floored at zero so surplus in-kind coverage beyond that asset's own targetEquity never
+    // manufactures spare cash for this sum) is deducted from the shared pool.
+    const inKind = await earmarkedInKindForAssetTx(tx, fundId, id);
+    total += Math.max(0, targetEquity - inKind);
   }
   return total;
 }
@@ -336,49 +348,235 @@ exports.updateIcConditionStatus = onCall(async (request) => {
   return { ok: true };
 });
 
+/* Phase 2R-4D4-C: unlinking an asset with an executed in-kind transfer earmarked to it (a real,
+   already-transferred contribution — see linkedCommitmentOk in firestore.rules) would orphan that
+   transfer: it stays 'paid' in capitalCalls, pointing at an asset no longer linked to any fund, with
+   no trace back to why. Blocked by default; an admin may override with a documented reason, itself
+   audited as its own distinct action ('unlink-override'), never silently folded into a plain unlink. */
+async function earmarkedInKindForAssetTx(tx, fundId, oppId) {
+  const snap = await tx.get(db.collection('capitalCalls')
+    .where('fundId', '==', fundId).where('inKindAssetId', '==', oppId).where('status', '==', 'paid'));
+  let total = 0;
+  snap.forEach((doc) => { total += n((doc.data() || {}).amount); });
+  return total;
+}
+
+// Phase 2R-4D4-C (الجولة الرابعة من المراجعة -- تصحيح تصنيف الاستبعاد النقدي): استبعاد نداء رأس مال
+// من paidIn بالاعتماد على inKindAssetId وحده (كما كان في الجولة السابقة من هذه المرحلة) أغفل شكلين
+// حقيقيين لسجلات عينية يجب استبعادهما أيضاً، لا اعتبارهما نقداً:
+//   (أ) سجل سابق لمرحلة 2R-4D4-B (لم يكن حقل inKindAssetId موجوداً أصلاً حين كُتب) لا يحمل سوى
+//       linkedCommitmentId -- تماماً تصنيف 'missingAssetLink' في
+//       functions/scripts/legacy-inkind-audit.cjs لهذا الشكل بالذات.
+//   (ب) القيد العكسي لسجل كهذا: reverseTransaction (أدناه) يُصفِّر linkedCommitmentId دائماً على أي
+//       عكس غير commitment، والسجل القديم أصلاً بلا inKindAssetId ليرتكز عليه القيد العكسي -- فيغدو
+//       عكسه بلا أي علامة مباشرة إطلاقاً، غير قابل للتمييز عن عكس نقدي عادي بالنظر إلى وثيقة العكس
+//       وحدها.
+// الدالة أدناه تتحقق أولاً من العلامتين المباشرتين (inKindAssetId أو linkedCommitmentId)؛ إن غابتا
+// كلتاهما على سجل هو نفسه عكس (reversalOfId)، ترجع لتصنيف السجل الأصلي (يبقى 'paid' ضمن نفس هذه
+// المجموعة دائماً -- انظر isPostedForReversal وreverseTransaction). سجل يتعذّر إيجاد أصله إطلاقاً
+// (مرجع مفقود أو سجل تالف) لا يُفترَض نقداً افتراضياً بأي حال -- يُستبعَد تماماً كسجل عيني مؤكَّد، دون
+// أي محاولة لتخمين تصنيفه. هذا لا يمنح أي سجل غامض تغطيةً لأصل بعينه: earmarkedInKindForAssetTx
+// أعلاه يبقى صارماً بمطابقة inKindAssetId تماماً، غير متأثر بهذا التعديل إطلاقاً.
+function isInKindCapitalCallRecord(data, byId, seen) {
+  if (data.inKindAssetId || data.linkedCommitmentId) return true;
+  if (data.reversalOfId) {
+    seen = seen || new Set();
+    if (seen.has(data.reversalOfId)) return true; // حارس دوري (غير متوقَّع عملياً) -- نتحفَّظ ونستبعد
+    const orig = byId.get(data.reversalOfId);
+    if (!orig) return true; // مرجع أصل غير موجود ضمن هذه المجموعة -- لا يُفترَض نقداً افتراضياً
+    seen.add(data.reversalOfId);
+    return isInKindCapitalCallRecord(orig, byId, seen);
+  }
+  return false;
+}
+
+// Phase 2R-4D4-C (assetLink hardening): client creation of `type:'assetLink'` transactions is now
+// closed entirely in firestore.rules (see its own comment) — these records are written only here,
+// via the Admin SDK, inside the same transaction that changes fund.assetIds. The id embeds fundId
+// (not just oppId+seq) so the same oppId linked to a DIFFERENT fund at a different point in its
+// lifetime — nothing elsewhere in this codebase prevents that — can never collide on the same
+// document id (Phase 2R-4D4-C third review round). `assetLinkEventCountTx` returns how many
+// assetLink events have already been recorded for this exact (fundId, oppId) pair — this doubles as
+// both the next event's sequence number (count+1, for the deterministic transaction id) AND the
+// "version" a caller must present back to prove its request was formed against current state (see
+// linkAssetToFund below).
+async function assetLinkEventCountTx(tx, fundId, oppId) {
+  const snap = await tx.get(db.collection('transactions')
+    .where('fundId', '==', fundId).where('relatedId', '==', oppId).where('type', '==', 'assetLink'));
+  return snap.size;
+}
+
+// Phase 2R-4D4-C (third review round — stale/out-of-order request protection): the original
+// already-linked/already-unlinked no-op guards correctly deduped an IMMEDIATE retry of the very
+// same undelivered request, but had no way to tell a genuinely STALE request — one superseded by a
+// later, real link/unlink that already changed the state — from a fresh, legitimate one carrying
+// identical parameters; both look the same on the wire, and a state-only check (linked/unlinked)
+// can't tell them apart once the state has cycled back to the same value (link → unlink → link
+// again leaves the boolean exactly where it started, but a stale request meant for the middle event
+// is not safe to apply against the final one). Replaced by two combined mechanisms, both enforced
+// inside the same Firestore transaction as the mutation itself, so they never diverge from it:
+//   1. expectedVersion: the caller states which version of this exact (fundId, oppId) link history
+//      it believes is current (assetLinkEventCountTx above). The server re-derives the ACTUAL
+//      current version fresh, inside the transaction, and rejects outright — HttpsError('aborted')
+//      — on any mismatch. A stale request's expectedVersion can never match once a real intervening
+//      event has happened, however the boolean linked/unlinked state has cycled. Missing or
+//      malformed expectedVersion is rejected up front as invalid-argument, never treated as "skip
+//      the check" — an old, unpatched client that never learned to send one gets a loud, clear
+//      rejection, not silent unprotected access.
+//   2. requestId: a caller-chosen, stable identifier for one specific logical action, unchanged on
+//      retry, bound to (email, fundId, oppId, unlink, correctionReason, expectedVersion) via
+//      assetLinkRequestPayloadsMatch. A retry of an ALREADY-SUCCEEDED request — same id, identical
+//      parameters — returns the ORIGINAL result again, with no new read of business state and no new
+//      write at all: true idempotent replay, not a second event. Reusing the same id with ANY
+//      different parameter — HttpsError('already-exists') — is rejected: an id is a promise about
+//      one specific action, never a license to overwrite it with something else.
+// assetLinkRequests is Admin-SDK-only bookkeeping (see firestore.rules — clients have no read or
+// write access to it at all); it is not part of the audit trail itself (that remains `transactions`)
+// and records only enough to answer "was this exact request already done, and with what result".
+function assetLinkRequestPayloadsMatch(a, b) {
+  return a.email === b.email && a.fundId === b.fundId && a.oppId === b.oppId
+    && a.unlink === b.unlink && a.correctionReason === b.correctionReason
+    && a.expectedVersion === b.expectedVersion;
+}
+
 exports.linkAssetToFund = onCall(async (request) => {
   const email = requireEmail(request);
   await requireRole(email, 'fund_manager');
-  const { fundId, oppId, unlink } = request.data || {};
+  const { fundId, oppId, unlink, correctionReason, expectedVersion, requestId } = request.data || {};
   if (!fundId || !oppId) throw new HttpsError('invalid-argument', 'fundId and oppId are required.');
+  if (!Number.isInteger(expectedVersion) || expectedVersion < 0) {
+    throw new HttpsError('invalid-argument', 'expectedVersion (a non-negative integer reflecting the last known link state for this asset) is required — it protects against a stale or out-of-order request silently overriding a more recent link/unlink. An old client that does not send it cannot bypass this check.');
+  }
+  if (typeof requestId !== 'string' || !requestId.trim()) {
+    throw new HttpsError('invalid-argument', 'requestId (a stable identifier for this specific action, unchanged on retry) is required.');
+  }
+  const normalizedCorrectionReason = typeof correctionReason === 'string' && correctionReason.trim() ? correctionReason.trim() : null;
+  const payload = { email, fundId, oppId, unlink: !!unlink, correctionReason: normalizedCorrectionReason, expectedVersion };
   const fundRef = db.collection('funds').doc(fundId);
   const oppRef = db.collection('opportunities').doc(oppId);
-  await db.runTransaction(async (tx) => {
+  const requestRef = db.collection('assetLinkRequests').doc(requestId.trim());
+  return db.runTransaction(async (tx) => {
+    const requestSnap = await tx.get(requestRef);
+    if (requestSnap.exists) {
+      const prior = requestSnap.data() || {};
+      if (assetLinkRequestPayloadsMatch(prior.payload || {}, payload)) return prior.result;
+      throw new HttpsError('already-exists', 'This requestId was already used for a different link/unlink action — a retry must reuse the exact same parameters, never new ones.');
+    }
     const [fundSnap, oppSnap] = await Promise.all([tx.get(fundRef), tx.get(oppRef)]);
     if (!fundSnap.exists || !oppSnap.exists) throw new HttpsError('not-found', 'Fund or opportunity not found.');
     const fund = fundSnap.data() || {};
     const opp = oppSnap.data() || {};
     const assetIds = Array.isArray(fund.assetIds) ? fund.assetIds.slice() : [];
     const existing = assetIds.includes(oppId);
+    const currentVersion = await assetLinkEventCountTx(tx, fundId, oppId);
+    if (currentVersion !== expectedVersion) {
+      throw new HttpsError('aborted', `This action is stale: the link state for this asset changed since it was prepared (expected version ${expectedVersion}, actual ${currentVersion}). Refresh and retry against the current state.`);
+    }
+    // إذا تطابق الإصدار فالحالة الراهنة (existing) يجب أن تتوافق حتماً مع العملية المطلوبة، لأن كل
+    // حدث assetLink ناجح سابق يُبدّل existing ويزيد العدّاد معاً بخطوة ذرّية واحدة؛ أي تعارض هنا (غير
+    // متوقَّع في الاستخدام الطبيعي) يُرفَض بوضوح بدل تجاهله أو التخمين.
+    if (unlink && !existing) throw new HttpsError('failed-precondition', 'Version matched but the asset is not currently linked — inconsistent state, refusing to guess.');
+    if (!unlink && existing) throw new HttpsError('failed-precondition', 'Version matched but the asset is already linked — inconsistent state, refusing to guess.');
+    const newVersion = currentVersion + 1;
+    const txnId = 'assetLink-' + fundId + '-' + oppId + '-' + newVersion;
+    let result;
     if (unlink) {
+      const earmarked = await earmarkedInKindForAssetTx(tx, fundId, oppId);
+      const hasExecutedInKind = earmarked > 0;
+      const overridden = hasExecutedInKind && isAdminEmail(email) && !!normalizedCorrectionReason;
+      if (hasExecutedInKind && !overridden) {
+        throw new HttpsError('failed-precondition', 'This asset has an executed in-kind contribution earmarked to it — unlinking would orphan that transfer. Only an admin may override this, with a documented correction reason.');
+      }
       tx.update(fundRef, { assetIds: assetIds.filter((id) => id !== oppId), updatedAt: new Date().toISOString().slice(0, 10) });
+      const txn = { type: 'assetLink', action: 'unlink', relatedId: oppId, fundId, amount: 0, by: email, at: FieldValue.serverTimestamp(), version: 1 };
+      if (overridden) { txn.action = 'unlink-override'; txn.correctionReason = normalizedCorrectionReason; }
+      // Phase 2R-4D4-C: the link path has always logged its own transactions entry; unlink never did
+      // (link/unlink audit asymmetry) — closed here so every state change to fund.assetIds is
+      // traceable, not only additions.
+      tx.set(db.collection('transactions').doc(txnId), txn);
+      result = { ok: true, newVersion };
+    } else {
+      const decisions = (((opp.ic || {}).decisions) || []);
+      const latest = decisions.length ? decisions[decisions.length - 1] : null;
+      if (!latest || !APPROVAL_DECISIONS.has(latest.decision) || !decisionConditionsMet(latest)) {
+        throw new HttpsError('failed-precondition', 'Asset linking requires approved IC decision with conditions met.');
+      }
+      const allocation = opp.capitalAllocation || {};
+      const targetEquity = n(allocation.targetEquity);
+      const maxAllocation = n(allocation.maxAllocation);
+      if (!(targetEquity > 0)) throw new HttpsError('failed-precondition', 'Target equity allocation is required.');
+      if (maxAllocation > 0 && targetEquity > maxAllocation) throw new HttpsError('failed-precondition', 'Target allocation exceeds maxAllocation.');
+      const paidSnap = await tx.get(db.collection('capitalCalls').where('fundId', '==', fundId).where('status', '==', 'paid'));
+      const distSnap = await tx.get(db.collection('distributions').where('fundId', '==', fundId).where('status', '==', 'paid'));
+      let paidIn = 0; let distPaid = 0;
+      // Phase 2R-4D4-B: نداءات رأس المال المرتبطة بمساهمة عينية (linkedCommitmentId) تمثّل نقل
+      // ملكية أصل (مثل أرض) لا نقداً فعلياً — تُستبعد من السيولة القابلة للنشر (deployable) رغم
+      // بقائها ضمن رأس المال المسدّد (paidIn) لأغراض PIC/DPI/TVPI على مستوى المستثمر (غير مُغيّر هنا).
+      // Phase 2R-4D4-C (تصحيح): كان الاستبعاد يعتمد على linkedCommitmentId وحده — لكن عكس
+      // مساهمة عينية (reverseTransaction) يُصفِّر linkedCommitmentId على القيد العكسي نفسه مع إبقاء
+      // inKindAssetId كما هو، فكان القيد العكسي (مبلغ سالب) يسقط ضمن paidIn كأنه نقد حقيقي منخفض
+      // بدل أن يُصفِّر تغطية الأصل الأصلي — عكس كامل لمساهمة عينية كان يُنتج نقداً وهمياً سالباً
+      // بدل تصفير التغطية إلى صفر كما يجب. المعيار الأصح هو وجود inKindAssetId نفسه (يبقى على القيد
+      // العكسي أيضاً)، لا linkedCommitmentId (يُصفَّر عليه فقط)؛ earmarkedForThisAsset تُحسَب الآن
+      // عبر نفس earmarkedInKindForAssetTx المستخدَمة في بوابة فك الربط أعلاه وفي allocatedElsewhereTx،
+      // فتُصفِّر تلقائياً أي عكس بمبلغ سالب بنفس inKindAssetId، بدل حسابها هنا بمنطق منفصل قد ينحرف.
+      // Phase 2R-4D4-C (الجولة الرابعة): التصنيف يمر الآن عبر isInKindCapitalCallRecord (انظر
+      // تعليقها أعلاه) لا فحص inKindAssetId المباشر وحده -- يبني أولاً خريطة كل نداءات هذا الصندوق
+      // المُرحَّلة (paid) بمعرّفاتها، لأن تتبع عكس سجل قديم يحتاج الرجوع إلى السجل الأصلي بالمعرّف.
+      const paidCallsById = new Map();
+      paidSnap.forEach((doc) => { paidCallsById.set(doc.id, doc.data() || {}); });
+      paidCallsById.forEach((d) => {
+        if (!isInKindCapitalCallRecord(d, paidCallsById)) paidIn += n(d.amount);
+      });
+      distSnap.forEach((doc) => { distPaid += n((doc.data() || {}).amount); });
+      const earmarkedForThisAsset = await earmarkedInKindForAssetTx(tx, fundId, oppId);
+      const allocated = await allocatedElsewhereTx(tx, fundId, fund, oppId);
+      const deployable = Math.max(0, paidIn - distPaid - allocated) + earmarkedForThisAsset;
+      if (targetEquity > deployable) throw new HttpsError('failed-precondition', 'Insufficient deployable fund cash.');
+      assetIds.push(oppId);
+      tx.update(fundRef, { assetIds, updatedAt: new Date().toISOString().slice(0, 10) });
+      tx.set(db.collection('transactions').doc(txnId), { type: 'assetLink', action: 'create', relatedId: oppId, fundId, amount: targetEquity, by: email, at: FieldValue.serverTimestamp(), version: 1 });
+      result = { ok: true, newVersion };
+    }
+    tx.set(requestRef, { payload, result, at: FieldValue.serverTimestamp() });
+    return result;
+  });
+});
+
+/* Phase 2R-4D4-C: direct client deletion of a fund (firestore.rules) only ever checked assetIds —
+   never whether any commitments/capitalCalls/distributions/transactions still reference it, which
+   rules cannot query. That allowed link → execute real in-kind transfer → unlink → delete to leave
+   every ledger record pointing at a deleted fund, permanently orphaned. firestore.rules now locks
+   funds' allow delete to false unconditionally; this callable is the only path left, and it checks
+   all four collections (plus assetIds) with the Admin SDK before deciding: any history at all means
+   archive (status:'archived'), never an actual delete; true hard-delete is reserved for a fund that
+   is genuinely empty and has never had any history. */
+exports.archiveOrDeleteFund = onCall(async (request) => {
+  const email = requireEmail(request);
+  await requireRole(email, 'fund_manager');
+  const { fundId } = request.data || {};
+  if (!fundId) throw new HttpsError('invalid-argument', 'fundId is required.');
+  const fundRef = db.collection('funds').doc(fundId);
+  await db.runTransaction(async (tx) => {
+    const fundSnap = await tx.get(fundRef);
+    if (!fundSnap.exists) throw new HttpsError('not-found', 'Fund not found.');
+    const fund = fundSnap.data() || {};
+    if (fund.status === 'archived') throw new HttpsError('failed-precondition', 'Fund is already archived.');
+    const assetIds = Array.isArray(fund.assetIds) ? fund.assetIds : [];
+    const [cmtSnap, ccSnap, dstSnap, txnSnap] = await Promise.all([
+      tx.get(db.collection('commitments').where('fundId', '==', fundId)),
+      tx.get(db.collection('capitalCalls').where('fundId', '==', fundId)),
+      tx.get(db.collection('distributions').where('fundId', '==', fundId)),
+      tx.get(db.collection('transactions').where('fundId', '==', fundId)),
+    ]);
+    const hasHistory = assetIds.length > 0 || !cmtSnap.empty || !ccSnap.empty || !dstSnap.empty || !txnSnap.empty;
+    if (!hasHistory) {
+      tx.delete(fundRef);
+      tx.set(db.collection('transactions').doc(), { type: 'fund', action: 'delete', relatedId: fundId, fundId, amount: 0, by: email, at: FieldValue.serverTimestamp(), version: 1 });
       return;
     }
-    if (existing) return;
-    const decisions = (((opp.ic || {}).decisions) || []);
-    const latest = decisions.length ? decisions[decisions.length - 1] : null;
-    if (!latest || !APPROVAL_DECISIONS.has(latest.decision) || !decisionConditionsMet(latest)) {
-      throw new HttpsError('failed-precondition', 'Asset linking requires approved IC decision with conditions met.');
-    }
-    const allocation = opp.capitalAllocation || {};
-    const targetEquity = n(allocation.targetEquity);
-    const maxAllocation = n(allocation.maxAllocation);
-    if (!(targetEquity > 0)) throw new HttpsError('failed-precondition', 'Target equity allocation is required.');
-    if (maxAllocation > 0 && targetEquity > maxAllocation) throw new HttpsError('failed-precondition', 'Target allocation exceeds maxAllocation.');
-    const paidSnap = await tx.get(db.collection('capitalCalls').where('fundId', '==', fundId).where('status', '==', 'paid'));
-    const distSnap = await tx.get(db.collection('distributions').where('fundId', '==', fundId).where('status', '==', 'paid'));
-    let paidIn = 0; let distPaid = 0;
-    // Phase 2R-4D4-B: نداءات رأس المال المرتبطة بمساهمة عينية (linkedCommitmentId) تمثّل نقل
-    // ملكية أصل (مثل أرض) لا نقداً فعلياً — تُستبعد من السيولة القابلة للنشر (deployable) رغم
-    // بقائها ضمن رأس المال المسدّد (paidIn) لأغراض PIC/DPI/TVPI على مستوى المستثمر (غير مُغيّر هنا).
-    paidSnap.forEach((doc) => { const d = doc.data() || {}; if (!d.linkedCommitmentId) paidIn += n(d.amount); });
-    distSnap.forEach((doc) => { distPaid += n((doc.data() || {}).amount); });
-    const allocated = await allocatedElsewhereTx(tx, fund, oppId);
-    const deployable = Math.max(0, paidIn - distPaid - allocated);
-    if (targetEquity > deployable) throw new HttpsError('failed-precondition', 'Insufficient deployable fund cash.');
-    assetIds.push(oppId);
-    tx.update(fundRef, { assetIds, updatedAt: new Date().toISOString().slice(0, 10) });
-    tx.set(db.collection('transactions').doc(), { type: 'assetLink', action: 'create', relatedId: oppId, fundId, amount: targetEquity, by: email, at: FieldValue.serverTimestamp(), version: 1 });
+    tx.update(fundRef, { status: 'archived', archivedAt: new Date().toISOString().slice(0, 10), archivedBy: email });
+    tx.set(db.collection('transactions').doc(), { type: 'fund', action: 'archive', relatedId: fundId, fundId, amount: 0, by: email, at: FieldValue.serverTimestamp(), version: 1 });
   });
   return { ok: true };
 });

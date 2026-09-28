@@ -11,6 +11,12 @@ let DB = null;
 let claudeReady = false;
 let currentUser = null;      // كائن المستخدم المسجّل دخوله عبر Firebase Auth (null = لا أحد مسجّل)
 let authReady = false;       // هل انتهينا من التحقق الأولي من حالة تسجيل الدخول؟
+// Phase 2R-4D4-C (الجولة الرابعة من المراجعة): يزداد عند كل حدود جلسة مصادقة حقيقية فقط -- تسجيل
+// دخول، تسجيل خروج، أو تبديل مباشر من uid إلى uid آخر (انظر onAuthStateChanged أدناه) -- لا عند
+// استدعاء onAuthStateChanged لنفس uid (مثل تجديد الرمز). طلب خادم معلَّق (if-toggle-asset) يلتقط
+// هذه القيمة لحظة بدئه؛ إن تغيّرت بحلول لحظة استقراره، فنتيجته تخص جلسة لم تعد سارية ويجب تجاهلها
+// كلياً (بلا كتابة على STORE، بلا alert، بلا render) بدل كتابة بيانات جلسة سابقة فوق الجلسة الحالية.
+let authSessionSeq = 0;
 let unsubscribeOpportunities = null;
 let unsubscribePresence = null;
 let authError = '';
@@ -302,10 +308,38 @@ async function initDb(){
     } else if(window.FIREBASE_CONFIG && window.FIREBASE_CONFIG.apiKey && window.FIREBASE_CONFIG.apiKey !== 'REPLACE_ME'){
       firebase.initializeApp(window.FIREBASE_CONFIG);
       DB = firebase.firestore();
+      const teardownUserSubscriptions = () => {
+        if(unsubscribeOpportunities){ unsubscribeOpportunities(); unsubscribeOpportunities=null; }
+        if(unsubscribeAllowlist){ unsubscribeAllowlist(); unsubscribeAllowlist=null; }
+        if(unsubscribeBranding){ unsubscribeBranding(); unsubscribeBranding=null; }
+        unsubscribeIfCollections();
+        stopPresence();
+        opportunities = [];
+        allowlistEmails = [];
+        branding = { companyName:'', logoDataUrl:'' };
+        recentActivity = [];
+        recentActivityOpen = false;
+        fundsViewOpen = false; openFundId = null;
+      };
       firebase.auth().onAuthStateChanged(user => {
+        // Phase 2R-4D4-C (third review round): a direct switch from one signed-in uid to a
+        // different one (Firebase Auth can deliver this as a single non-null-to-non-null callback,
+        // with no intervening null/sign-out callback in between) must be treated exactly like a
+        // sign-out followed by a sign-in -- otherwise ifCollSyncedOnce and STORE would keep the
+        // PREVIOUS user's "already synced" flags and cached collection data, and expectedVersion /
+        // assetLink guards would silently trust stale state that was never actually confirmed for
+        // the NEW user's session.
+        const previousUid = currentUser ? currentUser.uid : null;
+        const newUid = user ? user.uid : null;
+        const isDirectUserSwitch = !!(previousUid && newUid && previousUid !== newUid);
+        // Phase 2R-4D4-C (الجولة الرابعة): حدود جلسة حقيقية فقط (دخول/خروج/تبديل) تزيد العدّاد -- لا
+        // نداء onAuthStateChanged لنفس uid (تجديد رمز مثلاً)، حتى لا يُلغي طلباً معلَّقاً شرعياً لنفس
+        // المستخدم بلا داعٍ.
+        if(previousUid !== newUid) authSessionSeq++;
         currentUser = user;
         authReady = true;
         accessDenied = false;
+        if(isDirectUserSwitch) teardownUserSubscriptions();
         if(user){
           subscribeOpportunities();
           subscribeIfCollections();
@@ -313,17 +347,7 @@ async function initDb(){
           subscribeAllowlistIfAdmin();
           subscribeBranding();
         } else {
-          if(unsubscribeOpportunities){ unsubscribeOpportunities(); unsubscribeOpportunities=null; }
-          if(unsubscribeAllowlist){ unsubscribeAllowlist(); unsubscribeAllowlist=null; }
-          if(unsubscribeBranding){ unsubscribeBranding(); unsubscribeBranding=null; }
-          unsubscribeIfCollections();
-          stopPresence();
-          opportunities = [];
-          allowlistEmails = [];
-          branding = { companyName:'', logoDataUrl:'' };
-          recentActivity = [];
-          recentActivityOpen = false;
-          fundsViewOpen = false; openFundId = null;
+          teardownUserSubscriptions();
         }
         render();
       });
@@ -340,6 +364,14 @@ async function initDb(){
 
 /* ---------------- utilities ---------------- */
 function uid(prefix){ return prefix+'-'+Math.random().toString(36).slice(2,8).toUpperCase(); }
+// تجزئة نصية بسيطة وحتمية (djb2) — تُستخدم فقط لبناء معرّفات طلب مستقرة تتضمّن نصاً حراً
+// (سبب تصحيح فكّ الربط) دون تضخيم طول المعرّف أو إدخال رموز غير آمنة فيه؛ ليست تجزئة أمنية.
+function hashStr(str){
+  let h = 5381;
+  const s = String(str||'');
+  for(let i=0;i<s.length;i++){ h = ((h*33) ^ s.charCodeAt(i)) >>> 0; }
+  return h.toString(36);
+}
 function getPath(obj,path){ return path.split('.').reduce((o,k)=> (o==null?undefined:o[k]), obj); }
 function setPath(obj,path,val){
   const parts = path.split('.'); let o = obj;
@@ -604,7 +636,43 @@ async function deleteOpportunity(id){
    ========================================================================= */
 const IF_COLLECTIONS = ['investors','funds','commitments','capitalCalls','distributions','transactions'];
 const STORE = { investors: [], funds: [], commitments: [], capitalCalls: [], distributions: [], transactions: [] };
+// Phase 2R-4D4-C (الجولة الخامسة من المراجعة): يستبدل وثيقة صندوق واحد في STORE.funds بمحتوى
+// مجلوب فعلياً (سواء من onSnapshot أو من جلب صريح لحظة واحدة من الخادم)، بدل تخمين الحالة محلياً
+// من اتجاه عملية سابقة. استُخرجت كدالة مستقلة قابلة للاختبار بمعزل عن Firebase/DOM الحقيقيين —
+// انظر tests/features/asset-link-fund-sync.test.mjs، التي تختبرها مباشرة لإثبات أن "نجاح استجابة
+// معادة (replay) بنسخة قديمة لا تُملي اتجاه التحديث؛ محتوى الوثيقة المجلوبة فعلياً هو الحكم الوحيد".
+function applyFetchedFundSnapshot(fundId, fetchedData){
+  const freshFund = { id: fundId, data: fetchedData };
+  const fIdx = STORE.funds.findIndex(f=>f.id===fundId);
+  if(fIdx>=0) STORE.funds[fIdx] = freshFund; else STORE.funds.push(freshFund);
+  return freshFund;
+}
 let ifUnsub = {};
+// Phase 2R-4D4-C (third review round): which IF_COLLECTIONS have delivered at least one
+// SERVER-CONFIRMED onSnapshot payload since the current subscription started. STORE.transactions
+// itself is never filtered/paginated (subscribeIfCollections below subscribes to the whole
+// collection with no .where/.limit — see its own comment), so once a collection is in this set its
+// STORE[...] array is genuinely complete, not a partial view. Before that first server-confirmed
+// payload arrives, STORE[coll] is still its just-initialized empty array — reading it then would
+// silently undercount, not truthfully report "no prior events".
+//
+// Deliberately gated on `!snap.metadata.fromCache`, not just "any onSnapshot callback fired": a
+// Firestore onSnapshot listener can deliver its very first callback from the SDK's own local
+// cache (an earlier write still buffered from this same session, or persisted cache if enabled)
+// before the server round-trip completes — that callback is real, but it is not evidence the
+// collection is caught up with the server, so it must not be treated as "sync complete" either.
+// Only a snapshot whose metadata says it came from the server counts toward readiness here.
+//
+// Cleared by unsubscribeIfCollections (called on sign-out/user-switch, itself followed by a fresh
+// subscribeIfCollections on the next sign-in) so a new user/session never inherits a stale "already
+// synced" flag from a previous one; a mere network drop-and-reconnect on the SAME still-attached
+// listener does not need a reset, since it already had a genuine server-confirmed baseline before
+// the drop and the SDK reconciles the listener's state on reconnect rather than restarting it.
+//
+// Used by if-toggle-asset (assetLink expectedVersion) to refuse to guess a version from a
+// collection that has not been server-confirmed even once, rather than risk sending a wrong
+// (too-low) expectedVersion that the server would then reject as spuriously "stale".
+let ifCollSyncedOnce = new Set();
 /* تسجيل مجموعة بيانات (Firestore collection) إضافية من ملف خارجي (مثل oppAuditLog لسجل
    التدقيق، أو أي مجموعة Phase-1 قادمة) — تنضمّ تلقائياً لنفس آلية المزامنة/التخزين المحلي
    الموجودة أصلاً لـ investors/funds/... دون تكرار أي بنية تحتية. يجب استدعاؤها قبل initDb()
@@ -636,8 +704,16 @@ function subscribeIfCollections(){
   if(!DB) return;
   IF_COLLECTIONS.forEach(coll=>{
     if(ifUnsub[coll]) return;
-    ifUnsub[coll] = DB.collection(coll).onSnapshot(snap=>{
+    // لا .where()/.limit() هنا عمداً — هذا اشتراك على المجموعة كاملة غير مصفّاة وغير مقسَّمة صفحات،
+    // بحيث يبقى STORE[coll] دائماً القائمة الكاملة الحقيقية (راجع تعليق ifCollSyncedOnce أعلاه).
+    // { includeMetadataChanges: true } ضروري هنا تحديداً: بدونه، إن وصلت أول لقطة من الذاكرة المحلية
+    // (fromCache=true) ثم تأكّد الخادم لاحقاً بنفس البيانات تماماً (بلا أي تغيير فعلي)، لن يُستدعى
+    // الاستدعاء الثاني إطلاقاً افتراضياً (Firestore يُسكِت أحداث "تغيّر Metadata فقط" افتراضياً) --
+    // فتبقى ifCollSyncedOnce غير مُفعَّلة أبداً رغم أن الخادم أكَّد البيانات فعلاً. مع هذا الخيار، كل
+    // انتقال من fromCache=true إلى false يُستدعي الدالة من جديد حتى بلا تغيّر في البيانات نفسها.
+    ifUnsub[coll] = DB.collection(coll).onSnapshot({ includeMetadataChanges: true }, snap=>{
       STORE[coll] = snap.docs.map(d=>({id:d.id, data:d.data()}));
+      if(!snap.metadata.fromCache) ifCollSyncedOnce.add(coll);
       render();
     }, err=>console.error(coll+' sync error:', err));
   });
@@ -645,6 +721,7 @@ function subscribeIfCollections(){
 function unsubscribeIfCollections(){
   IF_COLLECTIONS.forEach(coll=>{ if(ifUnsub[coll]){ ifUnsub[coll](); ifUnsub[coll]=null; } });
   IF_COLLECTIONS.forEach(coll=>{ STORE[coll]=[]; });
+  ifCollSyncedOnce.clear();
 }
 
 async function persistIfRecord(coll, rec){
@@ -680,13 +757,29 @@ async function deleteIfRecord(coll, id){
   if(!DB) saveIfLocal(coll);
 }
 /* سجل التدقيق (Audit Trail) — يُنشأ تلقائياً فقط، ولا واجهة لتعديله يدوياً */
-async function logIfTransaction(entry){
-  const rec = { id: uid('TXN'), data: Object.assign({
+async function logIfTransaction(entry, explicitId){
+  // Phase 2R-4D4-C: معرّف صريح اختياري (type-action-relatedId) بدل uid() عشوائي دائماً — يسمح
+  // لقاعدة firestore.rules (transactionCanonicalId) برفض أي تسجيل تدقيق مكرَّر لنفس الحدث
+  // (نقرة مزدوجة/طلب متزامن/إعادة إرسال) كـ"تحديث" على مستند موجود، بدل الاعتماد على النية
+  // الحسنة للعميل فقط. فشل متوقَّع بسبب هذا التكرار لا يُعامَل كخطأ وصول (accessDenied)، بل
+  // يُسجَّل تحذيراً صامتاً فقط.
+  const id = explicitId || uid('TXN');
+  const rec = { id, data: Object.assign({
     at: new Date().toISOString(),
     by: currentUser? currentUser.email : (DEMO_MODE? 'زائر تجريبي' : 'محلي'),
     version: 1,
   }, entry) };
-  await persistIfRecord('transactions', rec);
+  if(DB){
+    try{
+      await DB.collection('transactions').doc(id).set(JSON.parse(JSON.stringify(rec.data)));
+    }catch(e){
+      console.warn('logIfTransaction: skipped (likely a duplicate audit entry for an already-logged event):', e && e.message);
+    }
+    return;
+  }
+  const idx = STORE.transactions.findIndex(o=>o.id===id);
+  if(idx>=0) STORE.transactions[idx]=rec; else STORE.transactions.push(rec);
+  saveIfLocal('transactions');
 }
 
 function netCommittedForInvestor(fundId, investorId){
@@ -721,7 +814,7 @@ function validateIfDraft(kind, draft, editId){
 const INVESTOR_CLASSES = ["مؤسسي (Institutional)","فردي مؤهَّل (Qualified Individual)","حكومي/سيادي (Sovereign)","عائلي (Family Office)"];
 const FUND_TYPES = ["دخل تأجيري (Income)","تطوير (Development)","تخزين أراضٍ (Land Banking)","مختلط (Mixed)"];
 const FUND_STATUS = [["🟡 تحت التأسيس","forming"],["🟢 مفتوح للاكتتاب","raising"],["🔵 مُغلَق ويستثمر","investing"],["⚪ في مرحلة التصفية","harvesting"],["⚫ مُصفَّى بالكامل","closed"]];
-const FUND_STATUS_LABEL = Object.fromEntries(FUND_STATUS.map(([l,v])=>[v,l]));
+const FUND_STATUS_LABEL = Object.assign(Object.fromEntries(FUND_STATUS.map(([l,v])=>[v,l])), { archived: '🗄️ مؤرشف' });
 // بوابة اعتماد صريحة ومنفصلة (المرحلة السادسة-ب، بطلب صريح من المستخدم بعد سؤاله تحديداً): حالة
 // 'approved' جديدة بين pending/declared والترحيل النهائي — انظر تعليق firestore.rules عند
 // ledgerStatusTransitionOk للتفصيل الكامل لماذا لا يمكن تخطّيها.
@@ -868,6 +961,28 @@ function investorLedgerRows(){
     return { investor:inv, committed, paidIn, unfunded, overcalled, cumDist, dpi, rvpi, tvpi, fundCount:fundIds.length };
   });
 }
+// Phase 2R-4D4-C (الجولة الرابعة من المراجعة -- توحيد التصنيف مع functions/index.js): يطابق
+// isInKindCapitalCallRecord في functions/index.js بالضبط (نفس المنطق، لا مجرد نفس النتيجة) --
+// استبعاد نداء رأس مال من النقد الفعلي بفحص linkedCommitmentId وحده (كما كانت cashPaidIn تفعل هنا)
+// أغفل عكس نداء عيني جديد (بعد 2R-4D4-B): reverseTransaction يُصفِّر linkedCommitmentId على عكسه
+// دائماً بينما يُبقي inKindAssetId كما هو، فكان هذا العكس (رغم حمله inKindAssetId) يُحسَب كنقد هنا
+// خطأً. الفحص أدناه يتحقق من العلامتين معاً (inKindAssetId أو linkedCommitmentId)، ويرجع لتصنيف
+// السجل الأصلي عبر reversalOfId حين تغيبان كلتاهما عن قيد هو نفسه عكس -- يغطي أيضاً عكس سجل قديم
+// (سابق لمرحلة 2R-4D4-B) لا يحمل سوى linkedCommitmentId على الأصل، فيغدو عكسه بلا أي علامة مباشرة
+// إطلاقاً. سجل يتعذّر إيجاد أصله لا يُفترَض نقداً افتراضياً -- يُستبعَد تماماً بدل تخمين تصنيفه.
+function isInKindCapitalCall(rec, byId, seen){
+  const d = (rec && rec.data) || rec || {};
+  if(d.inKindAssetId || d.linkedCommitmentId) return true;
+  if(d.reversalOfId){
+    seen = seen || new Set();
+    if(seen.has(d.reversalOfId)) return true;
+    const orig = byId.get(d.reversalOfId);
+    if(!orig) return true;
+    seen.add(d.reversalOfId);
+    return isInKindCapitalCall(orig, byId, seen);
+  }
+  return false;
+}
 function fundLedgerSummary(fundId){
   const cmts = commitmentsForFund(fundId);
   const committed = cmts.reduce((a,c)=>a+n(c.data.commitmentAmount),0);
@@ -876,9 +991,13 @@ function fundLedgerSummary(fundId){
   const called = activeCalls.reduce((a,c)=>a+n(c.data.amount),0);
   const paidIn = calls.filter(c=>c.data.status==='paid').reduce((a,c)=>a+n(c.data.amount),0);
   // Phase 2R-4D4-B: paidIn أعلاه (يشمل نداءات النقل العيني) يبقى كما هو لأغراض DPI/التقارير
-  // الرأسمالية (بلا تغيير) — deployableCash وحدها تستخدم cashPaidIn الذي يستبعد أي نداء مرتبط
-  // بمساهمة عينية (linkedCommitmentId)، لأن قيمة الأرض ليست سيولة نقدية قابلة للنشر في استثمار جديد.
-  const cashPaidIn = calls.filter(c=>c.data.status==='paid' && !c.data.linkedCommitmentId).reduce((a,c)=>a+n(c.data.amount),0);
+  // الرأسمالية (بلا تغيير) — deployableCash وحدها تستخدم cashPaidIn الذي يستبعد أي نداء عيني (قديم
+  // أو جديد) أو عكس له، لأن قيمة الأرض ليست سيولة نقدية قابلة للنشر في استثمار جديد.
+  // Phase 2R-4D4-C (الجولة الرابعة): التصنيف عبر isInKindCapitalCall أعلاه (توحيداً مع
+  // functions/index.js) لا فحص linkedCommitmentId المباشر وحده -- انظر تعليقها.
+  const paidCalls = calls.filter(c=>c.data.status==='paid');
+  const paidCallsById = new Map(paidCalls.map(c=>[c.id, c]));
+  const cashPaidIn = paidCalls.filter(c=>!isInKindCapitalCall(c, paidCallsById)).reduce((a,c)=>a+n(c.data.amount),0);
   const dists = distributionsFor(fundId);
   const distPaid = dists.filter(d=>d.data.status==='paid').reduce((a,d)=>a+n(d.data.amount),0);
   const dpi = paidIn>0? distPaid/paidIn : null;
@@ -3230,9 +3349,9 @@ function renderFundDetail(fundId){
       <p class="note" style="margin:0 0 8px;">${T(`تسجيل تنفيذ فعلي لمساهمة عينية بالقيمة المتفَق عليها مسبقاً (${fmtSAR(ifForm.draft.commitmentAmount)}) — القيمة نفسها غير قابلة للتعديل هنا؛ أي تغيير في القيمة المعتمدة يحتاج قيداً عكسياً للالتزام الأصلي بدل تعديل التنفيذ. أدخل تاريخ النقل الفعلي والأصل الذي استُلمت المساهمة من أجله.`,`Recording the actual execution of an in-kind contribution at its previously agreed value (${fmtSAR(ifForm.draft.commitmentAmount)}) — that value cannot be edited here; changing the approved value requires a reversal of the original commitment, not an edit to the execution. Enter the actual transfer date and the asset this contribution was received for.`)}</p>
       <div class="grid3">
         ${ifField('تاريخ النقل الفعلي','Actual Transfer Date','callDate', ifForm.draft.callDate, {type:'date'})}
-        <div class="field"><label><span>${T('الأصل المستلَم من أجله','Asset Received For')}</span></label><select name="inKindAssetId" data-if-field="inKindAssetId"><option value="">${T('اختر أصلاً...','Select an asset...')}</option>${((STORE.funds.find(f=>f.id===ifForm.draft.fundId)||{}).data?.assetIds||[]).map(oid=>{ const opp=opportunities.find(o=>o.id===oid); return `<option value="${oid}" ${ifForm.draft.inKindAssetId===oid?'selected':''}>${esc((opp&&opp.data&&opp.data.meta&&opp.data.meta.name)||oid)}</option>`; }).join('')}</select></div>
+        <div class="field"><label><span>${T('الأصل المستلَم من أجله','Asset Received For')}</span></label><select name="inKindAssetId" data-if-field="inKindAssetId"><option value="">${T('اختر أصلاً...','Select an asset...')}</option>${opportunities.map(o=>`<option value="${o.id}" ${ifForm.draft.inKindAssetId===o.id?'selected':''}>${esc((o.data&&o.data.meta&&o.data.meta.name)||o.id)}</option>`).join('')}</select></div>
       </div>
-      ${((STORE.funds.find(f=>f.id===ifForm.draft.fundId)||{}).data?.assetIds||[]).length===0? `<p class="note" style="margin:6px 0 0; color:var(--danger,#b00);">${T('لا توجد أصول مرتبطة بهذا الصندوق بعد — اربط الفرصة المستهدفة بالصندوق (قسم "الأصول المرتبطة" أعلاه) قبل تسجيل التنفيذ.','No assets are linked to this fund yet — link the target opportunity to the fund (the "Linked Assets" section above) before recording execution.')}</p>` : ''}
+      ${opportunities.length===0? `<p class="note" style="margin:6px 0 0; color:var(--danger,#b00);">${T('لا توجد فرص عقارية مسجَّلة في النظام بعد — أضِف الفرصة المستلَمة كمساهمة عينية أولاً (تبويب الفرص) قبل تسجيل التنفيذ. لم يعد يُشترَط ربط الأصل بالصندوق مسبقاً؛ يمكن تنفيذ النقل ثم ربط الأصل بالصندوق لاحقاً.','No opportunities are recorded in the system yet — add the opportunity received as the in-kind contribution first (Opportunities tab) before recording execution. The asset no longer needs to be linked to the fund beforehand; you can execute the transfer and link the asset afterward.')}</p>` : ''}
       <div style="display:flex; gap:8px; margin-top:8px;"><button class="btn btn-primary btn-sm" data-action="if-save" data-kind="executeInKind">💾 ${T('تأكيد التنفيذ','Confirm Execution')}</button><button class="btn btn-ghost btn-sm" data-action="if-cancel-form">${T('إلغاء','Cancel')}</button></div>
     </div>` : '';
   const ccForm = ifForm && ifForm.kind==='capitalCall' ? `
@@ -3911,7 +4030,11 @@ document.addEventListener('click', async (e)=>{
         alert(T('تم تنفيذ نقل هذه المساهمة العينية مسبقاً.','This in-kind contribution has already been executed.'));
         ifForm = null; render(); return;
       }
-      const ccId = uid('CC');
+      // Phase 2R-4D4-C: معرّف حتمي (CC-EXEC-<commitmentId>) بدل uid() عشوائي — يجعل قاعدة
+      // firestore.rules (linkedCommitmentOk) ترفض أي تنفيذ ثانٍ لنفس الالتزام كـ"تحديث" على
+      // مستند موجود (allow update: if false)، بصرف النظر عن نقرة مزدوجة أو طلب متزامن أو إعادة
+      // إرسال متعمَّدة — الحماية هنا خادمية عبر معرّف المستند نفسه، لا تعتمد فقط على الفحص أعلاه.
+      const ccId = 'CC-EXEC-' + draft.commitmentId;
       const ccRec = { id: ccId, data: Object.assign(blankCapitalCall(draft.fundId), {
         investorId: draft.investorId,
         amount: draft.commitmentAmount,
@@ -3922,8 +4045,27 @@ document.addEventListener('click', async (e)=>{
         linkedCommitmentId: draft.commitmentId,
         inKindAssetId: draft.inKindAssetId,
       }) };
-      await persistIfRecord('capitalCalls', ccRec);
-      await logIfTransaction({ type:'capitalCall', action:'create', relatedId:ccId, fundId:draft.fundId, investorId:draft.investorId, amount:draft.commitmentAmount });
+      if(DB){
+        try{
+          await DB.collection('capitalCalls').doc(ccId).set(JSON.parse(JSON.stringify(ccRec.data)));
+        }catch(e){
+          console.warn('executeInKind: rejected as duplicate execution (expected if resubmitted):', e && e.message);
+          alert(T('يبدو أن هذا النقل نُفِّذ للتو (ربما بنقرة مزدوجة أو من جلسة أخرى) — لن يُنشأ تنفيذ مكرَّر.','It looks like this transfer was just executed (perhaps a double-click or another session) — a duplicate execution will not be created.'));
+          ifForm = null;
+          render();
+          return;
+        }
+      } else {
+        if(STORE.capitalCalls.some(o=>o.id===ccId)){
+          alert(T('تم تنفيذ نقل هذه المساهمة العينية مسبقاً.','This in-kind contribution has already been executed.'));
+          ifForm = null;
+          render();
+          return;
+        }
+        STORE.capitalCalls.push(ccRec);
+        saveIfLocal('capitalCalls');
+      }
+      await logIfTransaction({ type:'capitalCall', action:'create', relatedId:ccId, fundId:draft.fundId, investorId:draft.investorId, amount:draft.commitmentAmount }, 'capitalCall-create-'+ccId);
       ifForm = null;
       render();
       return;
@@ -3989,7 +4131,7 @@ document.addEventListener('click', async (e)=>{
         return;
       }
       const newId = resp && resp.data && resp.data.id;
-      await logIfTransaction({ type:kind, action:'create', relatedId:newId||null, fundId:ifForm.draft.fundId, investorId:ifForm.draft.investorId, amount:ifForm.draft.amount });
+      await logIfTransaction({ type:kind, action:'create', relatedId:newId||null, fundId:ifForm.draft.fundId, investorId:ifForm.draft.investorId, amount:ifForm.draft.amount }, newId? (kind+'-create-'+newId) : undefined);
       await loadAll();
       ifForm = null;
       render();
@@ -3998,7 +4140,7 @@ document.addEventListener('click', async (e)=>{
     const id = ifForm.editId || uid(ifPrefixFor(kind));
     await persistIfRecord(coll, { id, data: ifForm.draft });
     if(isNew && (kind==='capitalCall' || kind==='distribution')){
-      await logIfTransaction({ type:kind, action:'create', relatedId:id, fundId:ifForm.draft.fundId, investorId:ifForm.draft.investorId, amount:ifForm.draft.amount });
+      await logIfTransaction({ type:kind, action:'create', relatedId:id, fundId:ifForm.draft.fundId, investorId:ifForm.draft.investorId, amount:ifForm.draft.amount }, kind+'-create-'+id);
     }
     // Phase 2R-4D4-B: حفظ الالتزام العيني يسجّل التعهّد (الوعد بنقل الأصل) فقط الآن — لم يعد يُنشئ
     // تلقائياً نداء رأس مال 'paid' يمثّل نقلاً لم يحدث بعد فعلياً (كان المسار القديم يُنشئه فور
@@ -4015,6 +4157,29 @@ document.addEventListener('click', async (e)=>{
   }
   if(action==='if-delete'){
     const kind = el.dataset.kind, id = el.dataset.id;
+    if(kind==='fund'){
+      // Phase 2R-4D4-C: حذف الصندوق لم يعد عملية عميل مباشرة (firestore.rules: allow delete: if
+      // false) — أي صندوق له تاريخ (أصول مرتبطة، التزامات، نداءات، توزيعات، أو سجلات تدقيق سابقة)
+      // يُؤرشَف بدلاً من حذفه فعلياً (Cloud Function archiveOrDeleteFund، functions/index.js)، فلا
+      // تُخفى التزامات/أصول ولا تُترَك سجلات يتيمة. صندوق بلا أي تاريخ إطلاقاً يُحذَف فعلياً.
+      const useServerFunction = !DEMO_MODE && DB && typeof firebase!=='undefined' && firebase.functions;
+      if(useServerFunction){
+        if(!confirm(T('سيُؤرشَف هذا الصندوق (أو يُحذَف فعلياً فقط إن لم يكن له أي تاريخ إطلاقاً) — لا يمكن التراجع عن الحذف الفعلي. متابعة؟','This fund will be archived (or actually deleted only if it has no history at all) — actual deletion cannot be undone. Continue?'))) return;
+        try{
+          await firebase.functions().httpsCallable('archiveOrDeleteFund')({ fundId:id });
+        }catch(e){
+          alert((e && e.message) || T('تعذّر أرشفة/حذف الصندوق عبر الخادم.','The server could not archive/delete the fund.'));
+          return;
+        }
+        await loadAll();
+        render();
+        return;
+      }
+      if(!confirm(T('هل أنت متأكد من الحذف؟ (وضع تجريبي/محلي) لا يمكن التراجع عن هذا الإجراء.','Are you sure you want to delete this? (demo/local mode) This cannot be undone.'))) return;
+      await deleteIfRecord('funds', id);
+      render();
+      return;
+    }
     if(kind==='capitalCall'){
       const rec = STORE.capitalCalls.find(r=>r.id===id);
       if(rec && rec.data.linkedCommitmentId){
@@ -4053,6 +4218,12 @@ document.addEventListener('click', async (e)=>{
     const ids = fund.data.assetIds||(fund.data.assetIds=[]);
     const i = ids.indexOf(oppId);
     const linking = i<0;
+    // Phase 2R-4D4-C (الجولة الرابعة من المراجعة): يلتقط جلسة المصادقة الحالية لحظة بدء هذا الإجراء.
+    // نداء الخادم أدناه غير متزامن وقد يستقر بعد تبديل مستخدم حقيقي (تسجيل خروج ثم دخول آخر، أو
+    // تبديل مباشر) -- عندها تخص نتيجته جلسة لم تعد سارية، ويجب تجاهلها كلياً (بلا كتابة على STORE،
+    // بلا alert، بلا render) بدل كتابة بيانات تلك الجلسة السابقة فوق الجلسة الحالية النشطة الآن.
+    const __startAuthSessionSeq = authSessionSeq;
+    const sessionStillCurrent = () => authSessionSeq === __startAuthSessionSeq;
     // محرك ربط رأس المال (المرحلة الخامسة) — بوابة خارجية *قبل* الربط فقط (فكّ الربط يبقى غير
     // مقيَّد كما كان دائماً، حتى لا يُحبَس صندوق في حالة لا يقدر الخروج منها). لا منطق حجب هنا،
     // فقط استدعاء registerAssetLinkGuard المُسجَّلة من capital-allocation-engine.js.
@@ -4063,18 +4234,167 @@ document.addEventListener('click', async (e)=>{
     // تنفيذ فعلي عبر الخادم (Cloud Function linkAssetToFund، functions/index.js) عند توفر Firebase
     // حقيقي (غير وضع تجريبي/محلي): يعيد فرض كل قيود الربط (اعتماد IC نافذ، السقف المخصَّص للفرصة،
     // السيولة القابلة للتوزيع الفعلية للصندوق) بصلاحيات Admin SDK داخل معاملة (transaction) ذرّية،
-    // بدل الاعتماد فقط على الحارس أعلاه في المتصفح (الذي يبقى كطبقة تجربة استخدام سريعة قبل أي
-    // رحلة فعلية للخادم — لا تغيير على فكّ الربط، يبقى غير مقيَّد أبداً كما كان دائماً).
+    // بدل الاعتماد فقط على الحارس أعلاه في المتصفح. Phase 2R-4D4-C: فكّ الربط عاد يُفحَص خادمياً
+    // أيضاً الآن (لم يعد دائماً غير مقيَّد كما كان) — يُرفَض إن وُجدت مساهمة عينية مُنفَّذة ومخصَّصة
+    // لهذا الأصل، إلا لمشرف (admin) يقدّم سبب تصحيح موثَّق (correctionReason).
     const useServerFunction = !DEMO_MODE && DB && typeof firebase!=='undefined' && firebase.functions;
     if(useServerFunction){
-      try{
-        await firebase.functions().httpsCallable('linkAssetToFund')({ fundId, oppId, unlink: !linking });
-      }catch(e){
-        alert((e && e.message) || T('تعذّر تنفيذ عملية الربط عبر الخادم.','The server could not complete the linking operation.'));
+      // Phase 2R-4D4-C (third review round): the server now requires expectedVersion -- how many
+      // assetLink events it can already see for this exact fund+asset pair -- and rejects the call
+      // outright if that has moved on since (a stale/out-of-order request), rather than silently
+      // no-op'ing or applying it against the wrong baseline. Computed here from STORE.transactions,
+      // the same in-memory data render() itself reads, refreshed by the loadAll() this handler
+      // itself calls right after every successful attempt below -- so it can go stale only if this
+      // asset was touched by someone else since this browser's last loadAll(), which is exactly the
+      // case the server is meant to catch. requestId is built deterministically from the user, the
+      // fund, the asset, the operation and this same expectedVersion (plus the correction reason
+      // when overriding), so a genuine retry of this exact click -- nothing else has changed in the
+      // meantime -- reproduces the identical id and replays the original result instead of
+      // re-executing, while two different users can never collide on one id.
+      // Phase 2R-4D4-C (third review round): never guess expectedVersion off an incomplete list.
+      // STORE.transactions is complete once 'transactions' has synced at least once (see
+      // ifCollSyncedOnce above) -- before that, it is just the initial empty array, and counting it
+      // would silently undercount instead of truthfully reporting "unknown". Refuse and ask the user
+      // to wait rather than sending a guessed (too-low) version the server would then reject as
+      // spuriously stale.
+      if(!ifCollSyncedOnce.has('transactions')){
+        alert(T('لا يزال سجل معاملات هذا الصندوق قيد المزامنة الأولى مع الخادم — يُرجى الانتظار لحظة ثم إعادة المحاولة.','This fund\'s transaction history is still completing its first sync with the server — please wait a moment and try again.'));
         return;
       }
+      const priorAssetLinkEvents = STORE.transactions.filter(t=>{
+        const d = t.data||{};
+        return d.fundId===fundId && d.relatedId===oppId && d.type==='assetLink';
+      }).length;
+      const actingEmail = (currentUser && currentUser.email || '').toLowerCase();
+      const buildRequestId = (isUnlink, reason) => {
+        let key = 'assetLink-'+actingEmail+'-'+fundId+'-'+oppId+'-'+(isUnlink?'unlink':'link')+'-'+priorAssetLinkEvents;
+        if(reason) key += '-' + hashStr(reason);
+        return key;
+      };
+      const handleStaleOrUnknown = async (msg) => {
+        if(/stale|aborted|expected version|expectedversion/i.test(msg)){
+          // Phase 2R-4D4-C (الجولة الرابعة): إن تبدّلت الجلسة أثناء انتظار هذا الرفض (تسجيل خروج/
+          // دخول آخر بينما الطلب معلَّق)، فهذا الرفض يخص جلسة لم تعد سارية -- لا alert، لا تحديث على
+          // STORE، لا render يخصّ المستخدم السابق فوق شاشة المستخدم الحالي.
+          if(!sessionStillCurrent()) return true;
+          alert(T('تغيّرت حالة ربط هذا الأصل منذ آخر تحديث — سيتم تحديث البيانات الآن، ثم يمكنك إعادة المحاولة.','This asset\'s link state changed since the last update — the data will now be refreshed, then you can try again.'));
+          // Phase 2R-4D4-C (third review round): loadAll() is a documented no-op whenever DB is
+          // configured (see loadAll() above) -- real-time onSnapshot listeners are what actually keep
+          // STORE current, and calling loadAll() here would silently do nothing while looking like a
+          // real refresh. The rejection itself proves a newer assetLink event already exists
+          // server-side, so explicitly re-fetch 'transactions' straight FROM THE SERVER (bypassing any
+          // stale local cache) here, rather than just hoping the passive onSnapshot listener has
+          // already caught up by the time the user retries.
+          // Phase 2R-4D4-C (الجولة الرابعة): يُعاد جلب وثيقة هذا الصندوق بعينه من الخادم أيضاً، لا
+          // transactions فقط -- اتجاه الربط/الفك الفعلي يعتمد على fund.assetIds، لا على عدّ أحداث
+          // transactions وحدها؛ إعادة المحاولة التالية يجب أن تُبنى على fund.assetIds حقيقي ومؤكَّد.
+          if(DB){
+            try{
+              const [snap, fundSnap] = await Promise.all([
+                DB.collection('transactions').get({ source: 'server' }),
+                DB.collection('funds').doc(fundId).get({ source: 'server' }),
+              ]);
+              if(!sessionStillCurrent()) return true; // تبدّلت الجلسة أثناء هذا الجلب أيضاً -- تجاهل
+              STORE.transactions = snap.docs.map(d=>({ id:d.id, data:d.data() }));
+              ifCollSyncedOnce.add('transactions');
+              if(fundSnap.exists) applyFetchedFundSnapshot(fundSnap.id, fundSnap.data());
+            }catch(refreshErr){
+              console.error('Explicit transactions/fund refresh after stale/aborted rejection failed:', refreshErr);
+              // Phase 2R-4D4-C (الجولة الخامسة): فشل هذا الجلب نفسه لا يجوز أن يمرّ بصمت -- الشاشة
+              // ستُعرَض بعده بحالة STORE القديمة (لم تُحدَّث) وكأنها الحالة الحقيقية الحالية، رغم
+              // أنها قد لا تكون كذلك بعد الرفض الذي استدعى هذا الجلب أصلاً. يُخبَر المستخدم صراحة
+              // بدل عرض حالة قديمة بصمت وكأنها مؤكَّدة.
+              if(!sessionStillCurrent()) return true;
+              alert(T('تعذّر تحديث بيانات هذا الأصل من الخادم بعد رفض العملية — الحالة المعروضة قد تكون قديمة ولا تعكس الوضع الحقيقي حالياً. يُرجى إعادة تحميل الصفحة قبل إعادة المحاولة.','Could not refresh this asset\'s data from the server after the rejection — the displayed state may be outdated and not reflect the real state right now. Please reload the page before retrying.'));
+            }
+          } else {
+            await loadAll();
+          }
+          if(!sessionStillCurrent()) return true;
+          render();
+          return true;
+        }
+        return false;
+      };
+      // Phase 2R-4D4-C (الجولة الخامسة من المراجعة): نجاح نداء الخادم لا يعني أن اتجاه *هذا* النداء
+      // تحديداً (ربط أم فك) هو ما نُفِّذ الآن فعلاً -- استجابة linkAssetToFund عند إعادة إرسال طلب
+      // سبق تنفيذه بنجاح (replay بنفس requestId والحمولة، انظر FNDREPLAY في اختبارات Functions) هي
+      // بالضبط prior.result المحفوظة من أول تنفيذ حقيقي ({ ok:true, newVersion })، دون أي حقل يميّز
+      // أنها نتيجة مُعادة لا تنفيذاً جديداً. تطبيق applyConfirmedLinkChange محلياً بناءً على اتجاه
+      // هذا النداء (linking المُلتقَط قبل أول await، أو isUnlinkOp) كان يفترض خطأً أن كل نجاح يعني
+      // تنفيذ هذا الاتجاه الآن تحديداً -- بالضبط عكس ما يحدث في سيناريو ربط←فك←إعادة ربط←إعادة إرسال
+      // طلب الفك القديم: يعيد الخادم نجاحاً محفوظاً (newVersion=2) بينما الحالة الحقيقية الحالية
+      // مربوطة فعلاً (نسخة 3) -- applyConfirmedLinkChange(true) كانت ستُظهر الأصل "غير مربوط" محلياً
+      // رغم بقائه مربوطاً على الخادم. كذلك كانت تُعدِّل الكائن fund المُلتقَط قبل أول await في هذا
+      // المعالج، والذي onSnapshot قد يكون استبدله بكائن STORE.funds جديد كلياً بحلول لحظة النجاح --
+      // التعديل على الكائن القديم لا يصل عندها إلى ما يُعرَض فعلياً. الإصلاح: لا تخمين محلي إطلاقاً؛
+      // بعد أي نجاح (تنفيذ جديد أو نتيجة مُعادة، لا فرق) يُعاد جلب وثيقة هذا الصندوق بعينها من
+      // الخادم مباشرة، محمياً بفحص الجلسة قبل الجلب وبعده؛ فشل هذا الجلب نفسه يُظهر تنبيهاً واضحاً
+      // بدل عرض الحالة القديمة بصمت وكأنها مؤكَّدة.
+      const refreshFundFromServerAfterSuccess = async () => {
+        if(!sessionStillCurrent()) return;
+        try{
+          const fundSnap = await DB.collection('funds').doc(fundId).get({ source: 'server' });
+          if(!sessionStillCurrent()) return;
+          if(fundSnap.exists) applyFetchedFundSnapshot(fundSnap.id, fundSnap.data());
+        }catch(refreshErr){
+          console.error('Fund refresh after confirmed assetLink success failed:', refreshErr);
+          if(!sessionStillCurrent()) return;
+          alert(T('نجحت عملية الربط/الفك، لكن تعذّر تأكيد الحالة الحالية من الخادم بعدها — قد لا تعكس الشاشة الحالة الحقيقية الآن. يُرجى إعادة تحميل الصفحة قبل أي إجراء آخر على هذا الأصل.','The link/unlink call succeeded, but the current state could not be confirmed from the server afterward — the screen may not reflect the real state right now. Please reload the page before taking any further action on this asset.'));
+        }
+      };
+      try{
+        await firebase.functions().httpsCallable('linkAssetToFund')({ fundId, oppId, unlink: !linking, expectedVersion: priorAssetLinkEvents, requestId: buildRequestId(!linking, null) });
+      }catch(e){
+        const msg = (e && e.message) || '';
+        if(await handleStaleOrUnknown(msg)) return;
+        // Phase 2R-4D4-C (الجولة الرابعة): تبدّلت الجلسة أثناء انتظار هذا الرفض غير المتعلّق بالنسخة
+        // (خطأ آخر تماماً) -- يخصّ جلسة لم تعد سارية، فلا alert ولا أي أثر على الشاشة الحالية.
+        if(!sessionStillCurrent()) return;
+        if(!linking && isAdmin(currentUser) && /earmarked|in-kind|orphan/i.test(msg)){
+          const reason = prompt(T('هذا الأصل له مساهمة عينية مُنفَّذة ومخصَّصة له — فكّ الربط سيُتيم ذلك النقل. أدخل سبب تصحيح موثَّق لتجاوز هذا كمشرف، أو اترك الحقل فارغاً للإلغاء:','This asset has an executed in-kind contribution earmarked to it — unlinking would orphan that transfer. Enter a documented correction reason to override this as an admin, or leave blank to cancel:'));
+          if(reason && reason.trim()){
+            try{
+              await firebase.functions().httpsCallable('linkAssetToFund')({ fundId, oppId, unlink: true, correctionReason: reason.trim(), expectedVersion: priorAssetLinkEvents, requestId: buildRequestId(true, reason.trim()) });
+            }catch(e2){
+              const msg2 = (e2 && e2.message) || '';
+              if(await handleStaleOrUnknown(msg2)) return;
+              if(!sessionStillCurrent()) return;
+              alert(msg2 || T('تعذّر تجاوز فكّ الربط عبر الخادم.','The server could not override the unlink.'));
+              return;
+            }
+            if(!sessionStillCurrent()) return;
+            await refreshFundFromServerAfterSuccess();
+            if(!sessionStillCurrent()) return;
+            await loadAll();
+            render();
+            return;
+          }
+          return;
+        }
+        alert(msg || T('تعذّر تنفيذ عملية الربط عبر الخادم.','The server could not complete the linking operation.'));
+        return;
+      }
+      // Phase 2R-4D4-C (الجولة الرابعة): نجح النداء -- إن تبدّلت الجلسة أثناء الانتظار، فهذه نتيجة
+      // جلسة سابقة لم تعد سارية: لا تُكتَب على STORE، ولا render يعرضها فوق شاشة المستخدم الحالي.
+      if(!sessionStillCurrent()) return;
+      await refreshFundFromServerAfterSuccess();
+      if(!sessionStillCurrent()) return;
       await loadAll();
       render();
+      return;
+    }
+    // Phase 2R-4D4-C (assetLink hardening): linking/unlinking against a real Firestore backend
+    // must go through linkAssetToFund (Admin SDK) -- firestore.rules blocks any client write to
+    // funds.assetIds (changesAssetIds) AND, as of this phase, any client create of a transactions
+    // doc with type:'assetLink' outright, for every role including admin. Reaching this fallback
+    // with a real DB configured used to throw an uncaught permission-denied error from
+    // persistIfRecord (assetIds was already blocked); it would now also fail identically on the
+    // transactions write below. Fail clearly instead, and only fall through to the local
+    // splice-and-log path below for the pure local/demo case (no DB at all), where neither rule
+    // applies.
+    if(DB){
+      alert(T('غير متاح: يتطلب ربط/فك الأصول اتصالاً فعّالاً بخدمة Cloud Functions. تحقق من الاتصال وأعد المحاولة.','Not available: linking/unlinking assets requires a working connection to Cloud Functions. Check your connection and try again.'));
       return;
     }
     if(i>=0) ids.splice(i,1); else ids.push(oppId);
@@ -4123,7 +4443,7 @@ document.addEventListener('click', async (e)=>{
     rec.data.approvedBy = currentUser? currentUser.email : (DEMO_MODE? T('زائر تجريبي','Demo visitor') : null);
     rec.data.approvedAt = todayStr();
     await persistIfRecord(coll, rec);
-    await logIfTransaction({ type:kind, action:'approve', relatedId:id, fundId:rec.data.fundId, investorId:rec.data.investorId, amount:rec.data.amount });
+    await logIfTransaction({ type:kind, action:'approve', relatedId:id, fundId:rec.data.fundId, investorId:rec.data.investorId, amount:rec.data.amount }, kind+'-approve-'+id);
     render();
     return;
   }
@@ -4157,7 +4477,7 @@ document.addEventListener('click', async (e)=>{
     }
     rec.data.status = 'paid';
     await persistIfRecord(coll, rec);
-    await logIfTransaction({ type:kind, action:'post', relatedId:id, fundId:rec.data.fundId, investorId:rec.data.investorId, amount:rec.data.amount });
+    await logIfTransaction({ type:kind, action:'post', relatedId:id, fundId:rec.data.fundId, investorId:rec.data.investorId, amount:rec.data.amount }, kind+'-post-'+id);
     render();
     return;
   }
@@ -4186,7 +4506,7 @@ document.addEventListener('click', async (e)=>{
     }
     rec.data.status = 'waived';
     await persistIfRecord('capitalCalls', rec);
-    await logIfTransaction({ type:kind, action:'waive', relatedId:id, fundId:rec.data.fundId, investorId:rec.data.investorId, amount:0 });
+    await logIfTransaction({ type:kind, action:'waive', relatedId:id, fundId:rec.data.fundId, investorId:rec.data.investorId, amount:0 }, kind+'-waive-'+id);
     render();
     return;
   }
@@ -5133,6 +5453,7 @@ export {
   fundEquityAndValue,
   investorLedgerRows,
   fundLedgerSummary,
+  applyFetchedFundSnapshot,
   irr,
   npvAt,
   withDefaults,

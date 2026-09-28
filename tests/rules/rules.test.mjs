@@ -144,24 +144,28 @@ await testEnv.withSecurityRulesDisabled(async (ctx)=>{
   await setDoc(doc(ctx.firestore(),'commitments','CMT-LEDGER-LOOP-REF'), { fundId:'FND-1', investorId:'INV-1', commitmentAmount:1, dateCommitted:'2026-01-01', contributionType:'cash', reversalOfId:null });
 });
 for(const coll of LEDGER_COLLECTIONS){
+  // Phase 2R-4D4-C: transactions تفرض الآن معرّف مستند حتمي (transactionCanonicalId) — معرّف
+  // عشوائي ثابت مثل 'X3' (المستخدم لبقية المجموعات هنا) لم يعد يصلح لها، فنشتق معرّفاً مطابقاً
+  // لشكل الوثيقة الفعلي (ledgerValidCreateShape) لهذه المجموعة تحديداً.
+  const docId = coll==='transactions' ? 'commitment-create-CMT-LEDGER-LOOP-REF' : 'X3';
   {
     const db = ctxFor(ANALYST_OWNER).firestore();
-    await assertFails(setDoc(doc(db, coll, 'X1'), ledgerValidCreateShape(coll)));
+    await assertFails(setDoc(doc(db, coll, docId), ledgerValidCreateShape(coll)));
     assert(true, `🔒 محلل عادي لا يقدر يكتب في ${coll} (دفتر الصندوق) — كانت مفتوحة لأي عضو مصرَّح له قبل هذا التعديل`);
   }
   {
     const db = ctxFor(SENIOR_IC).firestore();
-    await assertFails(setDoc(doc(db, coll, 'X2'), ledgerValidCreateShape(coll)));
+    await assertFails(setDoc(doc(db, coll, docId), ledgerValidCreateShape(coll)));
     assert(true, `🔒 عضو لجنة استثمار أول (senior_ic) لا يقدر يكتب في ${coll} أيضاً (دون دور مدير صندوق) — الحماية على مستوى الدور لا الفرصة`);
   }
   {
     const db = ctxFor(FUND_MANAGER).firestore();
-    await assertSucceeds(setDoc(doc(db, coll, 'X3'), ledgerValidCreateShape(coll)));
+    await assertSucceeds(setDoc(doc(db, coll, docId), ledgerValidCreateShape(coll)));
     assert(true, `✅ مدير صندوق (fund_manager) يقدر يكتب في ${coll} بنجاح`);
   }
   {
     const db = ctxFor(ANALYST_OWNER).firestore();
-    await assertSucceeds(getDoc(doc(db, coll, 'X3')));
+    await assertSucceeds(getDoc(doc(db, coll, docId)));
     assert(true, `✅ القراءة في ${coll} تبقى متاحة لأي عضو مصرَّح له (محلل عادي هنا)`);
   }
 }
@@ -458,22 +462,59 @@ for(const [label,context] of [['outsider',ctxFor(OUTSIDER)],['anonymous',testEnv
   assert(true, '🔒 حتى مدير الصندوق لا يقدر يعدّل سجل تدقيق (transactions) — append-only بالكامل، بلا أي استثناء دور');
   await assertFails(deleteDoc(doc(dbFM,'transactions','TXN-1')));
   assert(true, '🔒 ولا يقدر يحذفه — يطابق تماماً oppAuditLog/icDecisions/underwritingVersions');
-  await assertSucceeds(setDoc(doc(dbFM,'transactions','TXN-2'), { type:'assetLink', action:'create', relatedId:'OPP-1', fundId:'FND-1', amount:0, at:'2026-01-02T00:00:00.000Z', by:FUND_MANAGER, version:1 }));
-  assert(true, '✅ إنشاء سجل تدقيق جديد يبقى مسموحاً كما كان (append-only يعني إضافة حرة، لا منع كتابة)');
+  // Phase 2R-4D4-C (assetLink hardening): كانت هذه الحالة تُثبت assertSucceeds -- استثناء
+  // type=='assetLink' في firestore.rules لم يكن مفروضاً على العميل فعلياً رغم أن التعليق كان
+  // يصفه بأنه "يُكتب فقط عبر Admin SDK": أي مدير صندوق عادي كان يقدر يُنشئ معاملة assetLink
+  // مباشرة، بلا transactionMatchesRecord وبلا معرّف حتمي -- باب تزوير/تكرار حقيقي لسجل التدقيق
+  // (حالة الصندوق نفسها assetIds كانت محمية عبر changesAssetIds، لكن سجل تدقيقها لم يكن). أُغلق
+  // الاستثناء بالكامل لكل الأدوار؛ الحماية الوحيدة الآن Admin SDK داخل linkAssetToFund نفسه.
+  await assertFails(setDoc(doc(dbFM,'transactions','TXN-2'), { type:'assetLink', action:'create', relatedId:'OPP-1', fundId:'FND-1', amount:0, at:'2026-01-02T00:00:00.000Z', by:FUND_MANAGER, version:1 }));
+  assert(true, '🔒 لم يعد مدير الصندوق يقدر يُنشئ معاملة assetLink مباشرة من العميل -- الكتابة الوحيدة عبر linkAssetToFund بصلاحيات Admin SDK');
+  const dbAdminTxn = ctxFor(ADMIN).firestore();
+  await assertFails(setDoc(doc(dbAdminTxn,'transactions','TXN-2-admin'), { type:'assetLink', action:'create', relatedId:'OPP-1', fundId:'FND-1', amount:0, at:'2026-01-02T00:00:00.000Z', by:ADMIN, version:1 }));
+  assert(true, '🔒 ولا حتى الأدمن -- الاستثناء أُغلق لكل الأدوار، لا مدير الصندوق فقط');
+}
+{
+  // Phase 2R-4D4-C (third review round): assetLinkRequests -- سجل داخلي جديد بحت لتتبّع إعادة تنفيذ
+  // طلبات linkAssetToFund (requestId-keyed idempotent replay؛ راجع تعليقه في functions/index.js
+  // وتعليق هذه القاعدة في firestore.rules). ليس سجل تدقيق (ذاك يبقى في transactions أعلاه)، ولا
+  // للعميل أي سبب مشروع لقراءته أو الكتابة إليه إطلاقاً -- مغلق تماماً لكل الأدوار بما فيها الأدمن،
+  // تماماً مثل معاملات assetLink نفسها في القسم السابق. لم تُختبَر هذه القاعدة ضد المحاكي الحقيقي من
+  // قبل لأنها أُضيفت في هذه المرحلة بعد آخر تشغيل ناجح للمحاكي على جهاز المستخدم.
+  const dbFM = ctxFor(FUND_MANAGER).firestore();
+  const dbAdmin = ctxFor(ADMIN).firestore();
+  const seededPayload = { payload:{ email:FUND_MANAGER, fundId:'FND-1', oppId:'OPP-1', unlink:false, correctionReason:null, expectedVersion:0 }, result:{ ok:true, newVersion:1 }, at:'2026-01-02T00:00:00.000Z' };
+
+  await assertFails(setDoc(doc(dbFM,'assetLinkRequests','REQ-1'), seededPayload));
+  assert(true, '🔒 مدير الصندوق لا يقدر يكتب مباشرة إلى assetLinkRequests -- سجل داخلي لـlinkAssetToFund عبر Admin SDK فقط');
+  await assertFails(setDoc(doc(dbAdmin,'assetLinkRequests','REQ-1-admin'), seededPayload));
+  assert(true, '🔒 ولا حتى الأدمن -- مغلق لكل الأدوار تماماً مثل معاملات assetLink نفسها');
+
+  await testEnv.withSecurityRulesDisabled(async (ctx)=>{
+    await setDoc(doc(ctx.firestore(),'assetLinkRequests','REQ-SEEDED'), seededPayload);
+  });
+  await assertFails(getDoc(doc(dbFM,'assetLinkRequests','REQ-SEEDED')));
+  assert(true, '🔒 مدير الصندوق لا يقدر حتى قراءة سجل موجود فعلاً في assetLinkRequests -- لا قراءة إطلاقاً لأي دور');
+  await assertFails(getDoc(doc(dbAdmin,'assetLinkRequests','REQ-SEEDED')));
+  assert(true, '🔒 ولا الأدمن -- سجل داخلي بحت لـlinkAssetToFund، لا اطّلاع للعميل عليه إطلاقاً');
+  await assertFails(updateDoc(doc(dbFM,'assetLinkRequests','REQ-SEEDED'), { result:{ ok:false } }));
+  assert(true, '🔒 ولا تعديل عليه');
+  await assertFails(deleteDoc(doc(dbFM,'assetLinkRequests','REQ-SEEDED')));
+  assert(true, '🔒 ولا حذف له -- append-only من منظور الخادم فقط، مغلق تماماً من منظور العميل');
 }
 {
   // Phase 2R-4D4-A: transactions يجب أن يطابق سجلاً حقيقياً موجوداً فعلاً — لم يعد كافياً أن يكون
   // منشئه مدير صندوق فقط. CMT-1/DST-1 مُنشأة في القسم ١٠ أعلاه وما زالت موجودة (محاولات حذفها فشلت).
   const dbFM = ctxFor(FUND_MANAGER).firestore();
-  await assertFails(setDoc(doc(dbFM,'transactions','TXN-FAKE-RELATED'), { type:'capitalCall', action:'create', relatedId:'CC-DOES-NOT-EXIST', fundId:'FND-1', amount:1, at:'2026-01-03T00:00:00.000Z', by:FUND_MANAGER, version:1 }));
+  await assertFails(setDoc(doc(dbFM,'transactions','capitalCall-create-CC-DOES-NOT-EXIST'), { type:'capitalCall', action:'create', relatedId:'CC-DOES-NOT-EXIST', fundId:'FND-1', amount:1, at:'2026-01-03T00:00:00.000Z', by:FUND_MANAGER, version:1 }));
   assert(true, '🔒 2R-4D4-A: سجل تدقيق يشير إلى نداء رأس مال غير موجود مرفوض — لم يعد أي relatedId نصي كافياً');
-  await assertFails(setDoc(doc(dbFM,'transactions','TXN-WRONG-FUND'), { type:'commitment', action:'create', relatedId:'CMT-1', fundId:'FND-OTHER', amount:1000000, at:'2026-01-03T00:00:00.000Z', by:FUND_MANAGER, version:1 }));
+  await assertFails(setDoc(doc(dbFM,'transactions','commitment-create-CMT-1'), { type:'commitment', action:'create', relatedId:'CMT-1', fundId:'FND-OTHER', amount:1000000, at:'2026-01-03T00:00:00.000Z', by:FUND_MANAGER, version:1 }));
   assert(true, '🔒 2R-4D4-A: سجل تدقيق يطابق معرّف سجل حقيقي لكن بصندوق مختلف عن صندوق السجل الفعلي مرفوض');
-  await assertFails(setDoc(doc(dbFM,'transactions','TXN-WRONG-AMOUNT'), { type:'commitment', action:'create', relatedId:'CMT-1', fundId:'FND-1', amount:999999999, at:'2026-01-03T00:00:00.000Z', by:FUND_MANAGER, version:1 }));
+  await assertFails(setDoc(doc(dbFM,'transactions','commitment-create-CMT-1'), { type:'commitment', action:'create', relatedId:'CMT-1', fundId:'FND-1', amount:999999999, at:'2026-01-03T00:00:00.000Z', by:FUND_MANAGER, version:1 }));
   assert(true, '🔒 2R-4D4-A: سجل تدقيق بمبلغ لا يطابق مبلغ السجل الحقيقي المُشار إليه مرفوض — لا تضخيم مبلغ مفبرك');
-  await assertSucceeds(setDoc(doc(dbFM,'transactions','TXN-COMMITMENT-OK'), { type:'commitment', action:'create', relatedId:'CMT-1', fundId:'FND-1', amount:1000000, at:'2026-01-03T00:00:00.000Z', by:FUND_MANAGER, version:1 }));
+  await assertSucceeds(setDoc(doc(dbFM,'transactions','commitment-create-CMT-1'), { type:'commitment', action:'create', relatedId:'CMT-1', fundId:'FND-1', amount:1000000, at:'2026-01-03T00:00:00.000Z', by:FUND_MANAGER, version:1 }));
   assert(true, '✅ 2R-4D4-A: سجل تدقيق يطابق التزاماً حقيقياً بنفس الصندوق والمبلغ بالضبط ينجح كما هو متوقَّع');
-  await assertSucceeds(setDoc(doc(dbFM,'transactions','TXN-DISTRIBUTION-OK'), { type:'distribution', action:'create', relatedId:'DST-1', fundId:'FND-1', amount:300000, at:'2026-01-03T00:00:00.000Z', by:FUND_MANAGER, version:1 }));
+  await assertSucceeds(setDoc(doc(dbFM,'transactions','distribution-create-DST-1'), { type:'distribution', action:'create', relatedId:'DST-1', fundId:'FND-1', amount:300000, at:'2026-01-03T00:00:00.000Z', by:FUND_MANAGER, version:1 }));
   assert(true, '✅ 2R-4D4-A: سجل تدقيق يطابق توزيعة حقيقية بنفس الصندوق والمبلغ ينجح كما هو متوقَّع');
 }
 
@@ -510,40 +551,62 @@ for(const [label,context] of [['outsider',ctxFor(OUTSIDER)],['anonymous',testEnv
   assert(true, '🔒 القيد العكسي ليس استثناءً لكتابة العميل؛ إنشاؤه عبر reverseTransaction.');
   await assertFails(setDoc(doc(dbFM,'capitalCalls','CC-GATE-REVERSAL-PENDING'), { fundId:'FND-1', investorId:'INV-1', callNumber:6, callDate:'2026-01-01', amount:-100000, status:'pending', linkedCommitmentId:null, reversalOfId:'CC-GATE-PENDING-OK' }));
   assert(true, '🔒 2R-4D4-A: قيد عكسي مفبرك بحالة "pending" (بدل "paid") مرفوض أيضاً — هذه بالضبط كانت الثغرة الفعلية قبل هذه المرحلة (ledgerAmountOk وshرط status=="pending" كانا يكفيان معاً بلا أي حظر صريح لـreversalOfId)');
-  await assertFails(setDoc(doc(dbFM,'capitalCalls','CC-GATE-INKIND-FAKE'), { fundId:'FND-1', investorId:'INV-1', callNumber:7, callDate:'2026-01-01', amount:50000, status:'paid', linkedCommitmentId:'CMT-DOES-NOT-EXIST', reversalOfId:null }));
+  await assertFails(setDoc(doc(dbFM,'capitalCalls','CC-EXEC-CMT-DOES-NOT-EXIST'), { fundId:'FND-1', investorId:'INV-1', callNumber:7, callDate:'2026-01-01', amount:50000, status:'paid', linkedCommitmentId:'CMT-DOES-NOT-EXIST', reversalOfId:null }));
   assert(true, '🔒 2R-4D4-A: linkedCommitmentId يشير إلى مستند التزام غير موجود مرفوض — لم يعد أي معرّف نصي كافياً بحد ذاته');
   await testEnv.withSecurityRulesDisabled(async (ctx)=>{
     await setDoc(doc(ctx.firestore(),'commitments','CMT-INKIND-1'), { fundId:'FND-1', investorId:'INV-1', commitmentAmount:200000, dateCommitted:'2026-01-01', contributionType:'in_kind', reversalOfId:null });
     await setDoc(doc(ctx.firestore(),'commitments','CMT-INKIND-OTHERFUND'), { fundId:'FND-OTHER', investorId:'INV-1', commitmentAmount:200000, dateCommitted:'2026-01-01', contributionType:'in_kind', reversalOfId:null });
     await setDoc(doc(ctx.firestore(),'commitments','CMT-CASH-1'), { fundId:'FND-1', investorId:'INV-1', commitmentAmount:200000, dateCommitted:'2026-01-01', contributionType:'cash', reversalOfId:null });
   });
-  await assertFails(setDoc(doc(dbFM,'capitalCalls','CC-GATE-INKIND-WRONGFUND'), { fundId:'FND-1', investorId:'INV-1', callNumber:8, callDate:'2026-01-01', amount:200000, status:'paid', linkedCommitmentId:'CMT-INKIND-OTHERFUND', reversalOfId:null }));
+  await assertFails(setDoc(doc(dbFM,'capitalCalls','CC-EXEC-CMT-INKIND-OTHERFUND'), { fundId:'FND-1', investorId:'INV-1', callNumber:8, callDate:'2026-01-01', amount:200000, status:'paid', linkedCommitmentId:'CMT-INKIND-OTHERFUND', reversalOfId:null }));
   assert(true, '🔒 2R-4D4-A: linkedCommitmentId يشير لالتزام حقيقي لكن بصندوق مختلف عن صندوق النداء مرفوض');
-  await assertFails(setDoc(doc(dbFM,'capitalCalls','CC-GATE-INKIND-CASH'), { fundId:'FND-1', investorId:'INV-1', callNumber:9, callDate:'2026-01-01', amount:200000, status:'paid', linkedCommitmentId:'CMT-CASH-1', reversalOfId:null }));
+  await assertFails(setDoc(doc(dbFM,'capitalCalls','CC-EXEC-CMT-CASH-1'), { fundId:'FND-1', investorId:'INV-1', callNumber:9, callDate:'2026-01-01', amount:200000, status:'paid', linkedCommitmentId:'CMT-CASH-1', reversalOfId:null }));
   assert(true, '🔒 2R-4D4-A: linkedCommitmentId يشير لالتزام حقيقي لكنه نقدي (cash) لا عيني مرفوض');
-  await assertFails(setDoc(doc(dbFM,'capitalCalls','CC-GATE-INKIND-AMOUNTMISMATCH'), { fundId:'FND-1', investorId:'INV-1', callNumber:10, callDate:'2026-01-01', amount:999, status:'paid', linkedCommitmentId:'CMT-INKIND-1', reversalOfId:null }));
+  await assertFails(setDoc(doc(dbFM,'capitalCalls','CC-EXEC-CMT-INKIND-1'), { fundId:'FND-1', investorId:'INV-1', callNumber:10, callDate:'2026-01-01', amount:999, status:'paid', linkedCommitmentId:'CMT-INKIND-1', reversalOfId:null }));
   assert(true, '🔒 2R-4D4-A: مبلغ النداء لا يطابق مبلغ الالتزام العيني المرتبط بالضبط مرفوض');
-  await assertFails(setDoc(doc(dbFM,'capitalCalls','CC-GATE-INKIND-NOASSET'), { fundId:'FND-1', investorId:'INV-1', callNumber:11, callDate:'2026-01-01', amount:200000, status:'paid', linkedCommitmentId:'CMT-INKIND-1', reversalOfId:null }));
+  await assertFails(setDoc(doc(dbFM,'capitalCalls','CC-EXEC-CMT-INKIND-1'), { fundId:'FND-1', investorId:'INV-1', callNumber:11, callDate:'2026-01-01', amount:200000, status:'paid', linkedCommitmentId:'CMT-INKIND-1', reversalOfId:null }));
   assert(true, '🔒 2R-4D4-B: نداء نقل عيني بلا inKindAssetId مرفوض الآن — التنفيذ يجب أن يوثِّق الأصل المستلَم، لا مجرد نقل بلا إثبات');
-  await assertFails(setDoc(doc(dbFM,'capitalCalls','CC-GATE-INKIND-FAKEASSET'), { fundId:'FND-1', investorId:'INV-1', callNumber:12, callDate:'2026-01-01', amount:200000, status:'paid', linkedCommitmentId:'CMT-INKIND-1', inKindAssetId:'OPP-DOES-NOT-EXIST', reversalOfId:null }));
+  await assertFails(setDoc(doc(dbFM,'capitalCalls','CC-EXEC-CMT-INKIND-1'), { fundId:'FND-1', investorId:'INV-1', callNumber:12, callDate:'2026-01-01', amount:200000, status:'paid', linkedCommitmentId:'CMT-INKIND-1', inKindAssetId:'OPP-DOES-NOT-EXIST', reversalOfId:null }));
   assert(true, '🔒 2R-4D4-B: inKindAssetId يشير لمستند opportunities غير موجود مرفوض');
-  await assertFails(setDoc(doc(dbFM,'capitalCalls','CC-GATE-INKIND-NOCALLDATE'), { fundId:'FND-1', investorId:'INV-1', callNumber:13, amount:200000, status:'paid', linkedCommitmentId:'CMT-INKIND-1', inKindAssetId:'OPP-1', reversalOfId:null }));
+  await assertFails(setDoc(doc(dbFM,'capitalCalls','CC-EXEC-CMT-INKIND-1'), { fundId:'FND-1', investorId:'INV-1', callNumber:13, amount:200000, status:'paid', linkedCommitmentId:'CMT-INKIND-1', inKindAssetId:'OPP-1', reversalOfId:null }));
   assert(true, '🔒 2R-4D4-B: نداء نقل عيني بلا تاريخ نقل فعلي (callDate) مرفوض — التوثيق يتطلّب تاريخاً لا قيمة فقط');
-  await assertSucceeds(setDoc(doc(dbFM,'capitalCalls','CC-GATE-INKIND-REAL-OK'), { fundId:'FND-1', investorId:'INV-1', callNumber:14, callDate:'2026-01-01', amount:200000, status:'paid', linkedCommitmentId:'CMT-INKIND-1', inKindAssetId:'OPP-1', reversalOfId:null }));
+  await assertSucceeds(setDoc(doc(dbFM,'capitalCalls','CC-EXEC-CMT-INKIND-1'), { fundId:'FND-1', investorId:'INV-1', callNumber:14, callDate:'2026-01-01', amount:200000, status:'paid', linkedCommitmentId:'CMT-INKIND-1', inKindAssetId:'OPP-1', reversalOfId:null }));
+  // Phase 2R-4D4-C: معرّف مستند حتمي (CC-EXEC-<commitmentId>) يمنع تنفيذ نقل عيني مكرَّر لنفس
+  // الالتزام — أي محاولة ثانية (نقرة مزدوجة/طلب متزامن/إعادة إرسال) تُرفَض كـ"تحديث" على مستند
+  // موجود بالفعل (allow update: if false)، بصرف النظر عن تطابق البيانات المُرسَلة.
+  await assertFails(setDoc(doc(dbFM,'capitalCalls','CC-EXEC-CMT-INKIND-1'), { fundId:'FND-1', investorId:'INV-1', callNumber:15, callDate:'2026-01-02', amount:200000, status:'paid', linkedCommitmentId:'CMT-INKIND-1', inKindAssetId:'OPP-1', reversalOfId:null }));
+  assert(true, '🔒 2R-4D4-C: محاولة تنفيذ ثانية لنفس الالتزام العيني (نفس المعرّف الحتمي CC-EXEC-CMT-INKIND-1) تُرفَض كتحديث على مستند تنفيذ موجود بالفعل — لا تكرار حتى لو تطابقت البيانات تماماً');
+  // اختبار تزامن حقيقي (لا تسلسلي فقط) على تنفيذ عيني جديد: التزام ثانٍ مستقل، ثم طلبان متزامنان
+  // فعلاً عبر Promise.allSettled لنفس المعرّف الحتمي — Firestore يسلسل الكتابتين على نفس معرّف
+  // المستند، فتنجح واحدة بالضبط وتُرفَض الأخرى.
+  await testEnv.withSecurityRulesDisabled(ctx=>setDoc(doc(ctx.firestore(),'commitments','CMT-INKIND-2'), { fundId:'FND-1', investorId:'INV-1', commitmentAmount:150000, dateCommitted:'2026-01-01', contributionType:'in_kind', reversalOfId:null }));
+  const execConcurrent = ()=>setDoc(doc(ctxFor(FUND_MANAGER).firestore(),'capitalCalls','CC-EXEC-CMT-INKIND-2'), { fundId:'FND-1', investorId:'INV-1', callNumber:16, callDate:'2026-01-02', amount:150000, status:'paid', linkedCommitmentId:'CMT-INKIND-2', inKindAssetId:'OPP-1', reversalOfId:null });
+  const [ex1, ex2] = await Promise.allSettled([execConcurrent(), execConcurrent()]);
+  const execSucceeded = [ex1,ex2].filter(r=>r.status==='fulfilled').length;
+  assert(execSucceeded===1, `🔒 2R-4D4-C: تزامن حقيقي على تنفيذ نقل عيني (طلبان متزامنان فعلاً لنفس المعرّف الحتمي) — نجح ${execSucceeded} بالضبط (يجب أن يكون 1)`);
   assert(true, '✅ 2R-4D4-B: نداء نقل عيني مطابق فعلاً لالتزام in_kind حقيقي (نفس الصندوق/المستثمر/المبلغ) مع تاريخ نقل وأصل مستلَم موثَّقين (كلاهما جزء من التنفيذ المستقل الجديد، لا التوليد التلقائي القديم) ينجح كما هو متوقَّع');
 }
 {
   // Phase 2R-4D4-B: انتحال حقل "by" في transactions — كان ممكناً قبل هذه المرحلة (transactionMatchesRecord
   // لا تتحقق من هوية الكاتب، فقط من أن السجل المشار إليه حقيقي)؛ أُغلق عبر transactionAttributionHonest.
   const dbFM2 = ctxFor(FUND_MANAGER).firestore();
-  await assertFails(setDoc(doc(dbFM2,'transactions','TXN-FORGED-BY'), { type:'commitment', action:'create', relatedId:'CMT-1', fundId:'FND-1', amount:1000000, at:'2026-01-04T00:00:00.000Z', by:'someone-else@x.com', version:1 }));
+  await assertFails(setDoc(doc(dbFM2,'transactions','capitalCall-create-CC-GATE-PENDING-OK'), { type:'capitalCall', action:'create', relatedId:'CC-GATE-PENDING-OK', fundId:'FND-1', amount:100000, at:'2026-01-04T00:00:00.000Z', by:'someone-else@x.com', version:1 }));
   assert(true, '🔒 2R-4D4-B: transactions بحقل "by" منتحَل (لا يطابق بريد الكاتب الفعلي) مرفوض الآن — قبل هذه المرحلة كانت مطابقة السجل الأصلي وحدها كافية بلا تحقق من هوية الكاتب');
-  // قيد معروف ومفتوح عمداً هنا (لم يُغلَق في 2R-4D4-A ولا 2R-4D4-B): مطابقة سجل حقيقي لا تمنع أكثر
-  // من سجل transactions واحد يشير لنفس relatedId — لا فحص تكرار في القواعد. يحتاج معرّف مستند حتمي
-  // أو آلية تفرّد مخصَّصة، مؤجَّل لمرحلة لاحقة (انظر PHASE_2R_4D4A_LEDGER_CREATION_RULES.md).
-  await assertSucceeds(setDoc(doc(dbFM2,'transactions','TXN-DUPLICATE-1'), { type:'commitment', action:'create', relatedId:'CMT-1', fundId:'FND-1', amount:1000000, at:'2026-01-04T00:00:01.000Z', by:FUND_MANAGER, version:1 }));
-  await assertSucceeds(setDoc(doc(dbFM2,'transactions','TXN-DUPLICATE-2'), { type:'commitment', action:'create', relatedId:'CMT-1', fundId:'FND-1', amount:1000000, at:'2026-01-04T00:00:02.000Z', by:FUND_MANAGER, version:1 }));
-  assert(true, '⚠️ قيد معروف ومفتوح عمداً: سجلان مختلفان في transactions يشيران لنفس relatedId/fundId/amount الحقيقيين ينجحان كلاهما — matchesRecord لا يمنع تكرار سجل التدقيق، فقط يمنع الإشارة لسجل غير موجود أو مبلغ/صندوق غير مطابقَين');
+  // Phase 2R-4D4-C: أُغلقت هنا فعلياً الثغرة الموثَّقة والمتروكة مفتوحة عمداً في 2R-4D4-B (لم يكن
+  // هناك فحص تكرار على سجلات transactions) — معرّف مستند حتمي (transactionCanonicalId =
+  // type-action-relatedId) مفروض الآن في القاعدة نفسها، فأي محاولة تسجيل ثانية لنفس الحدث تُرفَض
+  // كـ"تحديث" على مستند موجود بالفعل (allow update: if false)، بصرف النظر عن نية الكاتب.
+  await assertSucceeds(setDoc(doc(dbFM2,'transactions','capitalCall-create-CC-GATE-PENDING-OK'), { type:'capitalCall', action:'create', relatedId:'CC-GATE-PENDING-OK', fundId:'FND-1', amount:100000, at:'2026-01-04T00:00:01.000Z', by:FUND_MANAGER, version:1 }));
+  assert(true, '✅ 2R-4D4-C: سجل تدقيق أول بمعرّف حتمي (type-action-relatedId) لحدث حقيقي ينجح كالمعتاد');
+  await assertFails(setDoc(doc(dbFM2,'transactions','capitalCall-create-CC-GATE-PENDING-OK'), { type:'capitalCall', action:'create', relatedId:'CC-GATE-PENDING-OK', fundId:'FND-1', amount:100000, at:'2026-01-04T00:00:02.000Z', by:FUND_MANAGER, version:1 }));
+  assert(true, '🔒 2R-4D4-C (كان قيداً مفتوحاً عمداً في 2R-4D4-B — أُغلق هنا فعلياً وليس توثيقاً فقط): محاولة ثانية لتسجيل نفس الحدث بنفس المعرّف الحتمي تُرفَض كتحديث على مستند تدقيق موجود بالفعل — لا تكرار بعد الآن حتى بنفس البيانات تماماً');
+  // اختبار تزامن حقيقي (لا تسلسلي فقط) يحاكي نقرة مزدوجة/طلب متزامن فعلي عبر Promise.allSettled —
+  // Firestore يسلسل الكتابتين على نفس معرّف المستند، فتنجح واحدة بالضبط وتُرفَض الأخرى.
+  const dbFM3 = ctxFor(FUND_MANAGER).firestore();
+  const txnConcurrent = ()=>setDoc(doc(dbFM3,'transactions','capitalCall-create-CC-GATE-1'), { type:'capitalCall', action:'create', relatedId:'CC-GATE-1', fundId:'FND-1', amount:500000, at:'2026-01-04T00:00:03.000Z', by:FUND_MANAGER, version:1 });
+  const [tx1, tx2] = await Promise.allSettled([txnConcurrent(), txnConcurrent()]);
+  const txnSucceeded = [tx1,tx2].filter(r=>r.status==='fulfilled').length;
+  assert(txnSucceeded===1, `🔒 2R-4D4-C: تزامن حقيقي على سجل تدقيق (طلبان متزامنان فعلاً عبر Promise.allSettled لنفس المعرّف الحتمي) — نجح ${txnSucceeded} بالضبط (يجب أن يكون 1)؛ ليس مجرد إعادة محاولة تسلسلية`);
 }
 {
   await testEnv.withSecurityRulesDisabled(async (ctx)=>{
@@ -695,8 +758,11 @@ for(const [role,email] of [['manager',FUND_MANAGER],['admin',ADMIN]]){
     const ref=doc(db,'funds',`D3-${role}-${shape}`);
     await assertSucceeds(setDoc(ref,data));
     await assertSucceeds(updateDoc(ref,{name:'Edited empty fund'}));
-    await assertSucceeds(deleteDoc(ref));
-    assert(!(await getDoc(ref)).exists(),`${role}: ${shape} fund create/edit/delete allowed`);
+    // Phase 2R-4D4-C: حذف الصندوق مباشرة من العميل مقفَل تماماً الآن (allow delete: if false) —
+    // حتى صندوق بلا أي تاريخ إطلاقاً لا يُحذَف إلا عبر archiveOrDeleteFund (Cloud Function،
+    // Admin SDK) — هذا الاختبار خارج نطاق محاكاة Firestore الأمنية هنا (لا Functions في هذه الوحدة).
+    await assertFails(deleteDoc(ref));
+    assert((await getDoc(ref)).exists(),`${role}: ${shape} fund direct client delete now denied unconditionally (archiveOrDeleteFund Cloud Function required)`);
   }
   for(const [shape,ids] of [['linked',['OPP-1']],['null',null],['string','OPP-1'],['map',{}]]){
     const ref=doc(db,'funds',`D3-${role}-invalid-${shape}`);
