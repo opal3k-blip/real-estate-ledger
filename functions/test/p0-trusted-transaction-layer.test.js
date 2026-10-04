@@ -287,8 +287,38 @@ function seedOpp(id, owner) {
       decision: { decision: 'approve' },
       readiness: { ready: true, gates: {} },
       reasons: [], conditions: [],
+      requestId: 'test-req-approve-fabricated',
     })), 'failed-precondition', 'fabricated readiness');
     assert.strictEqual(Object.keys(db.__all('icDecisions')).length, 0);
+    assert.strictEqual(Object.keys(db.__all('underwritingVersions')).length, 0);
+    assert.strictEqual(Object.keys(db.__all('icDecisionRequests')).length, 0);
+  });
+  // Phase 2R-4E: approveOpportunity now requires requestId, and only an APPROVAL decision
+  // (approve/approve_conditions) writes a v4 underwritingVersions doc -- reject/hold/revise
+  // still record the decision (and the request result) but must not produce a v4 version.
+  await test('approveOpportunity requires a requestId', async () => {
+    seedTeam();
+    seedOpp('OPP12', ANALYST);
+    await expectThrow(() => fns.approveOpportunity(req(SENIOR_IC, {
+      oppId: 'OPP12',
+      decision: { decision: 'reject' },
+    })), 'invalid-argument', 'missing requestId');
+    assert.strictEqual(Object.keys(db.__all('icDecisions')).length, 0);
+  });
+  await test('approveOpportunity reject decision is recorded but writes no v4 underwritingVersions doc', async () => {
+    seedTeam();
+    seedOpp('OPP13', ANALYST);
+    const resp = await fns.approveOpportunity(req(SENIOR_IC, {
+      oppId: 'OPP13',
+      decision: { decision: 'reject' },
+      reasons: [], conditions: [],
+      requestId: 'test-req-approve-reject-opp13',
+    }));
+    assert.strictEqual(resp.ok, true);
+    assert.strictEqual(resp.versionId, null);
+    assert.strictEqual(Object.keys(db.__all('icDecisions')).length, 1);
+    assert.strictEqual(Object.keys(db.__all('underwritingVersions')).length, 0);
+    assert.strictEqual(Object.keys(db.__all('icDecisionRequests')).length, 1);
   });
   await test('linkAssetToFund لا تزال تعمل كما كانت', async () => {
     seedTeam();

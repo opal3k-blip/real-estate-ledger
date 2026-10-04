@@ -42,6 +42,136 @@ import { icReadiness } from './ic-decision-gate.js';
 
 const APPROVAL_DECISIONS = ['approve', 'approve_conditions'];
 
+// Phase 2R-4E: requestId contract (client side of functions/index.js::approveOpportunity's
+// idempotent replay). One in-flight/last-attempted request is tracked per opportunity:
+//  - busy=true blocks a second click while the current attempt is still in flight, so a
+//    double-click can never mint two different requestIds for the same decision.
+//  - on a DEFINITIVE outcome (success, or a definitive rejection code) the entry is cleared —
+//    the next attempt for that opportunity is a fresh decision and gets a fresh requestId.
+//  - on an AMBIGUOUS outcome (network drop, timeout, deadline-exceeded, unavailable, internal,
+//    or any other code not known to be definitive) the entry is KEPT with busy=false: we do not
+//    know whether the server actually executed the request, so a retry of the exact same
+//    payload must reuse the exact same requestId (never mint a new one), letting the server's
+//    own idempotent replay recognize "the same request again" rather than risk double-execution.
+//    A retry with a genuinely different payload (the user changed the decision) is not a retry
+//    of that request at all, so it gets its own new requestId — reusing the old one there would
+//    just be rejected by the server as already-exists for a different payload.
+// إصلاح على مراجعة ثانية (بعد إصلاح بند ٢ أعلاه)، نقطتان أثبتهما المراجع باختبار حقيقي لا مصطنع:
+//
+// ١) "إعادة تحميل الصفحة تفقد معرّف الطلب المعلّق" — كانت pendingIcRequests في الذاكرة فقط (Map
+//    عادية)؛ أي إعادة تحميل (أو إعادة تهيئة الوحدة) تُفقِدها بالكامل. إذا كان الخادم قد نفَّذ
+//    الطلب الأول فعلاً لكن استجابته ضاعت (انقطاع شبكة بعد التنفيذ، قبل أن يصل الرد للعميل)، ثم
+//    أعاد المستخدم تحميل الصفحة وحاول مرة أخرى، كانت المحاولة التالية تُولِّد requestId **جديداً**
+//    لما يُفترض منطقياً أنه "نفس القرار المعلّق" — بالضبط الخطر الذي صُمِّم pendingIcRequests
+//    لمنعه أصلاً، فقط نجا منه إعادة التحميل بلا أي حماية. الإصلاح: مرآة في localStorage (مفتاح
+//    واحد يحمل كل الطلبات المعلّقة الحالية كـJSON)، تُقرأ عند تحميل الوحدة وتُكتب عند كل
+//    set/delete — تنجو من إعادة تحميل الصفحة لأنها تعيش خارج ذاكرة تشغيل JS للتبويب.
+// ٢) "تغيير المستخدم يعيد استخدام معرّف المستخدم السابق" — المفتاح كان oppId وحده؛ مستخدم آخر
+//    (بعد تسجيل خروج/دخول، أو جلسة مختلفة) على نفس الفرصة كان يرى نفس الإدخال المعلّق (requestId
+//    وsignature مستخدم آخر) ويحتمل إعادة استخدامه. هذا لا يتجاوز صلاحيات (الخادم يتحقق مستقلاً من
+//    هوية ودور المتصل الحقيقي في كل الحالات عبر requireRole)، لكنه خلل حقيقي في إدارة الطلبات/
+//    الجلسات. الإصلاح: المفتاح الآن "<بريد المستخدم>::<oppId>" — مستخدم مختلف = مفتاح مختلف بنيوياً،
+//    لا تقاطع ممكن إطلاقاً بين مستخدمين على نفس الفرصة.
+// export مباشر (بلا أي أثر جانبي خاص بهذا الاستدعاء) للثلاثة — يسمح باختبار مباشر لآلية
+// الاستمرارية والمفتاح المركَّب نفسها، بدل الاعتماد على محاكاة كاملة لمسار registerICWorkflow.
+const PENDING_IC_REQUESTS_STORAGE_KEY = 'reop:pendingIcRequests:v1';
+export function pendingIcRequestKey(userEmail, oppId){
+  return (userEmail || 'anon') + '::' + oppId;
+}
+export function loadPendingIcRequestsFromStorage(){
+  try{
+    if(typeof localStorage === 'undefined') return new Map();
+    const raw = localStorage.getItem(PENDING_IC_REQUESTS_STORAGE_KEY);
+    if(!raw) return new Map();
+    const parsed = JSON.parse(raw);
+    if(!parsed || typeof parsed !== 'object') return new Map();
+    const map = new Map(Object.entries(parsed));
+    // عند التحميل (أول مرة في تبويب/جلسة JS جديدة)، لا يوجد إطلاقاً أي طلب "قيد التنفيذ الآن" فعلياً
+    // في هذا السياق الجديد — busy:true محفوظة من قبل إعادة التحميل تعني فقط أن الاستجابة لم تصل
+    // بعد في السياق القديم، لا أن شيئاً يعمل الآن. نُعيدها busy:false دوماً عند التحميل: نتيجة
+    // غامضة قابلة لإعادة المحاولة بنفس requestId، لا "مشغولة" تمنع أي محاولة جديدة إلى الأبد.
+    map.forEach((entry) => { if(entry && entry.busy) entry.busy = false; });
+    return map;
+  }catch(e){
+    return new Map(); // تخزين محظور/تالف (وضع خاص، إعدادات متصفح) — نبدأ نظيفاً، لا نكسر الواجهة
+  }
+}
+// إصلاح على مراجعة ثالثة: كانت هذه الدالة تبتلع فشل الكتابة بصمت (بلا قيمة إرجاع)، فيستمر معالج
+// القرار في إرسال الطلب للخادم حتى لو تعذّر حفظ معرّفه فعلياً. التسلسل الذي أثبته المراجع: فشل
+// الكتابة → يُرسَل الطلب وتصل نتيجة غامضة → إعادة تحميل الصفحة → لا أثر لهذا الطلب في التخزين
+// (لأن الكتابة فشلت أصلاً) → المحاولة التالية تُولِّد requestId **جديداً تماماً** بلا أي علم أن
+// طلباً سابقاً قد يكون نفَّذه الخادم فعلاً — بالضبط خطر التكرار الذي صُمِّمت هذه الآلية كلها
+// لمنعه. الإصلاح: الدالة تُعيد الآن true/false؛ false تعني "لا يجوز الاعتماد على هذا المعرّف
+// كمحمي من إعادة التحميل" — والمستدعي (أدناه) يتوقف عن إرسال القرار كلياً في هذه الحالة، لا أن
+// يتابع كأن شيئاً لم يحدث.
+export function persistPendingIcRequests(map){
+  try{
+    if(typeof localStorage === 'undefined') return false;
+    localStorage.setItem(PENDING_IC_REQUESTS_STORAGE_KEY, JSON.stringify(Object.fromEntries(map)));
+    return true;
+  }catch(e){
+    return false; // تخزين محظور/ممتلئ — فشل صريح يُعاد للمستدعي، لا نجاح متظاهر
+  }
+}
+
+// إصلاح على مراجعة ثالثة: كان المعالج يحجز requestId في الذاكرة (pendingIcRequests.set) ثم يستدعي
+// persistPendingIcRequests() بلا فحص نتيجتها، فيُرسِل القرار للخادم حتى لو فشل الحفظ فعلياً في
+// localStorage. السيناريو الذي أثبته المراجع: فشل الكتابة → يُرسَل الطلب وتصل نتيجة غامضة → تُعاد
+// تهيئة الصفحة (فيضيع requestId لأنه لم يُحفَظ فعلياً) → المحاولة التالية تستخدم معرّفاً جديداً؛ لو
+// كان الخادم نفَّذ الطلب الأول فعلاً، قد يُسجَّل قرار إضافي عبر آلية الاستبدال المتماثل في الخادم.
+// الإصلاح: دالة مُصدَّرة صرفة تُستخدَم في نقطة الحجز الوحيدة في المعالج (ويختبرها الاختبار مباشرة
+// بلا محاكاة لمنطق المعالج نفسه) — تُرجع true فقط إذا نجح الحفظ الفعلي في localStorage؛ عند الفشل
+// تتراجع عن الإدخال في الذاكرة أيضاً وتُرجع false، فيتوقف المعالج قبل استدعاء الخادم إطلاقاً.
+//
+// إصلاح على مراجعة رابعة: التراجع عند فشل الحفظ كان يحذف الإدخال في pendingKey **دون قيد أو شرط**.
+// هذا صحيح فقط إذا لم يكن هناك إدخال سابق أصلاً (أول حجز لهذا الطلب). لكن إن كان هناك إدخال سابق
+// فعلاً — طلب سابق أُرسِل ووصلت نتيجته غامضة (busy:false, requestId محفوظ من محاولة سابقة)، ثم
+// المستخدم أعاد المحاولة بنفس الحمولة (نفس signature، فيُعاد استخدام requestId الأصلي نفسه)، وفشل
+// الحفظ في *هذه* المحاولة بالذات — فالحذف هنا يفقد requestId الأصلي الذي قد يكون الخادم نفَّذه
+// فعلاً في المحاولة الأولى، فتُولِّد المحاولة التالية (بعد عودة التخزين) معرّفاً **جديداً تماماً**
+// بلا علم بالطلب الأصلي — بالضبط الثغرة التي صُمِّمت هذه الآلية كلها لمنعها. الإصلاح: نحفظ الحالة
+// التي كانت موجودة قبل هذا الحجز (قد تكون undefined)، وعند فشل الحفظ نستعيدها بالضبط كما كانت —
+// لا نحذف إلا إذا لم يكن هناك شيء لنستعيده أصلاً.
+export function reservePendingIcRequest(pendingIcRequests, pendingKey, requestId, signature){
+  const previousEntry = pendingIcRequests.get(pendingKey); // الحالة قبل هذا الحجز — للاستعادة الدقيقة إن فشل الحفظ
+  pendingIcRequests.set(pendingKey, { requestId, signature, busy: true });
+  const persisted = persistPendingIcRequests(pendingIcRequests);
+  if(!persisted){
+    if(previousEntry){
+      pendingIcRequests.set(pendingKey, previousEntry); // استعادة الطلب السابق (نتيجة غامضة سابقاً) كما كان بالضبط — لا حذف لمعرّفه
+    }else{
+      pendingIcRequests.delete(pendingKey); // لا يوجد طلب سابق لنستعيده — هذا حجز جديد بالكامل فشل حفظه
+    }
+    persistPendingIcRequests(pendingIcRequests); // مزامنة التخزين مع الاستعادة/الحذف أعلاه، بأفضل جهد فقط؛ نتيجته هنا غير مهمة
+    return false;
+  }
+  return true;
+}
+const pendingIcRequests = loadPendingIcRequestsFromStorage(); // key: "<email>::<oppId>" -> { requestId, signature, busy }
+const IC_REQUEST_DEFINITIVE_ERROR_CODES = new Set([
+  'invalid-argument', 'permission-denied', 'unauthenticated', 'not-found', 'failed-precondition', 'already-exists',
+]);
+// إصلاح بند ٢ من مراجعة 4E: رمز الخطأ الحقيقي القادم من httpsCallable في SDK العميل يصل بصيغة
+// "functions/<code>" (مثلاً "functions/permission-denied") — هذه الصيغة موثَّقة رسمياً من Firebase
+// (firebase.google.com/docs/functions/callable)، وليست حالة نادرة أو بيئة محددة. المقارنة القديمة
+// كانت تقارن err.code الخام مباشرة بمجموعة IC_REQUEST_DEFINITIVE_ERROR_CODES التي تحمل الأكواد
+// بلا بادئة — فأي خطأ حقيقي بصيغة "functions/permission-denied" لا يطابق "permission-denied" أبداً،
+// فيُعامَل الرفض النهائي كنتيجة **غامضة** خطأً (الطلب المعلّق يبقى محفوظاً بدل أن يُحذف، ويُعاد
+// استخدام requestId نفسه في المحاولة التالية بدل توليد معرّف جديد لقرار يُفترض أنه رُفض نهائياً).
+// الإصلاح: توحيد الرمز (إزالة بادئة "functions/" إن وُجدت) قبل أي مقارنة — يعمل مع كِلا الصيغتين.
+// export مباشر (بلا أي أثر جانبي) خصيصاً ليكون قابلاً للاختبار المباشر (بند ٢ من مراجعة 4E: "اختبار
+// الحالتين") دون الحاجة لمحاكاة كامل مسار registerICWorkflow/httpsCallable.
+export function normalizeFunctionsErrorCode(code){
+  if (typeof code !== 'string') return code;
+  return code.startsWith('functions/') ? code.slice('functions/'.length) : code;
+}
+function icRequestPayloadSignature(oppId, decision, reasons, conditions, override){
+  return JSON.stringify({ oppId, decision, reasons, conditions, override: !!override });
+}
+function newIcRequestId(oppId){
+  return 'ic-' + oppId + '-' + Date.now() + '-' + Math.random().toString(36).slice(2, 10);
+}
+
 const DECISIONS = [
   { key:'approve',            ar:'اعتماد',            en:'Approve',                 color:'#34d399' },
   { key:'approve_conditions', ar:'اعتماد بشروط',      en:'Approve with Conditions', color:'#a3e635' },
@@ -189,6 +319,30 @@ export function registerICWorkflow(core){
       let decisionId = null;
 
       if(useServerFunction){
+        // منع النقر المزدوج أثناء تنفيذ طلب سابق لنفس الفرصة — نقرة ثانية أثناء التنفيذ يجب ألا
+        // تولّد requestId مختلفاً لنفس القرار (انظر التعليق أعلى pendingIcRequests). المفتاح الآن
+        // يشمل المستخدم الفعلي (pendingIcRequestKey) — لا oppId وحده — ومحفوظ في localStorage
+        // (ينجو من إعادة تحميل الصفحة)، لا في Map ذاكرة فقط.
+        const pendingKey = pendingIcRequestKey(decidedBy, oppId);
+        const inFlight = pendingIcRequests.get(pendingKey);
+        if(inFlight && inFlight.busy) return true;
+
+        const signature = icRequestPayloadSignature(oppId, decision, reasons, conditions, overrideChecked);
+        const requestId = (inFlight && inFlight.signature === signature)
+          ? inFlight.requestId // إعادة إرسال الطلب نفسه بالضبط بعد نتيجة غامضة سابقاً — نفس المعرّف
+          : newIcRequestId(oppId); // قرار جديد فعلاً (أول مرة، أو تغيّرت حمولته) — معرّف جديد
+
+        // إصلاح على مراجعة ثالثة: لا نستدعي الخادم إطلاقاً إن تعذّر حفظ معرّف الطلب فعلياً محلياً —
+        // إرسال الطلب بلا حفظ المعرّف يعيد فتح نفس الثغرة التي أُصلِحت في الجولة الثانية (ضياع
+        // requestId عند إعادة التحميل بعد نتيجة غامضة، مع احتمال تسجيل قرار إضافي).
+        if(!reservePendingIcRequest(pendingIcRequests, pendingKey, requestId, signature)){
+          alert(core.T(
+            'تعذّر حفظ حالة الطلب محلياً، لذلك لم يُرسَل القرار للخادم. يرجى المحاولة مرة أخرى.',
+            'Could not save the request state locally, so the decision was not sent to the server. Please try again.'
+          ));
+          return true;
+        }
+
         try{
           const callable = firebase.functions().httpsCallable('approveOpportunity');
           const resp = await callable({
@@ -196,22 +350,54 @@ export function registerICWorkflow(core){
             // The server derives readiness and audit fields from its saved snapshot.
             decision: { decision },
             reasons, conditions, override: overrideChecked,
+            requestId,
           });
           decisionId = resp && resp.data ? resp.data.decisionId : null;
+          // نتيجة نهائية (نجاح) — أي محاولة تالية على هذه الفرصة قرار جديد بمعرّف جديد.
+          pendingIcRequests.delete(pendingKey);
+          persistPendingIcRequests(pendingIcRequests);
         }catch(err){
+          // توحيد الرمز قبل أي مقارنة (انظر تعليق normalizeFunctionsErrorCode أعلى الملف) — يطابق
+          // الآن "permission-denied" و"functions/permission-denied" معاً بلا تمييز.
+          const code = normalizeFunctionsErrorCode(err && err.code);
+          const stillPending = pendingIcRequests.get(pendingKey);
+          if(stillPending) stillPending.busy = false;
+          if(code && IC_REQUEST_DEFINITIVE_ERROR_CODES.has(code)){
+            // رفض نهائي (بيانات غير صالحة/صلاحية/فرصة غير موجودة/شرط غير مستوفى/تكرار بحمولة
+            // مختلفة) — الخادم لم يكتب شيئاً؛ أي محاولة تالية قرار جديد بمعرّف جديد.
+            pendingIcRequests.delete(pendingKey);
+          }
+          // سواء بقي الإدخال (غامض، busy:false) أو حُذف (رفض نهائي) — يجب أن تنعكس الحالة في
+          // localStorage فوراً، لا أن تبقى محفوظة فقط في الذاكرة حتى الطلب التالي.
+          persistPendingIcRequests(pendingIcRequests);
+          // أي شيء آخر (انقطاع شبكة، انتهاء مهلة، الخادم غير متاح، خطأ داخلي...) نتيجة **غامضة**:
+          // لا نعرف إن كان الخادم نفَّذ الطلب فعلاً أم لا. لذلك لا نولّد معرّفاً جديداً هنا مهما
+          // حدث — إعادة المحاولة بنفس القرار بالضبط يجب أن تُعيد استخدام requestId نفسه (محفوظ
+          // أعلاه في stillPending) حتى تتعرّف آلية الاستبدال المتماثل (idempotent replay) في
+          // الخادم على الطلب كأنه نفس الطلب لا طلباً تنافسياً جديداً.
           alert(core.T('تعذّر اعتماد القرار عبر الخادم: ','Server could not record the decision: ') + (err && err.message ? err.message : String(err)));
           return true;
         }
         await core.loadAll();
-        const freshRec = core.opportunities.find(o=>o.id===oppId);
-        if(freshRec && APPROVAL_DECISIONS.includes(decision) && decisionId && core.persistIfRecord){
-          await core.persistIfRecord(
-            'underwritingVersions',
-            buildUnderwritingVersionRecord(core, oppId, core.withDefaults(freshRec.data), 'v4_ic_approved', 'ic_decision', decisionId)
-          );
-          await core.loadAll();
-        }
+        // Phase 2R-4E: سجل v4 (underwritingVersions) لم يعد يُكتَب من العميل هنا إطلاقاً — أصبح
+        // يُكتَب من approveOpportunity نفسها (functions/index.js) داخل نفس المعاملة الموثوقة على
+        // الخادم التي تكتب icDecisions، فتُضمَن الذرّية بينهما ومصدر بياناته الحقيقي (evaluated
+        // audit) لا تخمين العميل لما حسبه الخادم.
         core.render();
+        return true;
+      }
+
+      if(!core.DEMO_MODE && core.DB){
+        // مشروع Firebase حقيقي (لا وضع ديمو) لكن الدالة الخلفية غير متاحة من هذا العميل (SDK
+        // functions غير محمَّل، أو firebase غير معرَّف) — منذ هذه المرحلة لا يوجد مسار كتابة
+        // مباشر من العميل بديل أصلاً (firestore.rules تغلق opportunities.ic وicDecisions
+        // وunderwritingVersions.v4_ic_approved كلها على أي كتابة عميل)، فالمحاولة القديمة كانت
+        // ستفشل بصمت نسبي (permission-denied غامض). الأوضح للمستخدم رفض صريح الآن بدل محاولة
+        // محكوم عليها بالفشل.
+        alert(core.T(
+          'تعذّر الوصول إلى دالة اعتماد القرار على الخادم. تأكد من نشر Cloud Functions (راجع functions/README.md) ثم أعد المحاولة.',
+          'Could not reach the server-side decision function. Make sure Cloud Functions is deployed (see functions/README.md) and try again.'
+        ));
         return true;
       }
 

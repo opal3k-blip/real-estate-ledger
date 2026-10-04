@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "postinstall": "node scripts/fix-stream-json-legacy-paths.cjs",
     "pretest": "node -e \"require('fs').copyFileSync('../../firestore.rules','./firestore.rules')\"",
     "pretest:load": "node -e \"require('fs').copyFileSync('../../firestore.rules','./firestore.rules')\"",
     "test": "firebase emulators:exec --only firestore --project demo-test \"node rules.test.mjs\"",

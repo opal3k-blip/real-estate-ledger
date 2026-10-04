@@ -244,12 +244,28 @@ for(const coll of LEDGER_COLLECTIONS){
   assert(true, '🔒 حتى Senior IC لا يستطيع إنشاء v4 بلا sourceDecisionId يربطها بسجل قرار IC موجود');
 }
 {
+  // Phase 2R-4E: v4_ic_approved is now closed to EVERY client write, including the exact
+  // well-formed Senior IC payload (real, correctly-linked icDecisions record, honest savedBy)
+  // that used to succeed right here. It is written exclusively by approveOpportunity
+  // (functions/index.js) via the Admin SDK, inside the same trusted transaction as the
+  // icDecisions record itself -- a client-side setDoc must now fail for every role, admin
+  // included (an Admin SDK write bypasses these rules entirely by Firebase's own design; that
+  // is the one remaining path for a v4 write, not a client merely authenticated as admin).
   await testEnv.withSecurityRulesDisabled(async (ctx)=>{
     await setDoc(doc(ctx.firestore(),'icDecisions','ICD-UWV-OK'), { oppId:'OPP-1', decision:{ decision:'approve' }, recordedAt:'2026-01-01T00:00:00.000Z', recordedBy:SENIOR_IC });
   });
-  const db = ctxFor(SENIOR_IC).firestore();
-  await assertSucceeds(setDoc(doc(db,'underwritingVersions','UWV-V4-OK'), { oppId:'OPP-1', stage:'v4_ic_approved', trigger:'ic_decision', savedBy:SENIOR_IC, savedAt:'2026-01-01T00:00:01.000Z', sourceDecisionId:'ICD-UWV-OK', metrics:{ price:2000, equityIRR:0.16 } }));
-  assert(true, '✅ v4_ic_approved تُقبل فقط عندما تكون من Senior IC ومربوطة بسجل icDecisions صالح لنفس الفرصة ونفس المسجّل');
+  for(const [role,email] of [['senior_ic',SENIOR_IC],['fund_manager',FUND_MANAGER],['admin',ADMIN]]){
+    const db = ctxFor(email).firestore();
+    await assertFails(setDoc(doc(db,'underwritingVersions',`UWV-V4-CLIENT-${role}`), { oppId:'OPP-1', stage:'v4_ic_approved', trigger:'ic_decision', savedBy:email, savedAt:'2026-01-01T00:00:01.000Z', sourceDecisionId:'ICD-UWV-OK', metrics:{ price:2000, equityIRR:0.16 } }));
+    assert(true, `🔒 ${role}: v4_ic_approved مرفوضة من أي كتابة عميل الآن حتى بحمولة صحيحة تماماً ومربوطة بقرار IC حقيقي -- الكتابة الوحيدة المتبقية عبر approveOpportunity (Admin SDK)`);
+  }
+}
+{
+  // "لا يزال يعمل": التضييق أعلاه محصور بـv4_ic_approved فقط. اللقطة اليدوية (manual) تبقى تماماً
+  // كما كانت بلا أي تغيير في هذه المرحلة، بما فيها إنشاء الأدمن لها على فرصة لا يملكها.
+  const db = ctxFor(ADMIN).firestore();
+  await assertSucceeds(setDoc(doc(db,'underwritingVersions','UWV-MANUAL-STILL-WORKS'), { oppId:'OPP-1', stage:'manual', trigger:'manual', savedBy:ADMIN, savedAt:'2026-01-01T00:00:02.000Z', metrics:{ price:2000 } }));
+  assert(true, '✅ إغلاق v4_ic_approved أمام العميل لا يمس مسار اللقطة اليدوية (manual) -- يبقى يعمل كما كان تماماً، حتى لأدمن على فرصة لا يملكها');
 }
 {
   const db = ctxFor(SENIOR_IC).firestore();
@@ -500,6 +516,33 @@ for(const [label,context] of [['outsider',ctxFor(OUTSIDER)],['anonymous',testEnv
   await assertFails(updateDoc(doc(dbFM,'assetLinkRequests','REQ-SEEDED'), { result:{ ok:false } }));
   assert(true, '🔒 ولا تعديل عليه');
   await assertFails(deleteDoc(doc(dbFM,'assetLinkRequests','REQ-SEEDED')));
+  assert(true, '🔒 ولا حذف له -- append-only من منظور الخادم فقط، مغلق تماماً من منظور العميل');
+}
+{
+  // Phase 2R-4E: icDecisionRequests -- نفس نمط assetLinkRequests أعلاه بالضبط، لكن لتتبّع إعادة
+  // تنفيذ طلبات approveOpportunity (requestId-keyed idempotent replay؛ راجع تعليقه في
+  // functions/index.js وتعليق هذه القاعدة في firestore.rules). ليس سجل تدقيق (ذاك يبقى في
+  // icDecisions/underwritingVersions)، ولا للعميل أي سبب مشروع لقراءته أو الكتابة إليه إطلاقاً --
+  // مغلق تماماً لكل الأدوار بما فيها الأدمن وSenior IC، تماماً مثل assetLinkRequests.
+  const dbSeniorIc = ctxFor(SENIOR_IC).firestore();
+  const dbAdminIcReq = ctxFor(ADMIN).firestore();
+  const seededIcPayload = { payload:{ email:SENIOR_IC, oppId:'OPP-1', decisionType:'approve', reasons:[], conditions:[], override:false }, result:{ ok:true, decisionId:'ICD-X', versionId:'UWV-X' }, at:'2026-01-02T00:00:00.000Z' };
+
+  await assertFails(setDoc(doc(dbSeniorIc,'icDecisionRequests','ICREQ-1'), seededIcPayload));
+  assert(true, '🔒 حتى Senior IC لا يقدر يكتب مباشرة إلى icDecisionRequests -- سجل داخلي لـapproveOpportunity عبر Admin SDK فقط');
+  await assertFails(setDoc(doc(dbAdminIcReq,'icDecisionRequests','ICREQ-1-admin'), seededIcPayload));
+  assert(true, '🔒 ولا حتى الأدمن -- مغلق لكل الأدوار تماماً مثل assetLinkRequests');
+
+  await testEnv.withSecurityRulesDisabled(async (ctx)=>{
+    await setDoc(doc(ctx.firestore(),'icDecisionRequests','ICREQ-SEEDED'), seededIcPayload);
+  });
+  await assertFails(getDoc(doc(dbSeniorIc,'icDecisionRequests','ICREQ-SEEDED')));
+  assert(true, '🔒 Senior IC لا يقدر حتى قراءة سجل موجود فعلاً في icDecisionRequests -- لا قراءة إطلاقاً لأي دور');
+  await assertFails(getDoc(doc(dbAdminIcReq,'icDecisionRequests','ICREQ-SEEDED')));
+  assert(true, '🔒 ولا الأدمن -- سجل داخلي بحت لـapproveOpportunity، لا اطّلاع للعميل عليه إطلاقاً');
+  await assertFails(updateDoc(doc(dbSeniorIc,'icDecisionRequests','ICREQ-SEEDED'), { result:{ ok:false } }));
+  assert(true, '🔒 ولا تعديل عليه');
+  await assertFails(deleteDoc(doc(dbSeniorIc,'icDecisionRequests','ICREQ-SEEDED')));
   assert(true, '🔒 ولا حذف له -- append-only من منظور الخادم فقط، مغلق تماماً من منظور العميل');
 }
 {
@@ -796,6 +839,24 @@ for(const [role,db] of [['analyst',ctxFor(ANALYST_OWNER).firestore()],['senior',
 await assertSucceeds(getDoc(doc(ctxFor(ANALYST_OWNER).firestore(),'funds','D3-manager-linked')));
 
 console.log(failures? `\n${failures} FAILURE(S)` : '\nALL PASSED (current-rules expectations; real Firestore emulator)');
-console.warn('OPEN SECURITY ITEMS: ledger creation exceptions; linked-fund lifecycle and underwriting metric authority. Passing this suite is NOT full server-only certification.');
+// تحديث (هذه الجلسة، بعد مراجعة مقصودة): هذا التحذير كان يسرد ثلاثة عناصر أمنية "مفتوحة" منذ
+// مرحلة سابقة (قبل 2R-4D3/2R-4D4-A/B/C و2R-4E). راجعنا كل عنصر مقابل القواعد والاختبارات الحالية
+// فعلاً (لا افتراضاً) ووجدنا أن الثلاثة أُغلقت منذ ذلك الحين:
+//  • "ledger creation exceptions": أُغلق تدريجياً عبر 2R-4D4-A (linkedCommitmentOk، ledgerAmountOk،
+//    منع reversalOfId من العميل مباشرة) وB/C (معرّفات حتمية canonical id تمنع تكرار سجل transactions
+//    لنفس الحدث، وإغلاق نوع assetLink بالكامل أمام أي كتابة عميل — انظر transactionCanonicalId
+//    وmatch /transactions أعلاه في firestore.rules، والتعليقات المرحلية فيه).
+//  • "linked-fund lifecycle": أُغلق عبر 2R-4D3 (funds create يتطلب fundHasNoAssets، changesAssetIds
+//    يمنع تعديل assetIds من العميل) وأُغلق تماماً في 2R-4D4-C (allow delete: if false بلا أي استثناء
+//    — المسار الوحيد الآن archiveOrDeleteFund عبر Admin SDK، الذي يفحص الأربع مجموعات المحاسبية قبل
+//    أي حذف فعلي). مغطّى في القسم "٧) fund asset links" أعلاه (D3-*).
+//  • "underwriting metric authority": أُغلق في هذه الجلسة (Phase 2R-4E) — v4_ic_approved مرفوضة الآن
+//    من أي كتابة عميل حتى بحمولة صحيحة تماماً ومربوطة بقرار IC حقيقي؛ الكتابة الوحيدة المتبقية عبر
+//    approveOpportunity (Admin SDK) بعقد requestId كامل. مغطّى في القسم "٧) underwritingVersions" أعلاه.
+// ما يبقى خارج نطاق هذه الوحدة عمداً (لا يمكن لهذا الاختبار إثباته، بصرف النظر عن نتيجته):
+// (1) أن القواعد **المنشورة فعلياً** على مشروع Firebase الحقيقي تطابق هذا الملف بالضبط — هذا يتطلب
+//     الوصول لـFirebase Console الحقيقي، غير متاح من هذه البيئة؛ (2) أي مسار كتابة لم يُغطَّ بعد بأي
+//     اختبار في هذا الملف. القرار بشأن التحقق من (1) متروك لك.
+console.warn('SECURITY ITEMS PREVIOUSLY OPEN (ledger creation exceptions; linked-fund lifecycle; underwriting metric authority) are now closed as of Phase 2R-4D3/4D4-A-C and 2R-4E -- see comment above for the evidence trail. Remaining caveat: this suite proves the RULES FILE is correct: it cannot prove the rules deployed to the real Firebase project match this file. Confirm that separately via Firebase Console before relying on it in production.');
 await testEnv.cleanup();
 process.exit(failures?1:0);

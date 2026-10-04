@@ -226,14 +226,83 @@ async function allocatedElsewhereTx(tx, fundId, fund, excludeOppId) {
 /* Phase 2R-4C: saved opportunity inputs are read and recomputed inside the
    decision transaction. Client readiness, metrics and audit identity are ignored.
    A justified override applies only to computed policy failures, never a failed
-   calculation or undefined financial metrics. */
+   calculation or undefined financial metrics.
+
+   Phase 2R-4E (بطلب المستخدم صراحةً، بعد مراجعته لمسار underwritingVersions/icDecisions
+   وتصحيحه لتصميمين مقترحين سابقين): إغلاق ثلاث ثغرات إضافية بقيت بعد 2R-4C أعلاه:
+
+   ١) لم يكن هناك requestId إطلاقاً — إعادة إرسال نفس طلب الاعتماد (نقرة مزدوجة، أو إعادة محاولة
+      بعد Timeout مجهول النتيجة) كانت تُنشئ *قرار icDecisions ثانياً* لكل محاولة، رغم أن كلاً منها
+      نجحت فعلياً في المرة الأولى — لا حماية على مستوى approveOpportunity نفسها (بعكس
+      linkAssetToFund من 2R-4D4-C، الذي كان محمياً بـassetLinkRequests). الحل هنا مطابق تماماً
+      لذلك النمط: icDecisionRequests أدناه (icDecisionRequestPayloadsMatch) تُخزِّن نتيجة كل طلب
+      بمعرّفه، وإعادة إرسال requestId+حمولة مطابقين تُعيد *نفس* النتيجة الأصلية بلا معاملة جديدة
+      إطلاقاً؛ requestId بحمولة مختلفة (بريد آخر، فرصة أخرى، نوع قرار آخر، شروط/أسباب/تجاوز مختلفة)
+      يُرفَض بوضوح (already-exists). لا آلية expectedVersion هنا كما في linkAssetToFund — بقرار
+      صريح من المستخدم، طلب متأخر يصل بعد تعديل الفرصة، أو طلبان *مختلفان* متنافسان على نفس الفرصة،
+      يبقيان مسألة سياسة مستقلة لم تُحَل في هذه المرحلة (انظر docs/PHASE_2R_4E_HANDOFF.md) —
+      requestId هنا يحل فقط "نفس الطلب المنطقي، أُعيد إرساله، يُنفَّذ مرة واحدة على الأكثر".
+
+   ٢) لم تكن نسخة v4_ic_approved (underwritingVersions) تُكتَب هنا إطلاقاً — كانت تُكتَب لاحقاً من
+      العميل (ic-workflow.js، كتابة منفصلة عن هذه المعاملة تماماً)، بمقاييس (metrics) مُعاد حسابها
+      من جديد على العميل بدل القيم المُحتسَبة هنا فعلاً على الخادم، وبنافذة زمنية حقيقية بين كتابة
+      icDecisions هنا وكتابة underwritingVersions هناك يمكن أن تفشل جزئياً (فشل شبكة بين الطلبين)
+      فتترك قراراً معتمَداً بلا لقطة تسعير مقابلة له إطلاقاً. تُكتَب النسخة الآن هنا، ضمن *نفس*
+      المعاملة الذرّية على قرار approve/approve_conditions فقط تحديداً (سطر tx.set أدناه) — لا نسخة
+      لقرار reject/hold/revise (يبقى مسجَّلاً في icDecisions ونتيجة طلبه فقط، بلا نسخة باسم
+      v4_ic_approved، بالضبط كما طلب المستخدم). القيم المخزَّنة في metrics.equityIRR/projectIRR/
+      MOIC/dscrMin هي evaluated.audit.metrics نفسها المُحتسَبة أعلاه بالضبط (لا حساب ثانٍ منفصل) —
+      لا ثقة بأي قيمة عميل لهذه اللقطة إطلاقاً؛ price/oppType وحدهما (حقلا عرض فقط، لا يدخلان أي
+      حساب مالي) يُقرآن من نفس opp المقروءة هنا لأن trusted-ic.cjs (غير مُعدَّل في هذه المرحلة، لا
+      علاقة له بالاقتصاديات/Golden Master) لا يُعيدهما. thesisSnapshot أيضاً من نفس opp المقروءة
+      هنا بالضبط (لا من أي حقل يرسله العميل).
+
+      تعريف بصمة الإدخال (inputHash) وحدودها — كما طلب المستخدم صراحةً: inputHash هو
+      sha256(inputJson)، وinputJson هو JSON.stringify(auditValue(engine.withDefaults(input)))
+      حيث input هو *كامل* وثيقة الفرصة المحفوظة ناقص حقل ic فقط (انظر trusted-ic.cjs::recompute).
+      هذا يعني أن inputHash يشمل *كل* حقل آخر في الوثيقة — بما فيها meta.updatedBy/meta.updatedAt
+      — لا فقط الحقول التي تدخل فعلاً في engine.compute(): حفظان لنفس الفرصة بنفس الاقتصاديات
+      تماماً لكن بـmeta.updatedAt مختلف يُنتجان inputHash مختلفاً. هذا سلوك موجود أصلاً في
+      trusted-ic.cjs من قبل هذه المرحلة ولم يُغيَّر هنا؛ يُوثَّق فقط الآن بدقة. المدخلات *الفعلية*
+      نفسها (لا بصمتها وحدها) محفوظة بالكامل وبشكل غير قابل للتعديل في evaluated.audit.inputJson
+      داخل سجل icDecisions/{sourceDecisionId} نفسه (immutable، Admin SDK فقط، انظر firestore.rules)
+      — sourceDecisionId أدناه هو ذلك المرجع الثابت، لا حاجة لتكرار inputJson (قد يبلغ 350KB) في
+      وثيقة النسخة نفسها؛ inputHash/engineVersion يُكرَّران هنا فقط لعرض/تحقق سريع بلا الحاجة لقراءة
+      السجل الكامل.
+
+      معرّف الوثيقة UWV-<icRef.id> حتمي (لا عشوائي) — كل قرار اعتماد ناجح واحد فعلياً (icRef.id
+      عشوائي جديد فقط عند التنفيذ الحقيقي، لا عند إعادة تشغيل داخلي لنفس المعاملة من Firestore عند
+      تعارض، ولا عند إعادة تنفيذ requestId مطابق التي تُعيد النتيجة الأصلية بلا تنفيذ إطلاقاً) —
+      يحمل نسخة v4 واحدة بمعرّف يربطها بقراره بوضوح، دفاعاً إضافياً بعد أن أصبحت الحماية الأساسية
+      من التكرار هي requestId نفسه أعلاه.
+
+   ٣) ترتيب القراءات/الكتابات: طلب سجل الحالة (icDecisionRequests) وطلب الفرصة يُقرآن معاً
+      (Promise.all) قبل أي تحقق أو كتابة، بالضبط كما تتطلب معاملات Firestore (كل القراءات قبل أي
+      كتابة) — والمصادقة/الصلاحية (requireEmail/requireRole أعلاه) تحدث *دائماً* قبل الدخول في
+      المعاملة أصلاً، بما فيها عند إعادة تنفيذ requestId ستُعيد نتيجة محفوظة: لا مسار "سريع" يتجاوز
+      التحقق من الهوية لمجرد أن النتيجة ستكون من ذاكرة التخزين. نتيجة الطلب (icDecisionRequests)
+      وتحديث حالة الفرصة (opportunities.ic) وسجل القرار (icDecisions) ونسخة الاعتماد
+      (underwritingVersions، إن وُجدت) تُكتَب جميعها معاً في نفس المعاملة — فشل أي تحقق (هوية غير
+      مصرَّحة، شروط اعتماد غير مستوفاة) يرفض *قبل* أي كتابة إطلاقاً (استثناء JS قبل أول tx.set/
+      tx.update يُلغي المعاملة الذرّية كاملة تلقائياً، بلا كتابة جزئية بأي حال) — فلا قرار ولا نسخة
+      تُكتَب لطلب فاشل، تماماً كما طلب المستخدم. */
+function icDecisionRequestPayloadsMatch(a, b) {
+  return a.email === b.email && a.oppId === b.oppId && a.decisionType === b.decisionType
+    && a.override === b.override
+    && JSON.stringify(a.reasons) === JSON.stringify(b.reasons)
+    && JSON.stringify(a.conditions) === JSON.stringify(b.conditions);
+}
+
 exports.approveOpportunity = onCall(async (request) => {
   const email = requireEmail(request);
   await requireRole(email, 'senior_ic');
-  const { oppId, decision, reasons = [], conditions = [], override } = request.data || {};
+  const { oppId, decision, reasons = [], conditions = [], override, requestId } = request.data || {};
   const allowed = new Set(['approve', 'approve_conditions', 'revise', 'hold', 'reject']);
   if (typeof oppId !== 'string' || !oppId.trim() || oppId.includes('/') || !decision || !allowed.has(decision.decision)) {
     throw new HttpsError('invalid-argument', 'A valid oppId and IC decision are required.');
+  }
+  if (typeof requestId !== 'string' || !requestId.trim()) {
+    throw new HttpsError('invalid-argument', 'requestId (a stable identifier for this specific decision, unchanged on retry) is required.');
   }
   if (!Array.isArray(reasons) || reasons.length > 100 || reasons.some(r => typeof r !== 'string' || r.length > 4000)) {
     throw new HttpsError('invalid-argument', 'Reasons must be text.');
@@ -245,11 +314,18 @@ exports.approveOpportunity = onCall(async (request) => {
     throw new HttpsError('invalid-argument', 'Conditions must contain text, owner and an optional YYYY-MM-DD due date.');
   }
   const cleanConditions = conditions.map(c => ({ text: c.text.trim(), owner: (c.owner || '').trim(), dueDate: c.dueDate || '', status: 'pending' }));
+  const payload = { email, oppId, decisionType: decision.decision, reasons: cleanReasons, conditions: cleanConditions, override: !!override };
 
   const oppRef = db.collection('opportunities').doc(oppId);
   const icRef = db.collection('icDecisions').doc();
-  await db.runTransaction(async (tx) => {
-    const oppSnap = await tx.get(oppRef);
+  const requestRef = db.collection('icDecisionRequests').doc(requestId.trim());
+  return db.runTransaction(async (tx) => {
+    const [requestSnap, oppSnap] = await Promise.all([tx.get(requestRef), tx.get(oppRef)]);
+    if (requestSnap.exists) {
+      const prior = requestSnap.data() || {};
+      if (icDecisionRequestPayloadsMatch(prior.payload || {}, payload)) return prior.result;
+      throw new HttpsError('already-exists', 'This requestId was already used for a different IC decision — a retry must reuse the exact same parameters, never new ones.');
+    }
     if (!oppSnap.exists) throw new HttpsError('not-found', 'Opportunity not found.');
     const opp = oppSnap.data() || {};
     const nowMs = Date.now();
@@ -299,8 +375,36 @@ exports.approveOpportunity = onCall(async (request) => {
       source: 'approveOpportunity',
       version: 2,
     });
+    let versionId = null;
+    if (approving) {
+      versionId = 'UWV-' + icRef.id;
+      const price = (opp.land && opp.land.price != null) ? opp.land.price : null;
+      const oppType = (opp.meta && opp.meta.oppType) || null;
+      tx.set(db.collection('underwritingVersions').doc(versionId), {
+        oppId,
+        stage: 'v4_ic_approved',
+        label: 'v4 — معتمَدة من اللجنة',
+        savedAt: new Date(nowMs).toISOString(),
+        savedBy: email,
+        trigger: 'ic_decision',
+        sourceDecisionId: icRef.id,
+        metrics: {
+          oppType,
+          price,
+          equityIRR: evaluated.audit.metrics.equityIRR,
+          projectIRR: evaluated.audit.metrics.projectIRR,
+          MOIC: evaluated.audit.metrics.MOIC,
+          dscrMin: evaluated.audit.metrics.dscrMin,
+        },
+        thesisSnapshot: (opp.thesis || '').trim(),
+        engineVersion: evaluated.audit.engineVersion,
+        inputHash: evaluated.audit.inputHash,
+      });
+    }
+    const result = { ok: true, decisionId: icRef.id, versionId };
+    tx.set(requestRef, { payload, result, at: FieldValue.serverTimestamp() });
+    return result;
   });
-  return { ok: true, decisionId: icRef.id };
 });
 
 /* P0 — Trusted Transaction Layer: يُبقي ميزة "تبديل حالة شرط اعتماد" (ic-toggle-condition في

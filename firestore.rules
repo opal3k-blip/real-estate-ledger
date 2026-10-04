@@ -510,26 +510,41 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/icDecisions/$(request.resource.data.sourceDecisionId)).data.recordedBy.lower() == requestEmail()
         && get(/databases/$(database)/documents/icDecisions/$(request.resource.data.sourceDecisionId)).data.decision.decision in ['approve','approve_conditions'];
     }
+    // Phase 2R-4E: v4_ic_approved is no longer created by ANY client write at all -- it is now
+    // written exclusively by approveOpportunity (functions/index.js) inside the same trusted
+    // transaction as the icDecisions record itself, using the Admin SDK, which bypasses these
+    // rules entirely by Firebase's own design (a trusted backend, not an untrusted client, is
+    // exactly the case that bypass exists for). Closing the v4_ic_approved branch here, for
+    // every role including admin, is the only way to actually guarantee no client-fabricated
+    // v4 baseline can ever exist -- the same reasoning as assetLinkRequests below. linkedDecisionValid()
+    // and currentRoleIsSeniorICOrAdmin() are kept (not deleted) purely as documentation of what a
+    // v4 write would have had to satisfy, and because functions/index.js's own in-transaction write
+    // constructs an equivalent, server-trusted version of the same shape; they are unused by any
+    // "allow" rule below now.
     function underwritingVersionCreateAllowed(versionId) {
       return isAuthorized()
         && !exists(/databases/$(database)/documents/underwritingVersions/$(versionId))
         && linkedOpportunityExists()
         && createActorSavedByHonest()
         && request.resource.data.metrics is map
-        && (
-             (request.resource.data.stage == 'v4_ic_approved'
-              && request.resource.data.trigger == 'ic_decision'
-              && currentRoleIsSeniorICOrAdmin()
-              && linkedDecisionValid())
-          || (request.resource.data.stage == 'manual'
-              && request.resource.data.trigger == 'manual'
-              && (isAdminEmail() || ownsOpp(get(/databases/$(database)/documents/opportunities/$(request.resource.data.oppId)).data)))
-        );
+        && request.resource.data.stage == 'manual'
+        && request.resource.data.trigger == 'manual'
+        && (isAdminEmail() || ownsOpp(get(/databases/$(database)/documents/opportunities/$(request.resource.data.oppId)).data));
     }
     match /underwritingVersions/{id} {
       allow read: if isAuthorized();
       allow create: if underwritingVersionCreateAllowed(id);
       allow update, delete: if false;
+    }
+
+    // Phase 2R-4E: bookkeeping for approveOpportunity's requestId-keyed idempotent replay ("was
+    // this exact IC decision request already done, and with what result") -- not part of the
+    // audit trail itself (that stays in icDecisions/underwritingVersions above). Written and read
+    // only by the Admin SDK inside the same transaction as the actual decision; clients have no
+    // legitimate reason to read or write it directly, so it is closed to them entirely, for every
+    // role including admin -- the exact same pattern as assetLinkRequests above.
+    match /icDecisionRequests/{id} {
+      allow read, write: if false;
     }
 
     // الأداء الفعلي المتكرر (assetActuals، underwriting-versions.js، إضافة بطلب المستخدم بعد
