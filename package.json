@@ -8,7 +8,7 @@
     "test:functions": "npm --prefix functions run lint && npm --prefix functions test",
     "test:domain": "node scripts/run-verify-suite.mjs domain xirr tooling",
     "test:performance": "node scripts/performance-smoke.mjs",
-    "test:features": "node tests/features/capital-allocation-engine.landfirst.test.mjs && node tests/features/fund-ledger-inkind-classification.test.mjs && node tests/features/asset-link-fund-sync.test.mjs",
+    "test:features": "node tests/features/capital-allocation-engine.landfirst.test.mjs && node tests/features/fund-ledger-inkind-classification.test.mjs && node tests/features/asset-link-fund-sync.test.mjs && node tests/features/xirr-comparison-panel.test.mjs",
     "test:load": "npm --prefix tests/rules run test:load",
     "test": "npm run check:js && npm run test:financial && npm run test:domain && npm run test:functions && npm run test:performance && npm run test:features"
   }

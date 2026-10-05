@@ -81,7 +81,7 @@ try {
   check('9d. a group with zero tests fails', r.ok === false && r.executed === 0, r);
 
   // 10. shipped configuration sanity (no execution; real preflight is exercised by running the runner itself)
-  check('10. shipped domain/xirr/features lists contain 15 + 14 + 3 entries', GROUPS.domain.expected.length === 15 && GROUPS.xirr.expected.length === 14 && GROUPS.features.expected.length === 3);
+  check('10. shipped domain/xirr/features lists contain 15 + 14 + 4 entries', GROUPS.domain.expected.length === 15 && GROUPS.xirr.expected.length === 14 && GROUPS.features.expected.length === 4);
   check('10b. no shipped expected entry is a generator', Object.values(GROUPS).every((g) => g.expected.every((f) => !/^capture-|^golden-fixtures\./.test(f))));
 } finally {
   fs.rmSync(root, { recursive: true, force: true });

@@ -81,7 +81,7 @@ export const GROUPS = {
       'verify-xirr-opportunity-reference-cases.mjs',
     ],
   },
-  // tests/features: same three tests that `npm run test:features` chains.
+  // tests/features: same tests that `npm run test:features` chains.
   features: {
     dir: 'tests/features',
     pattern: /\.test\.mjs$/,
@@ -89,6 +89,7 @@ export const GROUPS = {
       'asset-link-fund-sync.test.mjs',
       'capital-allocation-engine.landfirst.test.mjs',
       'fund-ledger-inkind-classification.test.mjs',
+      'xirr-comparison-panel.test.mjs',
     ],
   },
   // The runner's own self-test (explicit file, no pattern discovery).
