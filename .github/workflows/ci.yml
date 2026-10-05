@@ -43,6 +43,12 @@ jobs:
       - name: Financial regression tests
         run: npm run test:financial
 
+      - name: Domain and XIRR verification suites
+        run: npm run test:domain
+
+      - name: Feature regression tests
+        run: npm run test:features
+
       - name: Functions syntax checks
         run: npm run test:functions
 
