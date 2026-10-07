@@ -13,7 +13,7 @@
    ========================================================================= */
 
 import { PIPELINE_STAGES, stageLabel } from './pipeline.js';
-import { portfolioIntelligenceStats } from './portfolio.js';
+import { portfolioIntelligenceStats, blockedNotice } from './portfolio.js';
 import { computeAlerts } from './alerts.js';
 
 function pipelineCounts(core){
@@ -50,7 +50,7 @@ export function registerCommandCenter(core){
     const topAlerts = alerts.slice(0,8);
     const sevIcon = { high:'🔴', medium:'🟡', low:'⚪' };
 
-    return `
+    return `${blockedNotice(core, s)}
     <div class="section" style="margin-bottom:14px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
       <div>
         <h2 style="margin:0;">🎯 ${core.T('مركز القيادة الاستثماري','OPAL Investment Command Center')}</h2>

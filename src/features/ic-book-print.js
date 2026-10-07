@@ -81,6 +81,17 @@ export function registerICBookPrint(core){
       </div>`;
     }
     const d = core.withDefaults(rec.data), c = core.compute(d);
+    /* 3A-2c: كتاب اللجنة لفرصة محجوبة (INVALID/INCOMPLETE) لا يُبنى ولا يُطبع — صفحة إيضاح بلا أي رقم. */
+    const _blk = typeof core.oppMetricGuard==='function' ? core.oppMetricGuard(rec, c) : null;
+    if(_blk){
+      const top = typeof core.renderMemoTopExtensions==='function' ? core.renderMemoTopExtensions(d, c, rec) : '';
+      return `<div class="section" data-blocked-book="1">
+        <h2>⛔ ${core.T('كتاب لجنة الاستثمار غير متاح لهذه الفرصة','The Investment Committee book is not available for this opportunity')}</h2>
+        <p>${core.T('مدخلات الفرصة غير صالحة أو ناقصة، فلا يُنشأ كتاب يحوي نتائج غير معتمدة. صحّح المدخلات الموضَّحة أدناه ثم أعد المحاولة.','The opportunity inputs are invalid or incomplete, so no book with unapproved results is produced. Correct the inputs listed below and try again.')}</p>
+        ${top}
+        <button type="button" class="btn btn-sm btn-ghost" data-action="icbook-close">✖ ${core.T('رجوع','Back')}</button>
+      </div>`;
+    }
     scheduleBookCharts(core, d, c); // الحاويات الثلاث الجديدة (رأس المال/العائد/المخاطر) جديدة على DOM بعد هذا الرسم
     return buildICBook(core, rec, d, c);
   });
@@ -195,6 +206,7 @@ function watchForBookCharts(core){
     const rec = core.opportunities.find(o=>o.id===oppId);
     if(!rec) return;
     const d = core.withDefaults(rec.data), c = core.compute(d);
+    if(typeof core.oppMetricGuard==='function' && core.oppMetricGuard(rec, c)) return;
     scheduleBookCharts(core, d, c);
   });
   obs.observe(app, { childList:true, subtree:true });

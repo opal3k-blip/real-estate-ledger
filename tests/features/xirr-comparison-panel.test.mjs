@@ -382,6 +382,24 @@ t('no open opportunity → section renders nothing', () => {
   assert.equal(e.html(), '');
 });
 
+/* ---------- Phase 3A-2: حارس المدخلات ---------- */
+t('metric guard blocking → panel shows a blocked notice, no current IRR, and never computes', () => {
+  let calls = 0;
+  const e = makeEnv({ compute: () => { calls++; return fakeCompute(okX(0.1), okX(0.2))(); } });
+  e.core.metricGuard = () => ({ blocked: true, status: 'INVALID' });
+  const h = e.html();
+  assert.ok(has(h, 'data-xirr-panel="blocked"'));
+  assert.ok(!has(h, '23.5') && !has(h, '%11'), 'no IRR numbers');
+  assert.equal(calls, 0, 'compute not called');
+});
+t('metric guard returning null → panel behaves exactly as before', () => {
+  const e = makeEnv({ compute: fakeCompute(okX(0.1), okX(0.2)) });
+  e.core.metricGuard = () => null;
+  const h = e.html();
+  assert.ok(!has(h, 'data-xirr-panel="blocked"'));
+  assert.ok(has(h, 'xirr-base-date'));
+});
+
 /* ---------- المحرك الحقيقي: 14 fixture ---------- */
 t('14 financing fixtures through the real engine render a headline rate for OK series (and equal the wrapper)', () => {
   const engine = createFinancialEngine({ blankOpportunity, TIERS, USE_TYPES, SITE_FACTORS, DEV_REFI_STRATEGY_KEY, isResidentialUseType });

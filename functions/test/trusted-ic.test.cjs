@@ -7,7 +7,7 @@ const os = require('node:os');
 const crypto = require('node:crypto');
 const { execFileSync } = require('node:child_process');
 const { loadIndexWithFakes } = require('./load-index-with-fakes');
-const { recompute, loadEngine } = require('../trusted-ic.cjs');
+const { recompute, loadEngine, documentHash } = require('../trusted-ic.cjs');
 const { fns, db } = loadIndexWithFakes();
 const EMAIL = 'ic@example.com';
 const EMAIL2 = 'ic2@example.com';
@@ -21,8 +21,15 @@ function seed(o) {
   db.__seed('opportunities', 'OPP', clone(o));
 }
 let __reqSeq = 0;
+// 3A-3: an approval must name the document it reviewed. By default the helper "reviews" the document as stored
+// right now (what getApprovalPreview would have returned); a test can override or omit expectedDocHash explicitly.
 function req(data = {}) {
-  return { auth: { token: { email: EMAIL } }, data: { oppId: 'OPP', decision: { decision: 'approve' }, requestId: 'REQ-' + (++__reqSeq), ...data } };
+  const base = { oppId: 'OPP', decision: { decision: 'approve' }, requestId: 'REQ-' + (++__reqSeq), ...data };
+  if (!('expectedDocHash' in data)) {
+    const doc = db.__get('opportunities', base.oppId);
+    base.expectedDocHash = doc ? documentHash(doc) : '0'.repeat(64);
+  }
+  return { auth: { token: { email: EMAIL } }, data: base };
 }
 async function denied(request, code = 'failed-precondition') {
   const before = JSON.stringify(db.__get('opportunities', 'OPP'));
@@ -59,12 +66,13 @@ async function readyFixture() {
   const unready = clone(ready); unready.meta.city = '';
   await test('complete saved opportunity approves without client readiness; audit binds input and engine', async () => {
     seed(ready);
-    const response = await fns.approveOpportunity(req({ decision: { decision: 'approve', decidedBy: 'attacker', decidedAt: 'forged', inputHash: 'forged', arbitrary: true },
-      readiness: { ready: false }, override: true, metrics: { equityIRR: 999 } }));
+    // 3A-3: forged top-level fields (readiness/metrics/status...) are REJECTED, not ignored — see server-validation tests.
+    const response = await fns.approveOpportunity(req({ override: true }));
     const audit = db.__get('icDecisions', response.decisionId);
     const mirror = db.__get('opportunities', 'OPP').ic.decisions.at(-1);
     assert.equal(audit.version, 2); assert.equal(audit.readiness.ready, true);
     assert.equal(audit.decision.decidedBy, EMAIL); assert.equal(audit.decision.arbitrary, undefined);
+    assert.equal(audit.decision.docHash, documentHash(ready)); assert.equal(audit.decision.validation.color === 'green' || audit.decision.validation.color === 'yellow', true);
     assert.equal(audit.decision.overridden, false); assert.equal(audit.decision.decidedAt, audit.evaluation.evaluatedAt);
     assert.deepEqual(audit.decision, mirror);
     assert.equal(audit.evaluation.inputHash, crypto.createHash('sha256').update(audit.evaluation.inputJson).digest('hex'));
@@ -76,10 +84,15 @@ async function readyFixture() {
     assert.deepEqual(clone(replay.audit.readiness), audit.readiness);
   });
   await test('fabricated ready with empty gates cannot approve incomplete stored inputs', async () => {
-    seed(unready); await denied(req({ readiness: { ready: true, gates: {} } }));
+    seed(unready);
+    await denied(req({ readiness: { ready: true, gates: {} } }), 'invalid-argument'); // forged field rejected outright
+    await denied(req()); // and without it, incomplete stored inputs still cannot approve
   });
-  for (const override of [false, undefined, 'true']) await test(`override must be explicit boolean (${String(override)})`, async () => {
+  for (const override of [false, undefined]) await test(`override must be explicit boolean true (${String(override)})`, async () => {
     seed(unready); await denied(req({ override, reasons: ['Justification'] }));
+  });
+  for (const override of ['true', 1, 'yes', {}, []]) await test(`non-boolean override rejected outright (${JSON.stringify(override)})`, async () => {
+    seed(unready); await denied(req({ override, reasons: ['Justification'] }), 'invalid-argument');
   });
   for (const reasons of [[], ['   '], ['\n\t']]) await test(`blank justification rejected ${JSON.stringify(reasons)}`, async () => {
     seed(unready); await denied(req({ override: true, reasons }));
@@ -89,8 +102,8 @@ async function readyFixture() {
   });
   await test('justified override records actual failed gates and bilingual reasons', async () => {
     seed(unready);
-    const result = await fns.approveOpportunity(req({ override: true, reasons: ['  City evidence pending  '], decision: { decision: 'approve_conditions', gateReasonsAtDecision: ['forged'] },
-      conditions: [{ text: '  Confirm city  ', status: 'met', arbitrary: 'forged' }] }));
+    const result = await fns.approveOpportunity(req({ override: true, reasons: ['  City evidence pending  '], decision: { decision: 'approve_conditions' },
+      conditions: [{ text: '  Confirm city  ', status: 'met' }] }));
     const record = db.__get('icDecisions', result.decisionId);
     assert.equal(record.readiness.ready, false); assert.equal(record.decision.overridden, true);
     assert.deepEqual(record.decision.reasons, ['City evidence pending']);
@@ -190,7 +203,7 @@ async function readyFixture() {
     const requestId = 'REQ-fixed-2';
     await fns.approveOpportunity(req({ requestId, decision: { decision: 'approve' } }));
     await assert.rejects(
-      fns.approveOpportunity({ auth: { token: { email: EMAIL2 } }, data: { oppId: 'OPP', decision: { decision: 'approve' }, requestId } }),
+      fns.approveOpportunity({ auth: { token: { email: EMAIL2 } }, data: { oppId: 'OPP', decision: { decision: 'approve' }, requestId, expectedDocHash: req().data.expectedDocHash } }),
       e => e.code === 'already-exists'
     );
     assert.equal(Object.keys(db.__all('icDecisions')).length, 1);

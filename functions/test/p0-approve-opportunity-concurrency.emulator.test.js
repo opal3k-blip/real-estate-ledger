@@ -72,6 +72,12 @@ function req(email, data) {
   return { auth: { token: { email } }, data };
 }
 
+// 3A-3: an approval names the document it reviewed — here, exactly what is stored in the emulator right now.
+async function storedDocHash(db, oppId) {
+  const { documentHash } = require('../trusted-ic.cjs');
+  return documentHash((await db.collection('opportunities').doc(oppId).get()).data());
+}
+
 async function collectionCount(db, name, oppId) {
   const snap = await db.collection(name).where('oppId', '==', oppId).get();
   return snap.size;
@@ -87,7 +93,7 @@ async function collectionCount(db, name, oppId) {
     const oppId = 'OPP-CONC-1';
     await seedOpp(db, oppId, ready);
     const requestId = 'REQ-CONCURRENT-SAME-1';
-    const payload = { oppId, decision: { decision: 'approve' }, reasons: [], conditions: [], override: false, requestId };
+    const payload = { oppId, decision: { decision: 'approve' }, reasons: [], conditions: [], override: false, requestId, expectedDocHash: await storedDocHash(db, oppId) };
     // كلاهما يبدأ الآن، بلا await بينهما — طلبان حقيقيان متزامنان، لا متتاليان.
     const [r1, r2] = await Promise.all([
       fns.approveOpportunity(req(EMAIL, payload)),
@@ -106,8 +112,9 @@ async function collectionCount(db, name, oppId) {
     const oppId = 'OPP-CONC-2';
     await seedOpp(db, oppId, ready);
     const requestId = 'REQ-CONCURRENT-DIFF-1';
-    const payloadA = { oppId, decision: { decision: 'approve' }, reasons: [], conditions: [], override: false, requestId };
-    const payloadB = { oppId, decision: { decision: 'reject' }, reasons: [], conditions: [], override: false, requestId };
+    const expectedDocHash = await storedDocHash(db, oppId);
+    const payloadA = { oppId, decision: { decision: 'approve' }, reasons: [], conditions: [], override: false, requestId, expectedDocHash };
+    const payloadB = { oppId, decision: { decision: 'reject' }, reasons: [], conditions: [], override: false, requestId, expectedDocHash };
     const results = await Promise.allSettled([
       fns.approveOpportunity(req(EMAIL, payloadA)),
       fns.approveOpportunity(req(EMAIL, payloadB)),
@@ -125,7 +132,7 @@ async function collectionCount(db, name, oppId) {
     await seedOpp(db, oppId, unready);
     const requestId = 'REQ-FAILED-TXN-1';
     await assert.rejects(
-      fns.approveOpportunity(req(EMAIL, { oppId, decision: { decision: 'approve' }, reasons: [], conditions: [], override: false, requestId })),
+      fns.approveOpportunity(req(EMAIL, { oppId, decision: { decision: 'approve' }, reasons: [], conditions: [], override: false, requestId, expectedDocHash: await storedDocHash(db, oppId) })),
       e => e.code === 'failed-precondition'
     );
     assert.equal(await collectionCount(db, 'icDecisions', oppId), 0, 'لا سجل قرار على الإطلاق');

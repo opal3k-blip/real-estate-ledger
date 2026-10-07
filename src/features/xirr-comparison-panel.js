@@ -253,6 +253,13 @@ export function registerXirrComparisonPanel(core, deps = {}) {
   function renderPanel(d, c) {
     const oppId = core.openDetailId;
     if (oppId == null) return '';
+    // Phase 3A-2: no XIRR (and no "current IRR") for an opportunity whose inputs are
+    // invalid/incomplete. Absent guard (older core / tests) = unchanged behaviour.
+    const blocked = typeof core.metricGuard === 'function' ? core.metricGuard(d, c) : null;
+    if (blocked) {
+      return `<div class="section" data-xirr-panel="blocked"><h3>${T('مقارنة XIRR (تجريبية)', 'XIRR comparison (experimental)')}</h3>
+        <p style="color:var(--bad)">⛔ ${T('لا تُعرض نتائج XIRR لأن مدخلات هذه الفرصة غير صالحة أو ناقصة. راجع قسم «التحقق من المدخلات».', 'XIRR results are not shown because this opportunity\'s inputs are invalid or incomplete. See the "Input validation" section.')}</p></div>`;
+    }
     const sk = storageKeyFor(userKeyOf(core.currentUser), oppId);
     const st = stateFor(sk);
 

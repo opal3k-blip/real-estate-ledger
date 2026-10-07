@@ -82,10 +82,13 @@ function portfolioIntelligenceStats(core){
   let irrWeighted=0, irrWeight=0;
   let dscrWeighted=0, dscrWeight=0, dscrMinOverall=null;
   const byCity={}, byType={};
+  let blockedN = 0;
   linkedIds.forEach(id=>{
     const rec = core.opportunities.find(o=>o.id===id);
     if(!rec) return;
     let c; try{ c = core.compute(rec.data); }catch(e){ return; }
+    // 3A-2c: أصل محجوب (INVALID/INCOMPLETE) لا يدخل أي مجموع/متوسط/تركّز
+    if(typeof core.oppMetricGuard==='function' && core.oppMetricGuard(rec, c)){ blockedN++; return; }
     tpcSum += c.TPC||0; debtSum += c.debt||0; equitySum += c.equity||0;
     if(isFinite(c.equityIRR) && c.equity){ irrWeighted += c.equityIRR*c.equity; irrWeight += c.equity; }
     if(c.dscrMin!=null && isFinite(c.dscrMin) && c.TPC){
@@ -124,8 +127,13 @@ function portfolioIntelligenceStats(core){
     aum, committed, calledTotal, paidIn, distPaid, nav,
     investedCapital, uninvestedCapital, grossIRR, netIRR, portfolioMOIC,
     tpcSum, debtSum, equitySum, ltv, dscrAvg, dscrMinOverall,
-    cityConc, typeConc, fundConc,
+    cityConc, typeConc, fundConc, blockedN,
   };
+}
+
+export function blockedNotice(core, s){
+  if(!s || !s.blockedN) return '';
+  return `<div class="panel" data-blocked-excluded="${s.blockedN}" style="margin:0 0 14px; padding:10px 14px; border:1px solid var(--bad);"><b style="color:var(--bad);">⛔ ${s.blockedN} ${core.T('أصل محجوب (مدخلات غير صالحة أو ناقصة) مستثنى من كل المجاميع والمتوسطات والتركّز أدناه','blocked asset(s) (invalid or incomplete inputs) excluded from every total, average and concentration below')}</b></div>`;
 }
 
 function concTable(core, rows, label){
@@ -153,7 +161,7 @@ export function registerPortfolio(core){
 
   core.registerMainView('portfolio', ()=>{
     const s = portfolioIntelligenceStats(core);
-    return `
+    return `${blockedNotice(core, s)}
     <div class="section" style="margin-bottom:14px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
       <div>
         <h2 style="margin:0;">📊 ${core.T('ذكاء المحفظة','Portfolio Intelligence')}</h2>

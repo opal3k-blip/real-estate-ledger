@@ -6,7 +6,7 @@ import { fileURLToPath } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const ROOT = path.join(__dirname, '..', '..');
 
-export function loadCore(extraExports = []){
+export function loadCore(extraExports = [], ctxExtra = {}){
   const coreCode = coreVmSource.buildCoreVmSource({ extraExports });
   const ctx = {
     console, setTimeout, clearTimeout,
@@ -20,6 +20,7 @@ export function loadCore(extraExports = []){
     FileReader: function(){}, Intl, Math, JSON, Date, parseFloat, parseInt,
     isFinite, Number, String, Array, Object, Boolean, RegExp, Error,
   };
+  Object.assign(ctx, ctxExtra);
   ctx.window = ctx;
   vm.createContext(ctx);
   vm.runInContext(coreCode, ctx, { timeout: 20000 });

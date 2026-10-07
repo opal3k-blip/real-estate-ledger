@@ -40,7 +40,8 @@ const { onDocumentWritten } = require('firebase-functions/v2/firestore');
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const { initializeApp } = require('firebase-admin/app');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
-const { recompute: recomputeIC } = require('./trusted-ic.cjs');
+const { recompute: recomputeIC, documentHash } = require('./trusted-ic.cjs');
+
 
 initializeApp();
 const db = getFirestore();
@@ -289,21 +290,88 @@ async function allocatedElsewhereTx(tx, fundId, fund, excludeOppId) {
 function icDecisionRequestPayloadsMatch(a, b) {
   return a.email === b.email && a.oppId === b.oppId && a.decisionType === b.decisionType
     && a.override === b.override
+    && a.warningsAcknowledged === b.warningsAcknowledged
+    && a.expectedDocHash === b.expectedDocHash
     && JSON.stringify(a.reasons) === JSON.stringify(b.reasons)
     && JSON.stringify(a.conditions) === JSON.stringify(b.conditions);
 }
 
-exports.approveOpportunity = onCall(async (request) => {
+/* 3A-3 — Phase L0 (transport) whitelist. A request carries ONLY what a person decides; every status,
+   colour, label, metric and readiness value is derived on the server from the stored document. An unknown
+   field is a probe or a bug, so it is REJECTED rather than silently ignored. */
+const APPROVE_ALLOWED_KEYS = new Set(['oppId', 'decision', 'reasons', 'conditions', 'override', 'warningsAcknowledged', 'requestId', 'expectedDocHash']);
+const DECISION_ALLOWED_KEYS = new Set(['decision']);
+const CONDITION_ALLOWED_KEYS = new Set(['text', 'owner', 'dueDate', 'status']);
+const DOC_HASH_RE = /^[0-9a-f]{64}$/;
+const isStrictPlainObject = v => v !== null && typeof v === 'object' && !Array.isArray(v)
+  && (Object.getPrototypeOf(v) === Object.prototype || Object.getPrototypeOf(v) === null);
+function unexpectedKeys(obj, allowed) {
+  return Object.keys(obj).filter(k => !allowed.has(k));
+}
+function rejectUnexpected(obj, allowed, where) {
+  const extra = unexpectedKeys(obj, allowed);
+  if (extra.length) {
+    throw new HttpsError('invalid-argument', `Unexpected field(s) in ${where}.`, { rejectionCode: 'UNEXPECTED_FIELD', where, fields: extra.slice(0, 10).map(k => String(k).slice(0, 40)) });
+  }
+}
+// Unsafe keys are rejected outright even if a future whitelist were widened by mistake.
+function rejectUnsafeKeys(value, depth = 0) {
+  if (depth > 6 || !value || typeof value !== 'object') return;
+  for (const key of Object.keys(value)) {
+    if (key === '__proto__' || key === 'prototype' || key === 'constructor') {
+      throw new HttpsError('invalid-argument', 'Unsafe key in request.', { rejectionCode: 'UNSAFE_KEY' });
+    }
+    rejectUnsafeKeys(value[key], depth + 1);
+  }
+}
+
+/* 3A-3 — structured, figure-free rejection log (Cloud Logging, severity WARNING). One JSON line per refused call so the
+   rate of INPUTS_BLOCKED / DOC_CHANGED / WARNINGS_ACK_REQUIRED / UNEXPECTED_FIELD ... can be watched with a log-based
+   metric. It carries ONLY codes and identifiers: never an input value, a figure, a reason text or an email address. */
+const LOGGED_DECISIONS = new Set(['approve', 'approve_conditions', 'revise', 'hold', 'reject']);
+function logApprovalRejection(fn, request, error) {
+  try {
+    const data = request && isStrictPlainObject(request.data) ? request.data : {};
+    const details = error && error.details && typeof error.details === 'object' ? error.details : {};
+    const entry = {
+      event: 'IC_APPROVAL_REJECTED', fn,
+      code: String((error && error.code) || 'internal').slice(0, 40),
+      rejectionCode: typeof details.rejectionCode === 'string' ? details.rejectionCode.slice(0, 40) : null,
+      verdictStatus: typeof details.status === 'string' ? details.status.slice(0, 20) : null,
+      verdictColor: typeof details.color === 'string' ? details.color.slice(0, 10) : null,
+      decision: data.decision && typeof data.decision.decision === 'string' && LOGGED_DECISIONS.has(data.decision.decision) ? data.decision.decision : null,
+      oppId: typeof data.oppId === 'string' ? data.oppId.slice(0, 80) : null,
+    };
+    console.warn(JSON.stringify(entry));
+  } catch (e) { /* logging must never change the outcome of a call */ }
+}
+
+async function approveOpportunityImpl(request) {
   const email = requireEmail(request);
   await requireRole(email, 'senior_ic');
-  const { oppId, decision, reasons = [], conditions = [], override, requestId } = request.data || {};
+  const raw = request.data;
+  if (!isStrictPlainObject(raw)) throw new HttpsError('invalid-argument', 'A request object is required.');
+  rejectUnsafeKeys(raw);
+  rejectUnexpected(raw, APPROVE_ALLOWED_KEYS, 'request');
+  const { oppId, decision, reasons = [], conditions = [], override, warningsAcknowledged, requestId, expectedDocHash } = raw;
   const allowed = new Set(['approve', 'approve_conditions', 'revise', 'hold', 'reject']);
-  if (typeof oppId !== 'string' || !oppId.trim() || oppId.includes('/') || !decision || !allowed.has(decision.decision)) {
+  if (typeof oppId !== 'string' || !oppId.trim() || oppId.includes('/') || !isStrictPlainObject(decision) || typeof decision.decision !== 'string' || !allowed.has(decision.decision)) {
     throw new HttpsError('invalid-argument', 'A valid oppId and IC decision are required.');
   }
+  rejectUnexpected(decision, DECISION_ALLOWED_KEYS, 'decision');
   if (typeof requestId !== 'string' || !requestId.trim()) {
     throw new HttpsError('invalid-argument', 'requestId (a stable identifier for this specific decision, unchanged on retry) is required.');
   }
+  for (const [name, v] of [['override', override], ['warningsAcknowledged', warningsAcknowledged]]) {
+    if (v !== undefined && typeof v !== 'boolean') throw new HttpsError('invalid-argument', `${name} must be a boolean.`);
+  }
+  if (expectedDocHash !== undefined && (typeof expectedDocHash !== 'string' || !DOC_HASH_RE.test(expectedDocHash))) {
+    throw new HttpsError('invalid-argument', 'expectedDocHash must be the document hash returned by getApprovalPreview.');
+  }
+  if (APPROVAL_DECISIONS.has(decision.decision) && expectedDocHash === undefined) {
+    throw new HttpsError('invalid-argument', 'An approval must name the reviewed document (expectedDocHash from getApprovalPreview).');
+  }
+  if (Array.isArray(conditions)) conditions.forEach(c => { if (isStrictPlainObject(c)) rejectUnexpected(c, CONDITION_ALLOWED_KEYS, 'condition'); });
   if (!Array.isArray(reasons) || reasons.length > 100 || reasons.some(r => typeof r !== 'string' || r.length > 4000)) {
     throw new HttpsError('invalid-argument', 'Reasons must be text.');
   }
@@ -314,7 +382,7 @@ exports.approveOpportunity = onCall(async (request) => {
     throw new HttpsError('invalid-argument', 'Conditions must contain text, owner and an optional YYYY-MM-DD due date.');
   }
   const cleanConditions = conditions.map(c => ({ text: c.text.trim(), owner: (c.owner || '').trim(), dueDate: c.dueDate || '', status: 'pending' }));
-  const payload = { email, oppId, decisionType: decision.decision, reasons: cleanReasons, conditions: cleanConditions, override: !!override };
+  const payload = { email, oppId, decisionType: decision.decision, reasons: cleanReasons, conditions: cleanConditions, override: override === true, warningsAcknowledged: warningsAcknowledged === true, expectedDocHash: expectedDocHash || null };
 
   const oppRef = db.collection('opportunities').doc(oppId);
   const icRef = db.collection('icDecisions').doc();
@@ -329,19 +397,47 @@ exports.approveOpportunity = onCall(async (request) => {
     if (!oppSnap.exists) throw new HttpsError('not-found', 'Opportunity not found.');
     const opp = oppSnap.data() || {};
     const nowMs = Date.now();
+    const approving = APPROVAL_DECISIONS.has(decision.decision);
+    /* 3A-3: the approval is bound to the exact stored document the approver reviewed. The hash is taken from the
+       document read INSIDE this transaction (Firestore retries the callback if it changes before commit), so a
+       change between preview and approval — to ANY field, financial or not — aborts the approval. */
+    let currentDocHash;
+    try { currentDocHash = documentHash(opp); }
+    catch (error) {
+      throw new HttpsError('failed-precondition', 'The saved opportunity could not be fingerprinted.', { rejectionCode: error.rejectionCode || 'DOC_HASH_FAILED' });
+    }
+    if (approving && expectedDocHash !== currentDocHash) {
+      throw new HttpsError('failed-precondition', 'The opportunity changed after it was reviewed. Reload, review it again and then approve.', { rejectionCode: 'DOC_CHANGED' });
+    }
     let evaluated;
     try { evaluated = await recomputeIC(opp, nowMs); }
     catch (error) {
       console.error('Trusted IC calculation failed', error.message);
-      throw new HttpsError('failed-precondition', 'Server IC calculation could not complete. Review the saved opportunity and domain deployment.');
+      throw new HttpsError('failed-precondition', 'Server IC calculation could not complete. Review the saved opportunity and domain deployment.',
+        error.rejectionCode ? { rejectionCode: error.rejectionCode, path: error.rejectionPath || null } : undefined);
     }
-    const approving = APPROVAL_DECISIONS.has(decision.decision);
+    const verdict = evaluated.verdict;
+    /* Red (INVALID / INCOMPLETE / classification error) never approves — no override, no client label can change it. */
+    if (approving && verdict.blocked) {
+      throw new HttpsError('failed-precondition', 'Approval requires valid, complete inputs.', {
+        rejectionCode: 'INPUTS_BLOCKED', status: verdict.status, color: verdict.color,
+        issueCodes: verdict.issueCodes.filter(i => i.severity !== 'WARNING').slice(0, 50),
+      });
+    }
     if (approving && evaluated.invalidMetrics.length) {
       throw new HttpsError('failed-precondition', 'Approval requires valid financial metrics.', { invalidMetrics: evaluated.invalidMetrics });
     }
     const overridden = approving && !evaluated.readiness.ready && override === true && cleanReasons.length > 0;
     if (approving && !evaluated.readiness.ready && !overridden) {
       throw new HttpsError('failed-precondition', 'Approval requires server IC readiness or an explicit written override.', { readiness: evaluated.audit.readiness });
+    }
+    /* Compound financial risk (yellow, count >= threshold) is not blocked, but needs a written acknowledgement
+       that the server records with the exact reasons. Separate from the readiness override. */
+    const warningsAck = approving && verdict.compound.requiresAcknowledgement && warningsAcknowledged === true && cleanReasons.length > 0;
+    if (approving && verdict.compound.requiresAcknowledgement && !warningsAck) {
+      throw new HttpsError('failed-precondition', 'Several high-risk conditions apply together; approval needs a written acknowledgement.', {
+        rejectionCode: 'WARNINGS_ACK_REQUIRED', color: verdict.color, highRiskCodes: verdict.highRiskCodes, count: verdict.compound.count, threshold: verdict.compound.threshold,
+      });
     }
     const icDecision = {
       decision: decision.decision,
@@ -354,6 +450,9 @@ exports.approveOpportunity = onCall(async (request) => {
       gateReasonsAtDecision: overridden ? evaluated.legacyReasons : [],
       engineVersion: evaluated.audit.engineVersion,
       inputHash: evaluated.audit.inputHash,
+      docHash: currentDocHash,
+      validation: verdict,
+      warningsAcknowledged: warningsAck,
       decisionId: icRef.id,
       overridden,
     };
@@ -399,12 +498,54 @@ exports.approveOpportunity = onCall(async (request) => {
         thesisSnapshot: (opp.thesis || '').trim(),
         engineVersion: evaluated.audit.engineVersion,
         inputHash: evaluated.audit.inputHash,
+        docHash: currentDocHash,
+        validationStatus: verdict.status,
+        validationColor: verdict.color,
       });
     }
     const result = { ok: true, decisionId: icRef.id, versionId };
     tx.set(requestRef, { payload, result, at: FieldValue.serverTimestamp() });
     return result;
   });
+}
+exports.approveOpportunity = onCall(async (request) => {
+  try { return await approveOpportunityImpl(request); }
+  catch (error) { logApprovalRejection('approveOpportunity', request, error); throw error; }
+});
+
+/* 3A-3 — read-only approval preview. Returns what the SERVER computes for the stored document: the fingerprint to
+   send back as expectedDocHash and the colour/verdict. No figures leave the server here (codes only). */
+async function getApprovalPreviewImpl(request) {
+  const email = requireEmail(request);
+  await requireRole(email, 'senior_ic');
+  const raw = request.data;
+  if (!isStrictPlainObject(raw)) throw new HttpsError('invalid-argument', 'A request object is required.');
+  rejectUnsafeKeys(raw);
+  rejectUnexpected(raw, new Set(['oppId', 'displayedDocHash']), 'request');
+  const { oppId, displayedDocHash } = raw;
+  if (typeof oppId !== 'string' || !oppId.trim() || oppId.includes('/')) throw new HttpsError('invalid-argument', 'A valid oppId is required.');
+  if (displayedDocHash !== undefined && (typeof displayedDocHash !== 'string' || !/^[0-9a-f]{64}$/.test(displayedDocHash))) {
+    throw new HttpsError('invalid-argument', 'displayedDocHash must be a 64-character lowercase hex string.');
+  }
+  const snap = await db.collection('opportunities').doc(oppId).get();
+  if (!snap.exists) throw new HttpsError('not-found', 'Opportunity not found.');
+  const opp = snap.data() || {};
+  let evaluated;
+  try { evaluated = await recomputeIC(opp, Date.now()); }
+  catch (error) {
+    throw new HttpsError('failed-precondition', 'Server IC calculation could not complete.',
+      error.rejectionCode ? { rejectionCode: error.rejectionCode, path: error.rejectionPath || null } : undefined);
+  }
+  return {
+    docHash: evaluated.docHash, inputHash: evaluated.audit.inputHash, engineVersion: evaluated.audit.engineVersion,
+    verdict: evaluated.verdict, ready: !!evaluated.readiness.ready, invalidMetrics: evaluated.invalidMetrics,
+    // 3A-3: did the server's stored document hash to exactly what the client displayed? null = client sent no hash.
+    displayedMatches: displayedDocHash === undefined ? null : displayedDocHash === evaluated.docHash,
+  };
+}
+exports.getApprovalPreview = onCall(async (request) => {
+  try { return await getApprovalPreviewImpl(request); }
+  catch (error) { logApprovalRejection('getApprovalPreview', request, error); throw error; }
 });
 
 /* P0 — Trusted Transaction Layer: يُبقي ميزة "تبديل حالة شرط اعتماد" (ic-toggle-condition في

@@ -37,6 +37,15 @@ jobs:
       - name: Install Functions dependencies
         run: npm install --prefix functions
 
+      - name: Domain bundle integrity (fail-fast)
+        run: npm --prefix functions run check:domain
+
+      - name: Generated bundle drift check
+        run: |
+          npm --prefix functions run build:domain
+          git status --porcelain -- functions/generated
+          test -z "$(git status --porcelain -- functions/generated)" || { echo "functions/generated is out of date"; exit 1; }
+
       - name: JavaScript syntax check
         run: npm run check:js
 
@@ -54,6 +63,9 @@ jobs:
 
       - name: Firestore security rules regression tests
         run: npm run test:rules
+
+      - name: Server approval enforcement against the real Firestore emulator
+        run: npm run test:emulator
 
       - name: Firestore load and stress smoke
         run: npm run test:load

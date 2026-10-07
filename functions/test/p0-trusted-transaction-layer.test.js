@@ -288,7 +288,15 @@ function seedOpp(id, owner) {
       readiness: { ready: true, gates: {} },
       reasons: [], conditions: [],
       requestId: 'test-req-approve-fabricated',
-    })), 'failed-precondition', 'fabricated readiness');
+    })), 'invalid-argument', 'fabricated readiness is now rejected outright (3A-3 strict whitelist)');
+    // Without the forged field the saved (incomplete) opportunity still cannot be approved.
+    await expectThrow(() => fns.approveOpportunity(req(SENIOR_IC, {
+      oppId: 'OPP10',
+      decision: { decision: 'approve' },
+      reasons: [], conditions: [],
+      requestId: 'test-req-approve-fabricated-2',
+      expectedDocHash: require('../trusted-ic.cjs').documentHash(db.__get('opportunities', 'OPP10')),
+    })), 'failed-precondition', 'incomplete saved opportunity');
     assert.strictEqual(Object.keys(db.__all('icDecisions')).length, 0);
     assert.strictEqual(Object.keys(db.__all('underwritingVersions')).length, 0);
     assert.strictEqual(Object.keys(db.__all('icDecisionRequests')).length, 0);

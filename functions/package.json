@@ -10,10 +10,15 @@
   "scripts": {
     "build:domain": "node scripts/build-domain.cjs",
     "check:domain": "node scripts/build-domain.cjs --check",
+    "build": "npm run build:domain && npm run check:domain",
     "lint": "node --check index.js && node --check trusted-ic.cjs && npm run check:domain",
-    "test": "npm run check:domain && node test/p0-trusted-transaction-layer.test.js && node test/trusted-ic.test.cjs",
+    "pretest": "npm run check:domain",
+    "test": "node test/p0-trusted-transaction-layer.test.js && node test/trusted-ic.test.cjs && node test/server-validation-enforcement.test.cjs && node test/validation-parity.test.cjs && node test/validation-parity.property.test.cjs && node test/deploy-guard.test.cjs",
     "test:p0": "node test/p0-trusted-transaction-layer.test.js",
-    "deploy": "npm run build:domain && npm test && firebase deploy --only functions"
+    "test:mutation": "node scripts/mutation-check.cjs",
+    "predeploy": "node scripts/predeploy.cjs",
+    "deploy": "firebase deploy --only functions",
+    "deploy:emergency": "node scripts/deploy-emergency.cjs"
   },
   "dependencies": {
     "firebase-admin": "^12.6.0",
@@ -22,5 +27,8 @@
   },
   "overrides": {
     "uuid": "^11.1.1"
+  },
+  "devDependencies": {
+    "fast-check": "^4.10.2"
   }
 }

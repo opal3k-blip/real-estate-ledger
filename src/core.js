@@ -71,6 +71,43 @@ const _assetLinkGuardHooks = [];
 function registerTopbarButton(fn){ _topbarButtonHooks.push(fn); }
 function registerBodyView(fn){ _bodyViewHooks.push(fn); }
 function registerDetailSection(fn){ _detailSectionHooks.push(fn); }
+/* Phase 3A-2 — metric guard. A feature may register fn(d,c) that returns null (no objection)
+   or {blocked:true, status, count}. When a guard blocks, headline profitability metrics
+   (Equity/Project IRR, MOIC) and the verdict are replaced by a "not approved" badge on screen.
+   No guard registered = zero behaviour change. A guard that throws FAILS CLOSED (blocks):
+   a number that could not be validated is not shown as if it were validated. */
+const _metricGuardHooks = [];
+function registerMetricGuard(fn){ _metricGuardHooks.push(fn); }
+function metricGuard(d,c){
+  for(const fn of _metricGuardHooks){
+    try{ const r = fn(d,c); if(r && r.blocked) return r; }
+    catch(e){ console.error('metric guard error:', e); return { blocked:true, status:'GUARD_ERROR' }; }
+  }
+  return null;
+}
+function blockedBadge(g){
+  const why = g.status==='INCOMPLETE' ? T('مدخلات ناقصة','Incomplete inputs')
+    : g.status==='GUARD_ERROR' ? T('تعذّر التحقق من المدخلات','Input validation failed')
+    : T('مدخلات غير صالحة','Invalid inputs');
+  return `<span class="metric-blocked" style="color:var(--bad);" title="${esc(why)}">⛔ ${T('غير معتمد','Not approved')}</span>`;
+}
+/* Phase 3A-2c — يُستعمل في كل عرض/مجموع عابر للفرص: نفس قرار الحجب لفرصة واحدة. خطأ التقييم = حجب (fail-closed). */
+function oppMetricGuard(rec,c){
+  try{ const d = withDefaults(rec.data); return metricGuard(d, c||compute(d)); }
+  catch(e){ console.error('opportunity guard evaluation error:', e); return { blocked:true, status:'GUARD_ERROR' }; }
+}
+function blockedVerdictLabel(g){
+  return '⛔ ' + (g.status==='INCOMPLETE'
+    ? T('مدخلات ناقصة — النتائج غير معتمدة حتى استكمالها','Incomplete inputs — results are not approved until completed')
+    : g.status==='GUARD_ERROR'
+      ? T('تعذّر التحقق من المدخلات — النتائج غير معتمدة','Input validation failed — results are not approved')
+      : T('مدخلات غير صالحة — النتائج غير معتمدة حتى تصحيحها','Invalid inputs — results are not approved until corrected'));
+}
+/* Phase 3A-2b — memo-top sections: fn(d,c,rec) returning HTML shown directly under the verdict
+   banner of the opportunity memo (used by the alert center). No hook = empty string. */
+const _memoTopHooks = [];
+function registerMemoTopSection(fn){ _memoTopHooks.push(fn); }
+function renderMemoTopExtensions(d,c,rec){ return _memoTopHooks.map(fn=>{ try{ return fn(d,c,rec)||''; }catch(e){ console.error('memo top extension error:', e); return ''; } }).join(''); }
 function registerActionHandler(fn){ _actionHandlerHooks.push(fn); }
 function registerAssetLinkGuard(fn){ _assetLinkGuardHooks.push(fn); }
 function renderTopbarExtensions(){ return _topbarButtonHooks.map(fn=>{ try{ return fn()||''; }catch(e){ console.error('topbar extension error:', e); return ''; } }).join(''); }
@@ -919,18 +956,19 @@ function distributionsFor(fundId, investorId){ return STORE.distributions.filter
    تقييماً مستقلاً معتمَداً (NAV) — للتقديرات الرسمية يلزم تقييم مستقل لكل أصل. */
 function fundEquityAndValue(fundId){
   const fund = STORE.funds.find(f=>f.id===fundId);
-  if(!fund) return { totalEquity:0, totalValue:0 };
-  let totalEquity=0, totalValue=0;
+  if(!fund) return { totalEquity:0, totalValue:0, blockedAssets:0 };
+  let totalEquity=0, totalValue=0, blockedAssets=0;
   (fund.data.assetIds||[]).forEach(oid=>{
     const rec = opportunities.find(o=>o.id===oid);
     if(!rec) return;
     try{
       const c = compute(withDefaults(rec.data));
+      if(oppMetricGuard(rec,c)){ blockedAssets++; return; } // 3A-2c: أصل محجوب لا يدخل قيمة الصندوق
       totalEquity += c.equity||0;
       totalValue += (c.equity||0)*(isFinite(c.MOIC)?c.MOIC:0);
     }catch(e){}
   });
-  return { totalEquity, totalValue };
+  return { totalEquity, totalValue, blockedAssets };
 }
 function investorLedgerRows(){
   return STORE.investors.map(inv=>{
@@ -1872,12 +1910,16 @@ function filteredOpportunities(){
 }
 
 function portfolioKPIs(){
-  const list = filteredOpportunities();
-  const n_ = list.length;
+  const listAll = filteredOpportunities();
+  const n_ = listAll.length;
+  const list = []; let blockedN = 0;
   let tpcSum=0, debtSum=0, equitySum=0, navSum=0, irrs=[], projIrrs=[], rois=[], moics=[], dscrs=[], yocs=[], waccs=[], niys=[], good=0,warn=0,bad=0;
   const byType = {}, byCity = {}, byMonth = {};
-  list.forEach(o=>{
+  listAll.forEach(o=>{
     const c = compute(o.data);
+    /* 3A-2c: فرصة محجوبة (INVALID/INCOMPLETE) لا تدخل أي مجموع/متوسط/حكم/تركّز/رسم — تُعدّ فقط في blockedN. */
+    if(oppMetricGuard(o,c)){ blockedN++; return; }
+    list.push(o);
     tpcSum += c.TPC||0; debtSum += c.debt||0; equitySum += c.equity||0; navSum += c.NAV||0;
     if(isFinite(c.equityIRR)) irrs.push(c.equityIRR);
     if(isFinite(c.projectIRR)) projIrrs.push(c.projectIRR);
@@ -1898,7 +1940,7 @@ function portfolioKPIs(){
     if(monthKey) byMonth[monthKey] = (byMonth[monthKey]||0) + 1;
   });
   const avg = arr => arr.length? arr.reduce((a,b)=>a+b,0)/arr.length : null;
-  return { n_, tpcSum, debtSum, equitySum, navSum, avgIrr:avg(irrs), avgProjIrr:avg(projIrrs), avgRoi:avg(rois), avgMoic:avg(moics), avgDscr:avg(dscrs), avgYoc:avg(yocs), avgWacc:avg(waccs), avgNiy:avg(niys), good, warn, bad, byType, byCity, byMonth, list };
+  return { n_, tpcSum, debtSum, equitySum, navSum, avgIrr:avg(irrs), avgProjIrr:avg(projIrrs), avgRoi:avg(rois), avgMoic:avg(moics), avgDscr:avg(dscrs), avgYoc:avg(yocs), avgWacc:avg(waccs), avgNiy:avg(niys), good, warn, bad, byType, byCity, byMonth, list, blockedN };
 }
 
 function renderBenchmarkPanel(k){
@@ -2072,6 +2114,7 @@ function renderKPIs(){
     <div class="dash-hero-card" style="--accent-color:var(--gold);"><span class="icon">🎯</span><div class="l">${T('متوسط Equity IRR','Average Equity IRR')}</div><div class="v">${k.avgIrr!=null?fmtPct(k.avgIrr):'—'}</div></div>
   </div>
 
+  ${k.blockedN>0? `<div class="panel" data-blocked-excluded="${k.blockedN}" style="margin:10px 0; padding:10px 14px; border:1px solid var(--bad);"><b style="color:var(--bad);">⛔ ${k.blockedN} ${T('فرصة محجوبة (مدخلات غير صالحة أو ناقصة) مستثناة من كل المجاميع والمتوسطات والرسوم أدناه','blocked opportunity(ies) (invalid or incomplete inputs) excluded from every total, average and chart below')}</b></div>` : ''}
   <div class="dash-section">
     <div class="dash-section-title"><span class="bar"></span>💼 ${T('الحجم والقيمة','Size and Value')}</div>
     <div class="kpis portfolio">
@@ -2099,6 +2142,7 @@ function renderKPIs(){
       <div class="kpi kpi-good"><div class="l">🟢 ${T('قوي','Strong')}</div><div class="v">${k.good}</div></div>
       <div class="kpi kpi-warn"><div class="l">🟡 ${T('تحت المراجعة','Under Review')}</div><div class="v">${k.warn}</div></div>
       <div class="kpi kpi-bad"><div class="l">🔴 ${T('دون المعايير','Below Standards')}</div><div class="v">${k.bad}</div></div>
+      ${k.blockedN>0? `<div class="kpi kpi-bad"><div class="l">⛔ ${T('غير معتمد (مدخلات)','Not approved (inputs)')}</div><div class="v">${k.blockedN}</div></div>` : ''}
     </div>
   </div>
   ${k.n_>0? `
@@ -2124,23 +2168,25 @@ function renderCompare(){
   if(!compareOpen) return '';
   const recs = compareIds.map(id=>opportunities.find(o=>o.id===id)).filter(Boolean);
   if(recs.length<2) return '';
-  const rows = [
+  const rows0 = [
     [T('نوع الفرصة','Opportunity Type'), o=>`${OPP_TYPE_INFO[o.data.meta.oppType].ic} ${T(OPP_TYPE_INFO[o.data.meta.oppType].t,OPP_TYPE_INFO[o.data.meta.oppType].en)}`],
     [T('المدينة / الحي / الفئة','City / Neighborhood / Tier'), o=>`${esc(o.data.meta.city)} · ${esc(o.data.meta.neighborhood||'—')} · ${esc(o.data.meta.tier)}`],
     [T('إجمالي تكلفة المشروع (TPC)','Total Project Cost (TPC)'), o=>fmtSAR(compute(o.data).TPC)],
     [T('حقوق الملكية','Equity'), o=>fmtSAR(compute(o.data).equity)],
     [T('الدين','Debt'), o=>fmtSAR(compute(o.data).debt)],
-    ['Equity IRR', o=>fmtPct(compute(o.data).equityIRR)],
-    ['Project IRR', o=>fmtPct(compute(o.data).projectIRR)],
-    ['MOIC', o=>compute(o.data).MOIC.toFixed(2)+'×'],
+    ['Equity IRR', o=>{ const c=compute(o.data), g=metricGuard(withDefaults(o.data),c); return g?blockedBadge(g):fmtPct(c.equityIRR); }],
+    ['Project IRR', o=>{ const c=compute(o.data), g=metricGuard(withDefaults(o.data),c); return g?blockedBadge(g):fmtPct(c.projectIRR); }],
+    ['MOIC', o=>{ const c=compute(o.data), g=metricGuard(withDefaults(o.data),c); return g?blockedBadge(g):c.MOIC.toFixed(2)+'×'; }],
     [T('DSCR الأدنى','Minimum DSCR'), o=>{const c=compute(o.data); return c.dscrMin!=null?c.dscrMin.toFixed(2)+'×':'—';}],
     ['WACC', o=>fmtPct(compute(o.data).WACC)],
     [T('NAV التقديرية','Estimated NAV'), o=>fmtSAR(compute(o.data).NAV)],
     ['ROI', o=>fmtPct(compute(o.data).ROI)],
     [T('NPV المشروع','Project NPV'), o=>fmtSAR(compute(o.data).npvProject)],
     [T('مدة الصندوق','Holding Period'), o=>compute(o.data).totalYears+' '+T('سنة','yrs')],
-    [T('الحكم','Verdict'), o=>{const c=compute(o.data); return c.verdict==='good'?'🟢 '+T('قوي','Strong'):c.verdict==='warn'?'🟡 '+T('مراجعة','Review'):'🔴 '+T('دون المعايير','Below Standards');}],
+    [T('الحكم','Verdict'), o=>{const c=compute(o.data); if(metricGuard(withDefaults(o.data),c)) return '⛔ '+T('غير معتمد','Not approved'); return c.verdict==='good'?'🟢 '+T('قوي','Strong'):c.verdict==='warn'?'🟡 '+T('مراجعة','Review'):'🔴 '+T('دون المعايير','Below Standards');}],
   ];
+  /* 3A-2c: كل صف محسوب (غير الهوية) يُستبدل بشارة «غير معتمد» لأي فرصة محجوبة — لا رقم مالي يظهر في المقارنة. */
+  const rows = rows0.map(([label,fn],i)=> i<2 ? [label,fn] : [label, o=>{ const g = oppMetricGuard(o); return g? blockedBadge(g) : fn(o); }]);
   return `<div class="panel" style="margin-top:16px;">
     <div class="panel-head">
       <h2>⇄ ${T('مقارنة الفرص','Compare Opportunities')} <span style="color:var(--ink-faint); font-weight:500;">— Opportunity Comparison</span></h2>
@@ -2157,7 +2203,10 @@ function renderCompare(){
 
 function sortedOpportunities(){
   const arr = opportunities.slice();
+  const _blk = new Map(); const isBlk = o=>{ if(!_blk.has(o.id)) _blk.set(o.id, !!oppMetricGuard(o)); return _blk.get(o.id); };
+  const numericSort = (sortKey==='tpc'||sortKey==='irr'||sortKey==='moic'||sortKey==='verdict');
   arr.sort((a,b)=>{
+    if(numericSort){ const ba=isBlk(a), bb=isBlk(b); if(ba||bb){ if(ba&&bb) return 0; /* المحجوبة دائمًا في آخر القائمة: لا ترتيب يكشف أرقامها */ return ba?1:-1; } }
     function val(o){
       if(sortKey==='name') return o.data.meta.name||'';
       if(sortKey==='city') return o.data.meta.city||'';
@@ -2204,17 +2253,18 @@ function renderTable(){
         ${rows.map(o=>{
           const c = compute(o.data);
           const ti = OPP_TYPE_INFO[o.data.meta.oppType];
-          const vcls = c.verdict==='good'?'verdict-good':c.verdict==='warn'?'verdict-warn':'verdict-bad';
-          const vlbl = c.verdict==='good'?'🟢 '+T('قوي','Strong'):c.verdict==='warn'?'🟡 '+T('مراجعة','Review'):'🔴 '+T('دون المعايير','Below Standards');
+          const _g = metricGuard(withDefaults(o.data), c);
+          const vcls = _g?'verdict-bad':c.verdict==='good'?'verdict-good':c.verdict==='warn'?'verdict-warn':'verdict-bad';
+          const vlbl = _g?'⛔ '+T('غير معتمد','Not approved'):c.verdict==='good'?'🟢 '+T('قوي','Strong'):c.verdict==='warn'?'🟡 '+T('مراجعة','Review'):'🔴 '+T('دون المعايير','Below Standards');
           return `<tr data-action="open-detail" data-id="${o.id}">
             <td><input type="checkbox" data-action="toggle-compare" data-id="${o.id}" ${compareIds.includes(o.id)?'checked':''}></td>
             <td><b>${esc(o.data.meta.name||T('بدون اسم','Unnamed'))}</b><div style="font-size:11px;color:var(--ink-faint);" class="mono">${o.id}</div></td>
             <td><span class="tag tag-${o.data.meta.oppType==='income'?'income':o.data.meta.oppType==='development'?'dev':'land'}">${ti.ic} ${T(ti.t,ti.en)}</span></td>
             <td>${esc(o.data.meta.city)}</td>
             <td>${esc(o.data.meta.tier)}</td>
-            <td class="num mono">${fmtSAR(c.TPC)}</td>
-            <td class="num mono">${fmtPct(c.equityIRR)}</td>
-            <td class="num mono">${c.MOIC.toFixed(2)}×</td>
+            <td class="num mono">${_g?blockedBadge(_g):fmtSAR(c.TPC)}</td>
+            <td class="num mono">${_g?blockedBadge(_g):fmtPct(c.equityIRR)}</td>
+            <td class="num mono">${_g?blockedBadge(_g):c.MOIC.toFixed(2)+'×'}</td>
             <td><span class="tag ${vcls}">${vlbl}</span></td>
             <td>${canEditOpp(o)? `<button class="btn btn-sm btn-ghost" data-action="delete-opp" data-id="${o.id}" title="${T('حذف','Delete')}">🗑️</button>` : `<span title="${T('فرصة أضافها زميل آخر — للحذف تواصل معه أو مع الأدمن','Added by another teammate — contact them or the admin to delete')}" style="color:var(--ink-faint); font-size:12px;">🔒</span>`}</td>
           </tr>`;
@@ -2245,15 +2295,7 @@ function barRow(label,val,total,color){
     <div class="lbl" style="margin-top:2px;"><span></span><span class="num mono" style="font-size:10.5px; color:var(--ink-faint);">${fmtPct(pct/100)}</span></div></div>`;
 }
 
-function renderDetail(id){
-  const rec = opportunities.find(o=>o.id===id);
-  if(!rec) return '';
-  const d = withDefaults(rec.data), c = compute(d);
-  const ti = OPP_TYPE_INFO[d.meta.oppType];
-  const reportDates = reportDateMeta(d);
-  const vcls = c.verdict==='good'?'verdict-good':c.verdict==='warn'?'verdict-warn':'verdict-bad';
-  const vlbl = c.verdict==='good'?'🟢 '+T('التوصية: قابلة للعرض على لجنة الاستثمار','Recommendation: Ready to present to the Investment Committee'):c.verdict==='warn'?'🟡 '+T('التوصية: تحت المراجعة — تحتاج تحسين مؤشرات محددة','Recommendation: Under review — specific metrics need improvement'):'🔴 '+T('التوصية: دون معايير القبول — تحتاج إعادة هيكلة','Recommendation: Below acceptance standards — needs restructuring');
-
+function memoHeaderHtml(rec,d,ti,reportDates,vcls,vlbl){
   return `
   <div class="memo" data-print-date="${esc(reportDates.asOfText)}">
     <div class="print-run-header">
@@ -2289,12 +2331,38 @@ function renderDetail(id){
         </div>
       </div>
       <div class="verdict-banner ${vcls}">${vlbl}</div>
+    </div>`;
+}
+function renderBlockedMemo(rec,d,c,g,ti,reportDates,vcls,vlbl){
+  /* Phase 3A-2b — when inputs are invalid/incomplete NO profitability figure is rendered anywhere
+     in the memo (no KPIs, sensitivity, benchmark, optimizer, scenarios, feature sections).
+     Only identity, the not-approved verdict, the alert center and an explanatory note. */
+  return `
+  ${memoHeaderHtml(rec,d,ti,reportDates,vcls,vlbl)}${renderMemoTopExtensions(d,c,rec)}
+    <div class="section" data-blocked-memo="1">
+      <h3>⛔ ${T('تم حجب مؤشرات الربحية والتحليلات','Profitability metrics and analyses are withheld')}</h3>
+      <p>${T('لا تُعرض هنا أي نتائج (العائد، المضاعف، الحساسية، المعايير، السيناريوهات، المحسِّن) ولا يمكن تصديرها حتى تُصحَّح المدخلات الموضَّحة أعلاه. هذا الحجب لا يغيّر البيانات المحفوظة ولا يمنع الحفظ.','No results (returns, multiples, sensitivity, benchmarks, scenarios, optimizer) are shown here or can be exported until the inputs listed above are corrected. Withholding does not change saved data or block saving.')}</p>
+      ${canEditOpp(rec)? `<button class="btn btn-sm btn-primary" data-action="edit-opp" data-id="${rec.id}">✎ ${T('فتح التعديل لتصحيح المدخلات','Open editing to correct inputs')}</button>` : ''}
     </div>
+  </div>`;
+}
+function renderDetail(id){
+  const rec = opportunities.find(o=>o.id===id);
+  if(!rec) return '';
+  const d = withDefaults(rec.data), c = compute(d);
+  const ti = OPP_TYPE_INFO[d.meta.oppType];
+  const reportDates = reportDateMeta(d);
+  const _g = metricGuard(d,c);
+  if(_g) return renderBlockedMemo(rec,d,c,_g,ti,reportDates,'verdict-bad',blockedVerdictLabel(_g));
+  const vcls = _g?'verdict-bad':c.verdict==='good'?'verdict-good':c.verdict==='warn'?'verdict-warn':'verdict-bad';
+  const vlbl = _g?blockedVerdictLabel(_g):c.verdict==='good'?'🟢 '+T('التوصية: قابلة للعرض على لجنة الاستثمار','Recommendation: Ready to present to the Investment Committee'):c.verdict==='warn'?'🟡 '+T('التوصية: تحت المراجعة — تحتاج تحسين مؤشرات محددة','Recommendation: Under review — specific metrics need improvement'):'🔴 '+T('التوصية: دون معايير القبول — تحتاج إعادة هيكلة','Recommendation: Below acceptance standards — needs restructuring');
+
+  return `${memoHeaderHtml(rec,d,ti,reportDates,vcls,vlbl)}${renderMemoTopExtensions(d,c,rec)}
 
     <div class="kpis">
-      <div class="kpi"><div class="l">Equity IRR${c.holdStrategy==='perpetual_hold'?' ('+T('دفترية','Book')+' / Mark-to-Market)':''}</div><div class="v">${fmtPct(c.equityIRR)}</div></div>
-      <div class="kpi"><div class="l">Project IRR (Unlevered)</div><div class="v">${fmtPct(c.projectIRR)}</div></div>
-      <div class="kpi"><div class="l">MOIC${c.holdStrategy==='perpetual_hold'?' ('+T('دفترية','Book')+')':''}</div><div class="v">${c.MOIC.toFixed(2)}<small>×</small></div></div>
+      <div class="kpi"><div class="l">Equity IRR${c.holdStrategy==='perpetual_hold'?' ('+T('دفترية','Book')+' / Mark-to-Market)':''}</div><div class="v">${_g?blockedBadge(_g):fmtPct(c.equityIRR)}</div></div>
+      <div class="kpi"><div class="l">Project IRR (Unlevered)</div><div class="v">${_g?blockedBadge(_g):fmtPct(c.projectIRR)}</div></div>
+      <div class="kpi"><div class="l">MOIC${c.holdStrategy==='perpetual_hold'?' ('+T('دفترية','Book')+')':''}</div><div class="v">${_g?blockedBadge(_g):c.MOIC.toFixed(2)+'<small>×</small>'}</div></div>
       <div class="kpi"><div class="l">DSCR (${T('أدنى','min')})</div><div class="v" style="font-size:17px;">${c.dscrMin!=null?c.dscrMin.toFixed(2):'—'}<small>×</small></div></div>
       <div class="kpi"><div class="l">DSCR (${T('متوسط','avg')})</div><div class="v" style="font-size:17px;">${c.dscrAvg!=null?c.dscrAvg.toFixed(2):'—'}<small>×</small></div></div>
       <div class="kpi"><div class="l">WACC</div><div class="v">${fmtPct(c.WACC)}</div></div>
@@ -2766,6 +2834,16 @@ ${T('بدلاً من بيع الأصل في نهاية المدة، يقوم ا�
 /* =========================================================================
    المعالج — Wizard modal
    ========================================================================= */
+/* Phase 3A-2b — which wizard step edits a given field path (null if none). Pure lookup over the
+   real step renderers, so it can never drift from the form. exitCosts.* resolves to its first field. */
+function wizardStepForPath(path, d){
+  const p = path==='exitCosts.*' ? 'exitCosts.rett' : path;
+  for(let i=0;i<STEPS.length;i++){
+    let html=''; try{ html = renderStepFields(i, d)||''; }catch(e){ html=''; }
+    if(html.indexOf('name="'+p+'"')>=0) return { step:i, path:p };
+  }
+  return null;
+}
 function renderWizardModal(){
   if(!wizard) return '';
   const idx = wizard.step, d = wizard.draft;
@@ -3816,6 +3894,19 @@ document.addEventListener('click', async (e)=>{
     if(rec && canEditOpp(rec)){ wizard = { step:0, draft: withDefaults(rec.data), editId: rec.id }; openDetailId=null; render(); }
     return;
   }
+  if(action==='fix-field'){
+    const rec = opportunities.find(o=>o.id===el.dataset.id);
+    if(!rec || !canEditOpp(rec)) return;
+    const dd = withDefaults(rec.data);
+    const hit = wizardStepForPath(el.dataset.path, dd);
+    if(!hit) return;
+    wizard = { step:hit.step, draft: dd, editId: rec.id }; openDetailId=null; render();
+    setTimeout(()=>{ try{
+      const inp = document.querySelector('[name="'+hit.path.replace(/"/g,'')+'"]');
+      if(inp){ inp.scrollIntoView({ block:'center' }); inp.focus(); if(typeof inp.select==='function') inp.select(); inp.style.outline='3px solid var(--bad)'; }
+    }catch(e){} }, 50);
+    return;
+  }
   if(action==='apply-optimizer'){
     // تطبيق فوري بضغطة واحدة لأفضل تركيبة وجدتها التوصيات الاستثمارية — بدون المرور بالمعالج كامل.
     const rec = opportunities.find(o=>o.id===el.dataset.id);
@@ -4639,6 +4730,7 @@ async function exportOpportunityExcel(id){
   const rec = opportunities.find(o=>o.id===id);
   if(!rec) return;
   const d = withDefaults(rec.data), c = compute(d);
+  if(metricGuard(d,c)){ alert(T('لا يمكن تصدير هذه الفرصة: مدخلاتها غير صالحة أو ناقصة. صحّحها أولًا.','This opportunity cannot be exported: its inputs are invalid or incomplete. Correct them first.')); return; }
   const yrs = c.projectCF.length;
   try{
     const wb = new ExcelJS.Workbook();
@@ -5130,6 +5222,7 @@ function exportOpportunityPptx(id){
   const rec = opportunities.find(o=>o.id===id);
   if(!rec) return;
   const d = withDefaults(rec.data), c = compute(d);
+  if(metricGuard(d,c)){ alert(T('لا يمكن تصدير هذه الفرصة: مدخلاتها غير صالحة أو ناقصة. صحّحها أولًا.','This opportunity cannot be exported: its inputs are invalid or incomplete. Correct them first.')); return; }
   // خلية جدول موحَّدة لهذا التصدير (نفس الإصلاح المطبَّق في ic-presentation.js): pptxgenjs
   // لا يُطبِّق rtlMode المضبوط على مستوى addTable على أي خلية فعلياً — تأكَّد هذا بفحص XML
   // الناتج مباشرةً — لذا يجب ضبط rtlMode وfontFace صراحة داخل خيارات كل خلية على حدة.
@@ -5326,6 +5419,12 @@ export {
   registerTopbarButton,
   registerBodyView,
   registerDetailSection,
+  registerMetricGuard,
+  metricGuard,
+  oppMetricGuard,
+  registerMemoTopSection,
+  renderMemoTopExtensions,
+  wizardStepForPath,
   registerActionHandler,
   registerAssetLinkGuard,
   checkAssetLinkGuards,

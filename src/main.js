@@ -87,6 +87,10 @@ registerMaxAcquisitionPrice(core);
 import { registerXirrComparisonPanel } from './features/xirr-comparison-panel.js';
 registerXirrComparisonPanel(core);
 
+// لوحة التحقق من المدخلات (Phase 3A-2): تعرض المشكلات وتحجب مؤشرات الربحية عند INVALID/INCOMPLETE؛ لا تغيّر الحساب ولا الحفظ.
+import { registerInputValidationPanel } from './features/input-validation-panel.js';
+registerInputValidationPanel(core);
+
 import { registerNegotiation } from './features/negotiation.js';
 registerNegotiation(core);
 

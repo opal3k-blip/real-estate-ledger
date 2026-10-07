@@ -67,6 +67,12 @@ const STAGE_LABELS = {
 
 function snapshotMetrics(core, d){
   let c; try{ c = core.compute(d); }catch(e){ c = {}; }
+  /* 3A-2c: لقطة تسعير لفرصة محجوبة (INVALID/INCOMPLETE) لا تحفظ أي مؤشر ربحية محسوب — تُحفظ فارغة ومعلَّمة. */
+  const _blk = typeof core.metricGuard==='function' ? core.metricGuard(d, c) : null;
+  if(_blk){
+    return { oppType: d.meta.oppType, price: (d.land && d.land.price!=null) ? d.land.price : null,
+      equityIRR: null, projectIRR: null, MOIC: null, dscrMin: null, blocked: true, blockedStatus: _blk.status };
+  }
   return {
     oppType: d.meta.oppType,
     price: (d.land && d.land.price!=null) ? d.land.price : null,

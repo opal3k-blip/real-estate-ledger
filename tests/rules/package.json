@@ -7,6 +7,8 @@
     "pretest": "node -e \"require('fs').copyFileSync('../../firestore.rules','./firestore.rules')\"",
     "pretest:load": "node -e \"require('fs').copyFileSync('../../firestore.rules','./firestore.rules')\"",
     "test": "firebase emulators:exec --only firestore --project demo-test \"node rules.test.mjs\"",
+    "pretest:emulator": "node -e \"require('fs').copyFileSync('../../firestore.rules','./firestore.rules')\"",
+    "test:emulator": "firebase emulators:exec --only firestore --project demo-test \"node ../../functions/test/p0-approve-validation.emulator.test.js && node ../../functions/test/p0-approve-opportunity-concurrency.emulator.test.js && node document-hash-parity.emulator.test.mjs\"",
     "test:load": "firebase emulators:exec --only firestore --project demo-load \"node load-stress.test.mjs\""
   },
   "devDependencies": {

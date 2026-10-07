@@ -38,7 +38,7 @@ const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..
 const FORBIDDEN = [/^capture-/i, /^golden-fixtures\./i, /golden-master.*generate/i];
 
 export const GROUPS = {
-  // tests/domain: the 15 tracked verify-*.mjs (capture-*.mjs are NOT matched).
+  // tests/domain: the 16 tracked verify-*.mjs (capture-*.mjs are NOT matched).
   domain: {
     dir: 'tests/domain',
     pattern: /^verify-.*\.mjs$/,
@@ -49,6 +49,7 @@ export const GROUPS = {
       'verify-financial-golden-master.mjs',
       'verify-financing-baseline.mjs',
       'verify-ic-readiness-shadow.mjs',
+      'verify-input-validation-engine.mjs',
       'verify-legacy-cash-timing-events.mjs',
       'verify-legacy-dated-cashflow.mjs',
       'verify-legacy-direct-sale-events.mjs',
@@ -90,6 +91,8 @@ export const GROUPS = {
       'capital-allocation-engine.landfirst.test.mjs',
       'fund-ledger-inkind-classification.test.mjs',
       'xirr-comparison-panel.test.mjs',
+      'input-validation-panel.test.mjs',
+      'blocked-cross-view.test.mjs',
     ],
   },
   // The runner's own self-test (explicit file, no pattern discovery).

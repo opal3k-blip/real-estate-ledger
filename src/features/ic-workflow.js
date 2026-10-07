@@ -35,10 +35,12 @@
    ========================================================================= */
 
 import { dataQualityStats } from './data-quality.js';
+import { documentHashHex } from '../domain/validation/document-hash.js';
 import { ddStats, defaultItemsDict as ddDefaultItemsDict } from './due-diligence.js';
 import { canApproveIC } from './roles-permissions.js';
 import { buildUnderwritingVersionRecord } from './underwriting-versions.js?v=20260913-stage7b';
 import { icReadiness } from './ic-decision-gate.js';
+import { classifyOpportunity } from '../domain/validation/risk-classification.js';
 
 const APPROVAL_DECISIONS = ['approve', 'approve_conditions'];
 
@@ -132,9 +134,10 @@ export function persistPendingIcRequests(map){
 // بلا علم بالطلب الأصلي — بالضبط الثغرة التي صُمِّمت هذه الآلية كلها لمنعها. الإصلاح: نحفظ الحالة
 // التي كانت موجودة قبل هذا الحجز (قد تكون undefined)، وعند فشل الحفظ نستعيدها بالضبط كما كانت —
 // لا نحذف إلا إذا لم يكن هناك شيء لنستعيده أصلاً.
-export function reservePendingIcRequest(pendingIcRequests, pendingKey, requestId, signature){
+export function reservePendingIcRequest(pendingIcRequests, pendingKey, requestId, signature, payload){
   const previousEntry = pendingIcRequests.get(pendingKey); // الحالة قبل هذا الحجز — للاستعادة الدقيقة إن فشل الحفظ
-  pendingIcRequests.set(pendingKey, { requestId, signature, busy: true });
+  // 3A-3: تُحفَظ الحمولة الأصلية **كاملة** (بما فيها requestId وexpectedDocHash) لإعادة إرسالها حرفياً بعد نتيجة غامضة.
+  pendingIcRequests.set(pendingKey, payload ? { requestId, signature, busy: true, payload } : { requestId, signature, busy: true });
   const persisted = persistPendingIcRequests(pendingIcRequests);
   if(!persisted){
     if(previousEntry){
@@ -165,8 +168,40 @@ export function normalizeFunctionsErrorCode(code){
   if (typeof code !== 'string') return code;
   return code.startsWith('functions/') ? code.slice('functions/'.length) : code;
 }
-function icRequestPayloadSignature(oppId, decision, reasons, conditions, override){
-  return JSON.stringify({ oppId, decision, reasons, conditions, override: !!override });
+// 3A-3: الحمولة تشمل الآن إقرار التحذيرات المركّبة وبصمة الوثيقة التي رُوجعت — يجب أن تطابق ما يقارنه
+// الخادم لاستبدال requestId (نفس المعرّف مع حمولة مختلفة يُرفض هناك).
+export function icRequestPayloadSignature(oppId, decision, reasons, conditions, override, warningsAcknowledged, expectedDocHash){
+  return JSON.stringify({ oppId, decision, reasons, conditions, override: !!override, warningsAcknowledged: !!warningsAcknowledged, expectedDocHash: expectedDocHash || null });
+}
+// 3A-3: طلب غامض معلَّق (نتيجته مجهولة: قد يكون الخادم نفّذه). السياسة: لا يُستبدل تلقائياً أبداً بطلب جديد.
+//  - نفس محتوى القرار => تُعاد **الحمولة الأصلية حرفياً** (نفس requestId ونفس expectedDocHash) فيردّ الخادم الرد الأصلي أو يرفض نهائياً.
+//  - محتوى مختلف أو طلب قديم بلا حمولة محفوظة => لا يُرسَل شيء، ويُطلب من المستخدم إعادة إرسال القرار نفسه أو تجاهل المعلَّق صراحةً.
+//  - لا يُمحى المعلَّق إلا برد نهائي من الخادم (أو بتجاهل صريح من المستخدم).
+function sameJson(a, b){ return JSON.stringify(a == null ? null : a) === JSON.stringify(b == null ? null : b); }
+export function resolveAmbiguousIcRequest(entry, form){
+  if(!entry || !entry.payload || typeof entry.payload !== 'object') return { action: 'block', why: 'legacy' };
+  const p = entry.payload;
+  const pd = p.decision && p.decision.decision;
+  const same = pd === form.decision
+    && sameJson(p.reasons, form.reasons)
+    && sameJson(p.conditions, form.conditions)
+    && !!p.override === !!form.override
+    && (!p.warningsAcknowledged || !!form.warningsAcknowledged);
+  return same ? { action: 'resend' } : { action: 'block', why: 'different' };
+}
+export function ambiguousIcRequestNotice(entry){
+  if(!entry || entry.busy) return null;
+  const p = entry.payload;
+  return { decision: p && p.decision ? p.decision.decision : null, legacy: !p };
+}
+
+// 3A-3: رسالة واضحة (بلا أرقام) لرموز الرفض الخاصة بالخادم.
+export function approvalRejectionMessage(core, err){
+  const code = err && err.details && err.details.rejectionCode;
+  if(code === 'DOC_CHANGED') return core.T('تغيّرت الفرصة بعد مراجعتها. أُعيد تحميل المعاينة — راجِعها ثم أعد المحاولة.','The opportunity changed after it was reviewed. The preview was reloaded — review it and try again.');
+  if(code === 'INPUTS_BLOCKED') return core.T('الاعتماد محجوب: المدخلات غير صالحة أو غير مكتملة (أحمر). صحّح المدخلات أولاً.','Approval blocked: the inputs are invalid or incomplete (red). Fix the inputs first.');
+  if(code === 'WARNINGS_ACK_REQUIRED') return core.T('تجتمع عدة مخاطر عالية — الاعتماد يتطلب إقراراً مكتوباً: فعّل خانة الإقرار واكتب السبب.','Several high-risk conditions apply together — approval needs a written acknowledgement: tick the acknowledgement box and write the reason.');
+  return null;
 }
 function newIcRequestId(oppId){
   return 'ic-' + oppId + '-' + Date.now() + '-' + Math.random().toString(36).slice(2, 10);
@@ -186,6 +221,47 @@ function splitLines(text){
 }
 
 export function registerICWorkflow(core){
+  /* 3A-3: معاينة الاعتماد من الخادم. الخادم وحده يحسب بصمة الوثيقة (docHash) والحكم (أحمر/أصفر/أخضر)؛ الواجهة تعرضهما
+     وتُرسل البصمة التي رأتها مع طلب الاعتماد. تُجلب المعاينة مجدداً كلما تغيّرت بيانات الفرصة في الواجهة. */
+  const approvalPreviews = new Map(); // oppId -> { sig, status:'loading'|'ready'|'error', docHash, verdict, error }
+  const docSig = (rec)=>{ try{ return JSON.stringify(rec.data); }catch(e){ return 'unserialisable:' + Math.random(); } };
+  const serverApprovalAvailable = ()=> !core.DEMO_MODE && core.DB && typeof firebase!=='undefined' && firebase.functions;
+  function ensureApprovalPreview(oppId, rec){
+    const sig = docSig(rec);
+    const cur = approvalPreviews.get(oppId);
+    if(cur && cur.sig === sig) return cur;
+    const entry = { sig, status:'loading', docHash:null, displayedHash:null, verdict:null, error:null };
+    approvalPreviews.set(oppId, entry);
+    // البصمة تُحسب من نسخة المستند التي تعرضها الواجهة الآن (تسلسل معياري متزامن، ثم SHA-256 القياسي من WebCrypto)،
+    // وتُرسل للخادم الذي يقارنها ببصمة ما قرأه فعلاً. لا تُقبل المعاينة إلا إذا تطابقت النسختان.
+    // documentHashHex يُسلسل المستند معيارياً بشكل متزامن لحظة الاستدعاء (قبل أي انتظار)، فلا سباق مع تحديثات لاحقة لـ rec.data.
+    documentHashHex(rec.data).then(displayedHash=>{
+      entry.displayedHash = displayedHash;
+      return firebase.functions().httpsCallable('getApprovalPreview')({ oppId, displayedDocHash: displayedHash });
+    }).then(resp=>{
+      const data = resp && resp.data;
+      if(!data || typeof data.docHash !== 'string' || !/^[0-9a-f]{64}$/.test(data.docHash) || !data.verdict) throw new Error('bad preview response');
+      if(approvalPreviews.get(oppId) !== entry) return;
+      if(data.displayedMatches !== true || data.docHash !== entry.displayedHash){
+        // الخادم يرى نسخة مختلفة عمّا يعرضه المستخدم: لا حكم ولا بصمة تُقبل — يلزم تحديث صريح.
+        entry.status = 'stale'; return;
+      }
+      entry.status = 'ready'; entry.docHash = data.docHash; entry.verdict = data.verdict;
+    }).catch(err=>{
+      if(approvalPreviews.get(oppId) !== entry) return;
+      entry.status = 'error'; entry.error = (err && err.message) ? err.message : String(err);
+    }).then(()=>{ if(approvalPreviews.get(oppId) === entry && core.openDetailId === oppId) core.render(); });
+    return entry;
+  }
+  // الحكم المحلي (وضع الديمو/التشغيل المحلي حيث لا خادم) — نفس الوحدة المشتركة التي يشغّلها الخادم.
+  function localVerdict(rec){
+    try{
+      const { ic, ...input } = JSON.parse(JSON.stringify(rec.data || {}));
+      const d = core.withDefaults(input);
+      return classifyOpportunity(d, core.compute(d));
+    }catch(e){ return { blocked:true, color:'red', status:'ERROR', compound:{ requiresAcknowledgement:false, count:0, threshold:3 } }; }
+  }
+
   core.registerOpportunitySchemaExtender(()=>({
     ic: { decisions: [] }, // {decision, reasons:[string], conditions:[{text,owner,dueDate,status}], decidedBy, decidedAt}
   }));
@@ -208,6 +284,43 @@ export function registerICWorkflow(core){
     const gate = icReadiness(core, d, c);
     const gateReasonsHtml = gate.reasons.length
       ? `<ul style="margin:6px 0 0; padding-inline-start:18px; font-size:11.5px;">${gate.reasons.map(r=>`<li>${core.T(r.ar,r.en)}</li>`).join('')}</ul>` : '';
+
+    // 3A-3: الحكم (أحمر/أصفر/أخضر) — من الخادم عند وجوده، وإلا من الوحدة المشتركة محلياً.
+    let preview = null, verdictView = null;
+    if(canApprove){
+      if(serverApprovalAvailable()){
+        preview = ensureApprovalPreview(oppId, rec);
+        if(preview.status==='ready') verdictView = preview.verdict;
+      }else{
+        const lv = localVerdict(rec);
+        verdictView = { blocked: lv.blocked, color: lv.color, compound: lv.compound };
+      }
+    }
+    const verdictBlocked = !!(verdictView && verdictView.blocked);
+    const needsAck = !!(verdictView && !verdictView.blocked && verdictView.compound && verdictView.compound.requiresAcknowledgement);
+    const previewNote = (preview && preview.status==='loading')
+      ? `<div class="note" style="margin:0 0 10px; font-size:11.5px;">⏳ ${core.T('جارٍ تحميل معاينة الاعتماد من الخادم… (الاعتماد متاح بعد اكتمالها)','Loading the approval preview from the server… (approval is available once it finishes)')}</div>`
+      : (preview && preview.status==='stale')
+        ? `<div class="note" data-ic-stale="1" style="margin:0 0 10px; font-size:11.5px; color:var(--bad);">⚠️ ${core.T('النسخة المعروضة تختلف عن نسخة الخادم الحالية؛ الاعتماد متوقف حتى تحدّث المعاينة.','The displayed version differs from the server\'s current version; approval is paused until you refresh the preview.')} <button type="button" class="btn btn-sm btn-ghost" data-action="ic-refresh-preview" data-id="${oppId}" style="margin-inline-start:8px;">🔄 ${core.T('تحديث المعاينة','Refresh preview')}</button></div>`
+      : (preview && preview.status==='error')
+        ? `<div class="note" style="margin:0 0 10px; font-size:11.5px; color:var(--bad);">⚠️ ${core.T('تعذّر تحميل معاينة الاعتماد؛ لا يمكن الاعتماد الآن. أعد فتح الفرصة وحاول مجدداً.','Could not load the approval preview; approval is unavailable. Reopen the opportunity and try again.')}</div>`
+        : '';
+    const pendingEntry = canApprove && serverApprovalAvailable()
+      ? ambiguousIcRequestNotice(pendingIcRequests.get(pendingIcRequestKey(core.currentUser ? core.currentUser.email : null, oppId))) : null;
+    const pendingBox = pendingEntry
+      ? `<div class="note" data-ic-pending="1" style="margin:0 0 10px; color:var(--bad); background:#f59e0b14; border:1px solid #f59e0b55; border-radius:8px; padding:8px 10px;">⏳ ${core.T(
+          pendingEntry.legacy
+            ? 'يوجد طلب اعتماد سابق غير محسوم النتيجة (قد يكون الخادم نفّذه). لا يمكن إعادة إرساله لأنه محفوظ بصيغة قديمة. اضغط «إيقاف التتبّع محليًا» بعد التحقق من سجل القرارات أعلاه (لا يُلغي الطلب على الخادم).'
+            : 'يوجد طلب اعتماد سابق غير محسوم النتيجة (قد يكون الخادم نفّذه). لإعادة إرساله بنفس بياناته الأصلية حرفياً اختر القرار نفسه بنفس الأسباب والشروط ثم اضغط «تسجيل القرار». لا يُرسَل طلب جديد بدلاً منه تلقائياً. أو اضغط «إيقاف التتبّع محليًا» بعد التحقق من سجل القرارات أعلاه (لا يُلغي الطلب على الخادم).',
+          pendingEntry.legacy
+            ? 'A previous approval request has an unknown outcome (the server may have executed it). It cannot be re-sent because it was stored in an older format. Press "Stop tracking locally" after checking the decision history above (this does not cancel the request on the server).'
+            : 'A previous approval request has an unknown outcome (the server may have executed it). To re-send it exactly as originally sent, choose the same decision with the same reasons and conditions and press "Record Decision". No new request replaces it automatically. Or press "Stop tracking locally" after checking the decision history above (this does not cancel the request on the server; the decision may already be recorded).')}
+          <label style="display:block; margin-top:6px; font-size:11.5px;"><input type="checkbox" name="icDiscardAck"> ${core.T('أفهم أن هذا لا يُلغي الطلب على الخادم وأن القرار قد يكون سُجّل فعلًا','I understand this does not cancel the request on the server and the decision may already be recorded')}</label>
+          <button type="button" class="btn btn-sm btn-ghost" data-action="ic-discard-pending" data-id="${oppId}" style="margin-top:6px;">⏹ ${core.T('إيقاف التتبّع محليًا','Stop tracking locally')}</button></div>`
+      : '';
+    const blockedBox = verdictBlocked
+      ? `<div class="note" data-ic-verdict="red" style="margin:0 0 10px; color:var(--bad); background:#ef444411; border:1px solid #ef444433; border-radius:8px; padding:8px 10px;">🔴 ${core.T('الاعتماد محجوب: المدخلات غير صالحة أو غير مكتملة. صحّحها أولاً — لا يمكن تجاوز هذا الحجب.','Approval blocked: inputs are invalid or incomplete. Fix them first — this block cannot be overridden.')}</div>`
+      : '';
 
     return `
     <div class="section">
@@ -251,6 +364,7 @@ export function registerICWorkflow(core){
       <div style="background:var(--surface-2); border:1px dashed var(--border); border-radius:10px; padding:12px;">
         <p class="step-sub" style="margin:0 0 4px;">${core.T('تسجيل قرار جديد للجنة الاستثمار','Record a new IC decision')}</p>
         <p class="note" style="margin:0 0 10px; font-size:11px;">${core.T('صلاحية الاعتماد تتطلب دور "عضو لجنة استثمار أول" فأعلى — مستقلة عن ملكية الفرصة.','Approval requires a Senior IC role or above — independent of who owns/edited this opportunity.')}</p>
+        ${previewNote}${pendingBox}${blockedBox}
         ${!gate.ready? `<div class="note" style="margin:0 0 10px; color:var(--bad); background:#ef444411; border:1px solid #ef444433; border-radius:8px; padding:8px 10px;">
           🔴 ${core.T('بوابة الجهوزية (IC Decision Gate) غير مُستوفاة — الاعتماد أو الاعتماد بشروط يتطلب "تجاوز واعٍ" مع تبرير مكتوب أدناه.','IC Decision Gate not satisfied — approving requires an explicit override with a written justification below.')}
           ${gateReasonsHtml}
@@ -264,6 +378,10 @@ export function registerICWorkflow(core){
           ${!gate.ready? `<label style="display:flex; align-items:flex-start; gap:6px; font-size:11.5px; color:var(--bad);">
             <input type="checkbox" name="override" style="margin-top:2px;">
             <span>${core.T('أؤكّد تجاوز بوابة الجهوزية عمداً وسأوضّح السبب في حقل الأسباب أعلاه (سيُسجَّل هذا التجاوز في سجل القرار).','I knowingly override the readiness gate and have explained why above (this override will be recorded on the decision).')}</span>
+          </label>` : ''}
+          ${needsAck? `<label data-ic-verdict="ack" style="display:flex; align-items:flex-start; gap:6px; font-size:11.5px; color:#b45309;">
+            <input type="checkbox" name="ackWarnings" style="margin-top:2px;">
+            <span>${core.T('تجتمع عدة مخاطر عالية (أصفر). أُقِرّ بأنني اطّلعت عليها وسأكتب مبرر قبولها في حقل الأسباب أعلاه (يُسجَّل الإقرار في سجل القرار).','Several high-risk conditions apply together (yellow). I acknowledge them and have written why they are accepted in the reasons field above (the acknowledgement is recorded on the decision).')}</span>
           </label>` : ''}
           <button type="button" class="btn btn-sm btn-primary" data-action="ic-decide" data-id="${oppId}">✅ ${core.T('تسجيل القرار','Record Decision')}</button>
         </form>
@@ -291,9 +409,32 @@ export function registerICWorkflow(core){
       const overrideChecked = !!(overrideEl && overrideEl.checked);
       const decidedBy = core.currentUser ? core.currentUser.email : (core.DEMO_MODE ? 'زائر تجريبي' : 'محلي');
 
+      // 3A-3: طلب غامض معلَّق لهذا المستخدم/الفرصة؟ لا يُستبدل تلقائياً — إما إعادة الحمولة الأصلية حرفياً أو لا إرسال.
+      let verbatimPayload = null;
+      if(serverApprovalAvailable()){
+        const pk0 = pendingIcRequestKey(decidedBy, oppId);
+        const pend = pendingIcRequests.get(pk0);
+        if(pend && pend.busy) return true;
+        if(pend){
+          const ackEl0 = form.querySelector('[name="ackWarnings"]');
+          const res = resolveAmbiguousIcRequest(pend, { decision, reasons, conditions, override: overrideChecked, warningsAcknowledged: !!(ackEl0 && ackEl0.checked) });
+          if(res.action !== 'resend'){
+            alert(core.T(
+              res.why === 'legacy'
+                ? 'يوجد طلب اعتماد سابق غير محسوم النتيجة بصيغة قديمة لا يمكن إعادة إرسالها. تحقق من سجل القرارات ثم اضغط «إيقاف التتبّع محليًا».'
+                : 'يوجد طلب اعتماد سابق غير محسوم النتيجة (قد يكون الخادم نفّذه). لم يُرسَل شيء. أعد اختيار القرار نفسه بنفس الأسباب والشروط لإعادة إرساله حرفياً، أو اضغط «إيقاف التتبّع محليًا» بعد التحقق من سجل القرارات (لا يُلغي الطلب على الخادم).',
+              res.why === 'legacy'
+                ? 'A previous approval request with an unknown outcome exists in an older format and cannot be re-sent. Check the decision history, then press "Stop tracking locally".'
+                : 'A previous approval request has an unknown outcome (the server may have executed it). Nothing was sent. Choose the same decision with the same reasons and conditions to re-send it exactly, or press "Stop tracking locally" after checking the decision history (this does not cancel the request on the server).'));
+            return true;
+          }
+          verbatimPayload = JSON.parse(JSON.stringify(pend.payload));
+        }
+      }
+
       const draft = core.withDefaults(rec.data);
       let overridden = false, gateReasonsAtDecision = [];
-      if(APPROVAL_DECISIONS.includes(decision)){
+      if(APPROVAL_DECISIONS.includes(decision) && !verbatimPayload){
         // إصلاح P0 #2: اعتماد/اعتماد بشروط يتطلب بوابة جهوزية حقيقية —
         // لا "تسجيل قرار" حرّ. عدم الجهوزية بلا تجاوز صريح + تبرير مكتوب
         // يمنع الحفظ كلياً (بلا أي أثر جانبي).
@@ -302,6 +443,56 @@ export function registerICWorkflow(core){
           if(!overrideChecked || !reasons.length) return true;
           overridden = true;
           gateReasonsAtDecision = gate.reasons;
+        }
+      }
+
+      // 3A-3: الأحمر (INVALID/INCOMPLETE) يحجب الاعتماد دائماً، والأصفر المركّب (≥ العتبة) يتطلب إقراراً مكتوباً،
+      // والاعتماد مرتبط ببصمة الوثيقة التي راجعها المستخدم فعلاً. الخادم يُعيد كل هذه الفحوص ولا يثق بالواجهة.
+      const ackEl = form.querySelector('[name="ackWarnings"]');
+      const ackChecked = !!(ackEl && ackEl.checked);
+      const approving = APPROVAL_DECISIONS.includes(decision);
+      const serverPath = !!serverApprovalAvailable();
+      let expectedDocHash;
+      let warningsAcknowledged = false;
+      if(approving && !verbatimPayload){
+        let blockedNow, needsAckNow;
+        if(serverPath){
+          const pv = ensureApprovalPreview(oppId, rec);
+          if(pv.status !== 'ready'){
+            alert(pv.status === 'loading'
+              ? core.T('معاينة الاعتماد قيد التحميل من الخادم. انتظر لحظات ثم أعد المحاولة.','The approval preview is still loading from the server. Wait a moment and try again.')
+              : pv.status === 'stale'
+              ? core.T('النسخة المعروضة تختلف عن نسخة الخادم. اضغط «تحديث المعاينة» وراجع البيانات ثم أعد المحاولة.','The displayed version differs from the server version. Press "Refresh preview", review the data, and try again.')
+              : core.T('تعذّر تحميل معاينة الاعتماد؛ لا يمكن الاعتماد الآن.','Could not load the approval preview; approval is unavailable right now.'));
+            return true;
+          }
+          // إعادة حساب بصمة النسخة المعروضة لحظة النقر: يجب أن تساوي بصمة المعاينة المقبولة، وإلا تُمنع الإرسالة.
+          let clickHash = null;
+          try{ clickHash = await documentHashHex(rec.data); }catch(e){ clickHash = null; }
+          if(clickHash !== pv.docHash){
+            approvalPreviews.delete(oppId);
+            alert(core.T('تغيّرت بيانات الفرصة منذ تحميل المعاينة. لم يُرسَل شيء؛ تُحمَّل معاينة جديدة الآن — راجعها ثم أعد المحاولة.','The opportunity data changed since the preview loaded. Nothing was sent; a fresh preview is loading — review it and try again.'));
+            core.render();
+            return true;
+          }
+          blockedNow = !!pv.verdict.blocked;
+          needsAckNow = !blockedNow && !!(pv.verdict.compound && pv.verdict.compound.requiresAcknowledgement);
+          expectedDocHash = pv.docHash;
+        }else{
+          const lv = localVerdict(rec);
+          blockedNow = !!lv.blocked;
+          needsAckNow = !blockedNow && !!(lv.compound && lv.compound.requiresAcknowledgement);
+        }
+        if(blockedNow){
+          alert(core.T('الاعتماد محجوب: المدخلات غير صالحة أو غير مكتملة (أحمر). صحّحها أولاً.','Approval blocked: inputs are invalid or incomplete (red). Fix them first.'));
+          return true;
+        }
+        if(needsAckNow){
+          if(!ackChecked || !reasons.length){
+            alert(core.T('تجتمع عدة مخاطر عالية — الاعتماد يتطلب تفعيل خانة الإقرار وكتابة المبرر في حقل الأسباب.','Several high-risk conditions apply together — approval needs the acknowledgement box ticked and a written justification in the reasons field.'));
+            return true;
+          }
+          warningsAcknowledged = true;
         }
       }
 
@@ -315,7 +506,7 @@ export function registerICWorkflow(core){
       // بشكل ذرّي — فشل الخادم يمنع الحفظ كلياً بدل الاكتفاء بحظر واجهي قابل للتجاوز.
       // لا لمس لمنطق core.js الداخلي هنا: الاستدعاء عبر firebase.functions() العامة (مُهيَّأة
       // أصلاً من core.js نفسه عبر firebase.initializeApp) وليس عبر أي تعديل على core.js.
-      const useServerFunction = !core.DEMO_MODE && core.DB && typeof firebase!=='undefined' && firebase.functions;
+      const useServerFunction = serverPath;
       let decisionId = null;
 
       if(useServerFunction){
@@ -327,15 +518,23 @@ export function registerICWorkflow(core){
         const inFlight = pendingIcRequests.get(pendingKey);
         if(inFlight && inFlight.busy) return true;
 
-        const signature = icRequestPayloadSignature(oppId, decision, reasons, conditions, overrideChecked);
-        const requestId = (inFlight && inFlight.signature === signature)
-          ? inFlight.requestId // إعادة إرسال الطلب نفسه بالضبط بعد نتيجة غامضة سابقاً — نفس المعرّف
-          : newIcRequestId(oppId); // قرار جديد فعلاً (أول مرة، أو تغيّرت حمولته) — معرّف جديد
+        // 3A-3: بعد نتيجة غامضة تُعاد الحمولة الأصلية حرفياً (نفس requestId ونفس expectedDocHash ونفس المحتوى)؛ لا طلب بديل تلقائياً.
+        const payloadToSend = verbatimPayload || {
+          oppId,
+          // The server derives readiness and audit fields from its saved snapshot.
+          decision: { decision },
+          reasons, conditions, override: overrideChecked,
+          warningsAcknowledged,
+          ...(expectedDocHash ? { expectedDocHash } : {}),
+          requestId: newIcRequestId(oppId),
+        };
+        const requestId = payloadToSend.requestId;
+        const signature = icRequestPayloadSignature(oppId, payloadToSend.decision.decision, payloadToSend.reasons, payloadToSend.conditions, payloadToSend.override, payloadToSend.warningsAcknowledged, payloadToSend.expectedDocHash);
 
         // إصلاح على مراجعة ثالثة: لا نستدعي الخادم إطلاقاً إن تعذّر حفظ معرّف الطلب فعلياً محلياً —
         // إرسال الطلب بلا حفظ المعرّف يعيد فتح نفس الثغرة التي أُصلِحت في الجولة الثانية (ضياع
         // requestId عند إعادة التحميل بعد نتيجة غامضة، مع احتمال تسجيل قرار إضافي).
-        if(!reservePendingIcRequest(pendingIcRequests, pendingKey, requestId, signature)){
+        if(!reservePendingIcRequest(pendingIcRequests, pendingKey, requestId, signature, payloadToSend)){
           alert(core.T(
             'تعذّر حفظ حالة الطلب محلياً، لذلك لم يُرسَل القرار للخادم. يرجى المحاولة مرة أخرى.',
             'Could not save the request state locally, so the decision was not sent to the server. Please try again.'
@@ -345,17 +544,12 @@ export function registerICWorkflow(core){
 
         try{
           const callable = firebase.functions().httpsCallable('approveOpportunity');
-          const resp = await callable({
-            oppId,
-            // The server derives readiness and audit fields from its saved snapshot.
-            decision: { decision },
-            reasons, conditions, override: overrideChecked,
-            requestId,
-          });
+          const resp = await callable(JSON.parse(JSON.stringify(payloadToSend)));
           decisionId = resp && resp.data ? resp.data.decisionId : null;
           // نتيجة نهائية (نجاح) — أي محاولة تالية على هذه الفرصة قرار جديد بمعرّف جديد.
           pendingIcRequests.delete(pendingKey);
           persistPendingIcRequests(pendingIcRequests);
+          approvalPreviews.delete(oppId); // المستند تغيّر بالقرار نفسه — معاينة جديدة للقرار التالي
         }catch(err){
           // توحيد الرمز قبل أي مقارنة (انظر تعليق normalizeFunctionsErrorCode أعلى الملف) — يطابق
           // الآن "permission-denied" و"functions/permission-denied" معاً بلا تمييز.
@@ -375,7 +569,10 @@ export function registerICWorkflow(core){
           // حدث — إعادة المحاولة بنفس القرار بالضبط يجب أن تُعيد استخدام requestId نفسه (محفوظ
           // أعلاه في stillPending) حتى تتعرّف آلية الاستبدال المتماثل (idempotent replay) في
           // الخادم على الطلب كأنه نفس الطلب لا طلباً تنافسياً جديداً.
-          alert(core.T('تعذّر اعتماد القرار عبر الخادم: ','Server could not record the decision: ') + (err && err.message ? err.message : String(err)));
+          const rejCode = err && err.details && err.details.rejectionCode;
+          if(rejCode === 'DOC_CHANGED' || rejCode === 'INPUTS_BLOCKED') approvalPreviews.delete(oppId); // معاينة جديدة إجبارية
+          alert((approvalRejectionMessage(core, err)) || (core.T('تعذّر اعتماد القرار عبر الخادم: ','Server could not record the decision: ') + (err && err.message ? err.message : String(err))));
+          if(rejCode === 'DOC_CHANGED' || rejCode === 'INPUTS_BLOCKED') core.render();
           return true;
         }
         await core.loadAll();
@@ -405,7 +602,7 @@ export function registerICWorkflow(core){
       // لاستدعائها، فيبقى المسار القديم من جانب العميل فقط كما كان قبل هذا الإصلاح.
       draft.ic.decisions = (draft.ic.decisions||[]).concat([{
         decision, reasons, conditions, decidedBy, decidedAt: new Date().toISOString(),
-        overridden, gateReasonsAtDecision,
+        overridden, gateReasonsAtDecision, warningsAcknowledged,
       }]);
       draft.meta.updatedAt = core.todayStr();
       draft.meta.updatedBy = decidedBy;
@@ -427,6 +624,34 @@ export function registerICWorkflow(core){
         }
       }
       await core.loadAll();
+      core.render();
+      return true;
+    }
+    if(action==='ic-refresh-preview'){
+      if(!canApproveIC(core)) return true;
+      approvalPreviews.delete(el.dataset.id);
+      core.render();
+      return true;
+    }
+    if(action==='ic-discard-pending'){
+      // 3A-3: إيقاف التتبّع المحلي فقط، بقرار صريح من المستخدم (لا تلقائياً). لا يُلغي شيئاً على الخادم، وقد يكون القرار سُجّل فعلاً.
+      if(!canApproveIC(core)) return true;
+      const oppId0 = el.dataset.id;
+      const key0 = pendingIcRequestKey(core.currentUser ? core.currentUser.email : null, oppId0);
+      const ent0 = pendingIcRequests.get(key0);
+      if(ent0 && ent0.busy){
+        alert(core.T('الطلب قيد الإرسال الآن؛ لا يمكن إيقاف تتبّعه حتى تنتهي المحاولة.','The request is being sent right now; it cannot be dropped until the attempt finishes.'));
+        return true;
+      }
+      const box0 = el.closest ? el.closest('[data-ic-pending]') : null;
+      const ack0 = box0 && box0.querySelector ? box0.querySelector('[name="icDiscardAck"]') : null;
+      if(!(ack0 && ack0.checked)){
+        alert(core.T('فعّل خانة الإقرار أولاً: إيقاف التتبّع المحلي لا يُلغي الطلب على الخادم وقد يكون القرار سُجّل.','Tick the acknowledgement first: dropping local tracking does not cancel the request on the server and the decision may already be recorded.'));
+        return true;
+      }
+      pendingIcRequests.delete(key0);
+      persistPendingIcRequests(pendingIcRequests);
+      approvalPreviews.delete(oppId0);
       core.render();
       return true;
     }
