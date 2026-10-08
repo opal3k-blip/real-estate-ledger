@@ -4,9 +4,16 @@
 //   npx firebase-tools emulators:exec --only firestore "node rules.test.mjs"
 // يغطي بالضبط ما طلبه المستخدم: اختبار كل قاعدة ضد Analyst/Senior IC/Fund Manager/Admin كلٌ
 // على حدة، بدل الاعتماد على إخفاء الأزرار في الواجهة.
+//
+// 📋 حالة معروفة حالياً في بيئة التطوير السحابية لهذه الجلسة (غير موجودة بالضرورة على جهازك):
+// `npm test` هنا يفشل بخطأ "Cannot find module '.../stream-json/src/filters/Pick'" — تعارض
+// إصدار بين firebase-tools (يتوقع stream-json@^1.7.3 بمسارات قديمة) وstream-json@3.6.0 المثبَّت
+// فعلياً عبر overrides في package.json. functions/test/p0-trusted-transaction-layer.test.js
+// (اختبارات fakes بلا محاكي) لا تُغني عن هذا الملف لإغلاق Security Rules نهائياً — أعد تشغيل هذا
+// الملف فعلياً (عبر محاكي حقيقي يعمل) قبل أي "شهادة نهائية" لطبقة القواعد.
 import { initializeTestEnvironment, assertSucceeds, assertFails } from '@firebase/rules-unit-testing';
 import { readFileSync } from 'fs';
-import { doc, setDoc, updateDoc, deleteDoc, getDoc } from 'firebase/firestore';
+import { doc, setDoc, updateDoc, deleteDoc, getDoc, deleteField, writeBatch } from 'firebase/firestore';
 
 let failures = 0;
 function assert(cond, msg){ if(!cond){ console.error('FAIL:', msg); failures++; } else { console.log('ok  :', msg); } }
@@ -51,6 +58,18 @@ function baseOpp(createdBy, decisions){
 
 function ctxFor(email){ return testEnv.authenticatedContext(email, { email }); }
 
+// Fixture setup only: these writes do NOT test the callable or a real transition.
+// Each rejected client transition leaves the old state unchanged. Seed the next
+// state explicitly so subsequent tests actually exercise approved/posted records.
+async function seedLedgerStatus(collection, id, status){
+  await testEnv.withSecurityRulesDisabled(async ctx=>{
+    const ref = doc(ctx.firestore(), collection, id);
+    await updateDoc(ref, { status });
+    if((await getDoc(ref)).data().status !== status) throw new Error('Ledger fixture state mismatch');
+  });
+}
+
+
 // ==================== ١) attributionHonest + ownsOpp: تعديل عادي على فرصة ====================
 {
   const db = ctxFor(ANALYST_OWNER).firestore();
@@ -76,11 +95,11 @@ function ctxFor(email){ return testEnv.authenticatedContext(email, { email }); }
   });
   const db = ctxFor(SENIOR_IC).firestore();
   const newDecisions = [{ decision:'approve', reasons:['جيدة'], conditions:[], decidedBy:SENIOR_IC, decidedAt:'2026-09-09T10:00:00Z' }];
-  await assertSucceeds(setDoc(doc(db,'opportunities','OPP-1'), {
+  await assertFails(setDoc(doc(db,'opportunities','OPP-1'), {
     ...baseOpp(ANALYST_OWNER, newDecisions),
     meta: { ...baseOpp(ANALYST_OWNER, newDecisions).meta, updatedBy: SENIOR_IC, updatedAt:'2026-09-09' },
   }));
-  assert(true, '✅ الإصلاح الجوهري: عضو لجنة استثمار أول (senior_ic)، وهو *ليس* مالك الفرصة، يقدر الآن يسجّل قرار لجنة (ic فقط) — هذا كان مستحيلاً تماماً بالقاعدة القديمة (ownsOpp فقط)، وهو جوهر الثغرة رقم ١ التي رصدها المستخدم');
+  assert(true, '🔒 Senior IC لا يكتب opportunity.ic مباشرة من العميل؛ الاعتماد عبر approveOpportunity.');
 }
 {
   // نفس عضو اللجنة، لكن يحاول (في نفس الطلب) تغيير حقل مالي غير ic — يجب أن يُرفض بالكامل
@@ -92,7 +111,7 @@ function ctxFor(email){ return testEnv.authenticatedContext(email, { email }); }
   sneaky.land.price = 1; // محاولة تغيير حقل مالي بجانب قرار اللجنة
   sneaky.meta.updatedBy = SENIOR_IC;
   await assertFails(setDoc(doc(db,'opportunities','OPP-1'), sneaky));
-  assert(true, '🔒 icOnlyChange تمنع عضو اللجنة (غير المالك) من تمرير أي تغيير مالي/تشغيلي آخر (land.price هنا) "مُخبَّأً" بجانب قرار اللجنة في نفس الطلب — الصلاحية الجديدة ضيّقة تماماً كما صُمِّمت');
+  assert(true, '🔒 عضو اللجنة غير المالك لا يستطيع تمرير قرار IC مع تغيير مالي من العميل.');
 }
 {
   // محلل عادي (غير لجنة، غير مالك) يحاول محاكاة نفس مسار "قرار لجنة" بلا أي دور — يجب أن يُرفض
@@ -103,7 +122,7 @@ function ctxFor(email){ return testEnv.authenticatedContext(email, { email }); }
   const attempt = baseOpp(ANALYST_OWNER, [{ decision:'approve', reasons:[], conditions:[], decidedBy:ANALYST_OTHER, decidedAt:'x' }]);
   attempt.meta.updatedBy = ANALYST_OTHER;
   await assertFails(setDoc(doc(db,'opportunities','OPP-1'), attempt));
-  assert(true, '🔒 محلل عادي بلا دور لجنة استثمار (currentRole=analyst الافتراضي) لا يقدر يسجّل "قرار لجنة" على فرصة لا يملكها — icOnlyChange تتطلب دوراً حقيقياً في team_roles، لا مجرد تنسيق الحقول');
+  assert(true, '🔒 محلل غير مالك لا يستطيع تسجيل قرار IC مباشرة من العميل أيضاً.');
 }
 
 // ==================== ٣) دفتر الصندوق (investors/funds/...) — مدير صندوق فأعلى فقط للكتابة ====================
@@ -116,27 +135,37 @@ function ledgerValidCreateShape(coll){
   if(coll==='commitments') return { fundId:'FND-1', investorId:'INV-1', commitmentAmount:1, dateCommitted:'2026-01-01', contributionType:'cash', reversalOfId:null };
   if(coll==='capitalCalls') return { fundId:'FND-1', investorId:'INV-1', callNumber:99, callDate:'2026-01-01', amount:1, status:'pending', linkedCommitmentId:null, reversalOfId:null };
   if(coll==='distributions') return { fundId:'FND-1', investorId:'INV-1', distDate:'2026-01-01', amount:1, status:'declared', reversalOfId:null };
+  // 2R-4D4-A: transactions لم تعد تقبل أي محتوى حر — يجب أن تطابق سجلاً حقيقياً موجوداً (انظر
+  // التزام CMT-LEDGER-LOOP-REF المزروع قبل هذه الحلقة تحديداً لأجل هذه الحالة).
+  if(coll==='transactions') return { type:'commitment', action:'create', relatedId:'CMT-LEDGER-LOOP-REF', fundId:'FND-1', amount:1, at:'2026-01-01T00:00:00.000Z', by:FUND_MANAGER, version:1 };
   return { name:'test' };
 }
+await testEnv.withSecurityRulesDisabled(async (ctx)=>{
+  await setDoc(doc(ctx.firestore(),'commitments','CMT-LEDGER-LOOP-REF'), { fundId:'FND-1', investorId:'INV-1', commitmentAmount:1, dateCommitted:'2026-01-01', contributionType:'cash', reversalOfId:null });
+});
 for(const coll of LEDGER_COLLECTIONS){
+  // Phase 2R-4D4-C: transactions تفرض الآن معرّف مستند حتمي (transactionCanonicalId) — معرّف
+  // عشوائي ثابت مثل 'X3' (المستخدم لبقية المجموعات هنا) لم يعد يصلح لها، فنشتق معرّفاً مطابقاً
+  // لشكل الوثيقة الفعلي (ledgerValidCreateShape) لهذه المجموعة تحديداً.
+  const docId = coll==='transactions' ? 'commitment-create-CMT-LEDGER-LOOP-REF' : 'X3';
   {
     const db = ctxFor(ANALYST_OWNER).firestore();
-    await assertFails(setDoc(doc(db, coll, 'X1'), ledgerValidCreateShape(coll)));
+    await assertFails(setDoc(doc(db, coll, docId), ledgerValidCreateShape(coll)));
     assert(true, `🔒 محلل عادي لا يقدر يكتب في ${coll} (دفتر الصندوق) — كانت مفتوحة لأي عضو مصرَّح له قبل هذا التعديل`);
   }
   {
     const db = ctxFor(SENIOR_IC).firestore();
-    await assertFails(setDoc(doc(db, coll, 'X2'), ledgerValidCreateShape(coll)));
+    await assertFails(setDoc(doc(db, coll, docId), ledgerValidCreateShape(coll)));
     assert(true, `🔒 عضو لجنة استثمار أول (senior_ic) لا يقدر يكتب في ${coll} أيضاً (دون دور مدير صندوق) — الحماية على مستوى الدور لا الفرصة`);
   }
   {
     const db = ctxFor(FUND_MANAGER).firestore();
-    await assertSucceeds(setDoc(doc(db, coll, 'X3'), ledgerValidCreateShape(coll)));
+    await assertSucceeds(setDoc(doc(db, coll, docId), ledgerValidCreateShape(coll)));
     assert(true, `✅ مدير صندوق (fund_manager) يقدر يكتب في ${coll} بنجاح`);
   }
   {
     const db = ctxFor(ANALYST_OWNER).firestore();
-    await assertSucceeds(getDoc(doc(db, coll, 'X3')));
+    await assertSucceeds(getDoc(doc(db, coll, docId)));
     assert(true, `✅ القراءة في ${coll} تبقى متاحة لأي عضو مصرَّح له (محلل عادي هنا)`);
   }
 }
@@ -215,12 +244,28 @@ for(const coll of LEDGER_COLLECTIONS){
   assert(true, '🔒 حتى Senior IC لا يستطيع إنشاء v4 بلا sourceDecisionId يربطها بسجل قرار IC موجود');
 }
 {
+  // Phase 2R-4E: v4_ic_approved is now closed to EVERY client write, including the exact
+  // well-formed Senior IC payload (real, correctly-linked icDecisions record, honest savedBy)
+  // that used to succeed right here. It is written exclusively by approveOpportunity
+  // (functions/index.js) via the Admin SDK, inside the same trusted transaction as the
+  // icDecisions record itself -- a client-side setDoc must now fail for every role, admin
+  // included (an Admin SDK write bypasses these rules entirely by Firebase's own design; that
+  // is the one remaining path for a v4 write, not a client merely authenticated as admin).
   await testEnv.withSecurityRulesDisabled(async (ctx)=>{
     await setDoc(doc(ctx.firestore(),'icDecisions','ICD-UWV-OK'), { oppId:'OPP-1', decision:{ decision:'approve' }, recordedAt:'2026-01-01T00:00:00.000Z', recordedBy:SENIOR_IC });
   });
-  const db = ctxFor(SENIOR_IC).firestore();
-  await assertSucceeds(setDoc(doc(db,'underwritingVersions','UWV-V4-OK'), { oppId:'OPP-1', stage:'v4_ic_approved', trigger:'ic_decision', savedBy:SENIOR_IC, savedAt:'2026-01-01T00:00:01.000Z', sourceDecisionId:'ICD-UWV-OK', metrics:{ price:2000, equityIRR:0.16 } }));
-  assert(true, '✅ v4_ic_approved تُقبل فقط عندما تكون من Senior IC ومربوطة بسجل icDecisions صالح لنفس الفرصة ونفس المسجّل');
+  for(const [role,email] of [['senior_ic',SENIOR_IC],['fund_manager',FUND_MANAGER],['admin',ADMIN]]){
+    const db = ctxFor(email).firestore();
+    await assertFails(setDoc(doc(db,'underwritingVersions',`UWV-V4-CLIENT-${role}`), { oppId:'OPP-1', stage:'v4_ic_approved', trigger:'ic_decision', savedBy:email, savedAt:'2026-01-01T00:00:01.000Z', sourceDecisionId:'ICD-UWV-OK', metrics:{ price:2000, equityIRR:0.16 } }));
+    assert(true, `🔒 ${role}: v4_ic_approved مرفوضة من أي كتابة عميل الآن حتى بحمولة صحيحة تماماً ومربوطة بقرار IC حقيقي -- الكتابة الوحيدة المتبقية عبر approveOpportunity (Admin SDK)`);
+  }
+}
+{
+  // "لا يزال يعمل": التضييق أعلاه محصور بـv4_ic_approved فقط. اللقطة اليدوية (manual) تبقى تماماً
+  // كما كانت بلا أي تغيير في هذه المرحلة، بما فيها إنشاء الأدمن لها على فرصة لا يملكها.
+  const db = ctxFor(ADMIN).firestore();
+  await assertSucceeds(setDoc(doc(db,'underwritingVersions','UWV-MANUAL-STILL-WORKS'), { oppId:'OPP-1', stage:'manual', trigger:'manual', savedBy:ADMIN, savedAt:'2026-01-01T00:00:02.000Z', metrics:{ price:2000 } }));
+  assert(true, '✅ إغلاق v4_ic_approved أمام العميل لا يمس مسار اللقطة اليدوية (manual) -- يبقى يعمل كما كان تماماً، حتى لأدمن على فرصة لا يملكها');
 }
 {
   const db = ctxFor(SENIOR_IC).firestore();
@@ -272,20 +317,44 @@ for(const coll of LEDGER_COLLECTIONS){
   assert(true, '🔒 حتى الأدمن لا يقدر يحذف إدخال أداء فعلي محفوظ');
 }
 
-// ==================== ٨) سجل قرارات لجنة الاستثمار المؤسسي (icDecisions) — append-only ====================
-{
-  const db = ctxFor(ANALYST_OWNER).firestore();
-  await assertFails(setDoc(doc(db,'icDecisions','ICD-ANALYST'), { oppId:'OPP-1', decision:{decision:'approve'} }));
-  assert(true, '🔒 محلل عادي لا يقدر إنشاء سجل قرار IC مؤسسي');
-}
-{
-  const db = ctxFor(SENIOR_IC).firestore();
-  await assertSucceeds(setDoc(doc(db,'icDecisions','ICD-1'), { oppId:'OPP-1', decision:{decision:'approve'}, recordedBy:SENIOR_IC }));
-  assert(true, '✅ Senior IC يقدر إنشاء سجل قرار IC مؤسسي');
-  await assertFails(updateDoc(doc(db,'icDecisions','ICD-1'), { 'decision.decision':'reject' }));
-  assert(true, '🔒 سجل قرار IC غير قابل للتعديل');
+// ==================== ٨) IC audit: server-only writes; team reads ====================
+// Rules-disabled seeding represents an existing server record. This is not a
+// callable integration test; approveOpportunity logic has its own Functions tests.
+await testEnv.withSecurityRulesDisabled(async ctx=>{
+  await setDoc(doc(ctx.firestore(),'icDecisions','ICD-1'), {
+    oppId:'OPP-1', decision:{decision:'approve'}, recordedBy:SENIOR_IC,
+    source:'approveOpportunity', version:2,
+  });
+});
+for(const [role,email] of [['analyst',ANALYST_OWNER],['senior_ic',SENIOR_IC],['fund_manager',FUND_MANAGER],['admin',ADMIN]]){
+  const db = ctxFor(email).firestore();
+  const forgedId = `ICD-FORGED-${role}`;
+  await assertFails(setDoc(doc(db,'icDecisions',forgedId), {
+    oppId:'OPP-1', decision:{decision:'approve',decidedBy:email}, recordedBy:email,
+    readiness:{ready:true,gates:{}}, evaluation:{engineVersion:'forged',inputHash:'forged'},
+    source:'approveOpportunity', version:2,
+  }));
+  assert(true, `🔒 ${role}: إنشاء سجل IC مصطنع من العميل مرفوض حتى بتنسيق سجل الخادم`);
+  const missing = await assertSucceeds(getDoc(doc(db,'icDecisions',forgedId)));
+  assert(!missing.exists(), `${role}: لم تُنشأ وثيقة القرار المرفوضة`);
+  await assertFails(updateDoc(doc(db,'icDecisions','ICD-1'), {'decision.decision':'reject'}));
+  assert(true, `🔒 ${role}: تعديل سجل IC موجود مرفوض`);
   await assertFails(deleteDoc(doc(db,'icDecisions','ICD-1')));
-  assert(true, '🔒 سجل قرار IC غير قابل للحذف');
+  assert(true, `🔒 ${role}: حذف سجل IC موجود مرفوض`);
+  const existing = await assertSucceeds(getDoc(doc(db,'icDecisions','ICD-1')));
+  assert(existing.exists() && existing.data().decision.decision==='approve', `${role}: القراءة مسموحة وسجل الخادم محفوظ`);
+  // The forged decision must not become a valid source for an approved UW version.
+  await assertFails(setDoc(doc(db,'underwritingVersions',`UWV-FORGED-${role}`), {
+    oppId:'OPP-1', stage:'v4_ic_approved', trigger:'ic_decision', savedBy:email,
+    savedAt:'2026-09-22T00:00:00.000Z', sourceDecisionId:forgedId, metrics:{equityIRR:9},
+  }));
+  assert(true, `🔒 ${role}: لا يمكن إنشاء نسخة اعتماد استناداً إلى القرار المصطنع المرفوض`);
+}
+for(const [label,context] of [['outsider',ctxFor(OUTSIDER)],['anonymous',testEnv.unauthenticatedContext()]]){
+  const db = context.firestore();
+  await assertFails(getDoc(doc(db,'icDecisions','ICD-1')));
+  await assertFails(setDoc(doc(db,'icDecisions',`ICD-${label}`), {oppId:'OPP-1',decision:{decision:'approve'}}));
+  assert(true, `🔒 ${label}: قراءة سجل IC وإنشاؤه مرفوضان`);
 }
 
 // ==================== ٩) محرك ربط رأس المال (المرحلة الخامسة): capitalAllocation — مدير صندوق فأعلى فقط، حتى لمالك الفرصة نفسه ====================
@@ -344,52 +413,56 @@ for(const coll of LEDGER_COLLECTIONS){
   assert(true, '🔒 حتى مدير الصندوق لا يقدر يعدّل التزام (commitment) — مُرحَّل من لحظة إنشائه، لا نافذة تعديل بعده مهما كانت صغيرة');
   await assertFails(deleteDoc(doc(dbFM,'commitments','CMT-1')));
   assert(true, '🔒 حتى مدير الصندوق لا يقدر يحذف التزام — التصحيح الوحيد المسموح هو قيد عكسي جديد');
-  await assertSucceeds(setDoc(doc(dbFM,'commitments','CMT-1-REV'), { fundId:'FND-1', investorId:'INV-1', commitmentAmount:-1000000, dateCommitted:'2026-01-02', contributionType:'cash', notes:'تصحيح', reversalOfId:'CMT-1' }));
-  assert(true, '✅ مدير الصندوق يقدر إنشاء قيد عكسي (سجل جديد بمبلغ سالب وreversalOfId) بدل تعديل الأصل — هذا التصحيح المحاسبي الصحيح الوحيد');
+  await assertFails(setDoc(doc(dbFM,'commitments','CMT-1-REV'), { fundId:'FND-1', investorId:'INV-1', commitmentAmount:-1000000, dateCommitted:'2026-01-02', contributionType:'cash', notes:'تصحيح', reversalOfId:'CMT-1' }));
+  assert(true, '🔒 إنشاء قيد التزام عكسي من العميل مرفوض؛ التصحيح عبر reverseTransaction.');
   await assertFails(setDoc(doc(dbFM,'commitments','CMT-NEG-NORMAL'), { fundId:'FND-1', investorId:'INV-1', commitmentAmount:-100000, dateCommitted:'2026-01-03', contributionType:'cash', reversalOfId:null }));
   assert(true, '🔒 لا يمكن إنشاء التزام سالب كسجل عادي — السالب مسموح فقط كقيد عكسي مرتبط');
 }
 {
-  // capitalCalls: "مسودة" بينما status=='pending' (تعديل/حذف حر كما كان)، تُرحَّل نهائياً عند 'paid'/'waived'
+  // capitalCalls: client updates are denied in every state; allowed draft deletion is separate.
   await testEnv.withSecurityRulesDisabled(async (ctx)=>{
     await setDoc(doc(ctx.firestore(),'capitalCalls','CC-1'), { fundId:'FND-1', investorId:'INV-1', callNumber:1, callDate:'2026-01-01', amount:500000, status:'pending', linkedCommitmentId:null, reversalOfId:null });
   });
   const dbFM = ctxFor(FUND_MANAGER).firestore();
-  await assertSucceeds(updateDoc(doc(dbFM,'capitalCalls','CC-1'), { amount: 600000 }));
-  assert(true, '✅ نداء رأسمال بحالة "pending" (مسودة لم تُرحَّل بعد) يبقى قابلاً للتعديل الحر كما كان دائماً');
+  await assertFails(updateDoc(doc(dbFM,'capitalCalls','CC-1'), { amount: 600000 }));
+  assert(true, '🔒 تعديل مبلغ نداء pending من العميل مرفوض أيضاً بعد P0.');
   // المرحلة ٦-ب: لا يمكن الترحيل المباشر pending → paid بعد الآن — يجب المرور ببوابة الاعتماد أولاً
   await assertFails(updateDoc(doc(dbFM,'capitalCalls','CC-1'), { status: 'paid' }));
   assert(true, '🔒 لا يمكن تخطّي بوابة الاعتماد: pending → paid مباشرة مرفوض حتى لمدير الصندوق');
-  await assertSucceeds(updateDoc(doc(dbFM,'capitalCalls','CC-1'), { status: 'approved', approvedBy:FUND_MANAGER, approvedAt:'2026-01-02' }));
-  assert(true, '✅ pending → approved (خطوة الاعتماد الإلزامية) مسموحة');
-  await assertSucceeds(updateDoc(doc(dbFM,'capitalCalls','CC-1'), { status: 'paid' }));
-  assert(true, '✅ ترحيل النداء (approved → paid) مسموح — هذا هو الانتقال المسموح الوحيد بعد الاعتماد، ونقطة القفل النهائي');
+  await assertFails(updateDoc(doc(dbFM,'capitalCalls','CC-1'), { status: 'approved', approvedBy:FUND_MANAGER, approvedAt:'2026-01-02' }));
+  assert(true, '🔒 انتقال pending → approved من العميل مرفوض؛ التنفيذ عبر transitionLedgerRecord.');
+  await seedLedgerStatus('capitalCalls', 'CC-1', 'approved');
+  await assertFails(updateDoc(doc(dbFM,'capitalCalls','CC-1'), { status: 'paid' }));
+  assert(true, '🔒 انتقال approved → paid من العميل مرفوض؛ التنفيذ عبر transitionLedgerRecord.');
+  await seedLedgerStatus('capitalCalls', 'CC-1', 'paid');
   await assertFails(updateDoc(doc(dbFM,'capitalCalls','CC-1'), { amount: 700000 }));
   assert(true, '🔒 بعد الترحيل (status=="paid") لا يقدر مدير الصندوق تعديل النداء إطلاقاً، ولو لمجرد تصحيح رقم');
   await assertFails(setDoc(doc(dbFM,'capitalCalls','CC-NEG-NORMAL'), { fundId:'FND-1', investorId:'INV-1', callNumber:2, callDate:'2026-01-05', amount:-100000, status:'pending', linkedCommitmentId:null, reversalOfId:null }));
   assert(true, '🔒 لا يمكن إنشاء نداء رأس مال سالب كمسودة عادية — يجب استخدام قيد عكسي');
-  await assertSucceeds(setDoc(doc(dbFM,'capitalCalls','CC-REV-NEG'), { fundId:'FND-1', investorId:'INV-1', callNumber:3, callDate:'2026-01-06', amount:-100000, status:'paid', linkedCommitmentId:null, reversalOfId:'CC-1' }));
-  assert(true, '✅ النداء السالب مسموح فقط عندما يكون قيداً عكسياً مرتبطاً بسجل أصلي');
+  await assertFails(setDoc(doc(dbFM,'capitalCalls','CC-REV-NEG'), { fundId:'FND-1', investorId:'INV-1', callNumber:3, callDate:'2026-01-06', amount:-100000, status:'paid', linkedCommitmentId:null, reversalOfId:'CC-1' }));
+  assert(true, '🔒 إنشاء نداء عكسي paid من العميل مرفوض، حتى مع reversalOfId.');
   await assertFails(deleteDoc(doc(dbFM,'capitalCalls','CC-1')));
   assert(true, '🔒 ولا حذفه أيضاً — التصحيح الوحيد قيد عكسي جديد');
-  await assertSucceeds(setDoc(doc(dbFM,'capitalCalls','CC-1-REV'), { fundId:'FND-1', investorId:'INV-1', callNumber:1, callDate:'2026-01-03', amount:-700000, status:'paid', linkedCommitmentId:null, notes:'تصحيح', reversalOfId:'CC-1' }));
-  assert(true, '✅ إنشاء قيد نداء رأسمال عكسي (مبلغ سالب) نجح — يصفّر الأثر في fundLedgerSummary/investorLedgerRows دون لمس السجل الأصلي');
+  await assertFails(setDoc(doc(dbFM,'capitalCalls','CC-1-REV'), { fundId:'FND-1', investorId:'INV-1', callNumber:1, callDate:'2026-01-03', amount:-700000, status:'paid', linkedCommitmentId:null, notes:'تصحيح', reversalOfId:'CC-1' }));
+  assert(true, '🔒 لا يمكن إنشاء تصحيح رأسمالي مباشر؛ القيد العكسي يمر بالخادم.');
 }
 {
-  // distributions: نفس منطق capitalCalls — "مسودة" بينما status=='declared'، تُرحَّل عند 'paid'
+  // distributions: client updates are denied; posted fixtures below are seeded with rules disabled.
   await testEnv.withSecurityRulesDisabled(async (ctx)=>{
     await setDoc(doc(ctx.firestore(),'distributions','DST-1'), { fundId:'FND-1', investorId:'INV-1', distDate:'2026-01-01', amount:300000, type:'عائد رأس المال (Return of Capital)', status:'declared', reversalOfId:null });
   });
   const dbFM = ctxFor(FUND_MANAGER).firestore();
-  await assertSucceeds(updateDoc(doc(dbFM,'distributions','DST-1'), { amount: 350000 }));
-  assert(true, '✅ توزيعة بحالة "declared" (مسودة) تبقى قابلة للتعديل الحر');
+  await assertFails(updateDoc(doc(dbFM,'distributions','DST-1'), { amount: 350000 }));
+  assert(true, '🔒 تعديل مبلغ توزيعة declared من العميل مرفوض بعد P0.');
   // المرحلة ٦-ب: لا يمكن الترحيل المباشر declared → paid بعد الآن — يجب المرور ببوابة الاعتماد أولاً
   await assertFails(updateDoc(doc(dbFM,'distributions','DST-1'), { status: 'paid' }));
   assert(true, '🔒 لا يمكن تخطّي بوابة الاعتماد: declared → paid مباشرة مرفوض حتى لمدير الصندوق');
-  await assertSucceeds(updateDoc(doc(dbFM,'distributions','DST-1'), { status: 'approved', approvedBy:FUND_MANAGER, approvedAt:'2026-01-02' }));
-  assert(true, '✅ declared → approved (خطوة الاعتماد الإلزامية) مسموحة');
-  await assertSucceeds(updateDoc(doc(dbFM,'distributions','DST-1'), { status: 'paid' }));
-  assert(true, '✅ ترحيل التوزيعة (approved → paid) مسموح — نقطة القفل النهائي بعد الاعتماد');
+  await assertFails(updateDoc(doc(dbFM,'distributions','DST-1'), { status: 'approved', approvedBy:FUND_MANAGER, approvedAt:'2026-01-02' }));
+  assert(true, '🔒 انتقال declared → approved من العميل مرفوض؛ التنفيذ عبر الخادم.');
+  await seedLedgerStatus('distributions', 'DST-1', 'approved');
+  await assertFails(updateDoc(doc(dbFM,'distributions','DST-1'), { status: 'paid' }));
+  assert(true, '🔒 انتقال approved → paid للتوزيعة من العميل مرفوض.');
+  await seedLedgerStatus('distributions', 'DST-1', 'paid');
   await assertFails(updateDoc(doc(dbFM,'distributions','DST-1'), { amount: 400000 }));
   assert(true, '🔒 بعد الترحيل (status=="paid") التوزيعة غير قابلة للتعديل إطلاقاً');
   await assertFails(deleteDoc(doc(dbFM,'distributions','DST-1')));
@@ -405,8 +478,87 @@ for(const coll of LEDGER_COLLECTIONS){
   assert(true, '🔒 حتى مدير الصندوق لا يقدر يعدّل سجل تدقيق (transactions) — append-only بالكامل، بلا أي استثناء دور');
   await assertFails(deleteDoc(doc(dbFM,'transactions','TXN-1')));
   assert(true, '🔒 ولا يقدر يحذفه — يطابق تماماً oppAuditLog/icDecisions/underwritingVersions');
-  await assertSucceeds(setDoc(doc(dbFM,'transactions','TXN-2'), { type:'assetLink', action:'create', relatedId:'OPP-1', fundId:'FND-1', amount:0, at:'2026-01-02T00:00:00.000Z', by:FUND_MANAGER, version:1 }));
-  assert(true, '✅ إنشاء سجل تدقيق جديد يبقى مسموحاً كما كان (append-only يعني إضافة حرة، لا منع كتابة)');
+  // Phase 2R-4D4-C (assetLink hardening): كانت هذه الحالة تُثبت assertSucceeds -- استثناء
+  // type=='assetLink' في firestore.rules لم يكن مفروضاً على العميل فعلياً رغم أن التعليق كان
+  // يصفه بأنه "يُكتب فقط عبر Admin SDK": أي مدير صندوق عادي كان يقدر يُنشئ معاملة assetLink
+  // مباشرة، بلا transactionMatchesRecord وبلا معرّف حتمي -- باب تزوير/تكرار حقيقي لسجل التدقيق
+  // (حالة الصندوق نفسها assetIds كانت محمية عبر changesAssetIds، لكن سجل تدقيقها لم يكن). أُغلق
+  // الاستثناء بالكامل لكل الأدوار؛ الحماية الوحيدة الآن Admin SDK داخل linkAssetToFund نفسه.
+  await assertFails(setDoc(doc(dbFM,'transactions','TXN-2'), { type:'assetLink', action:'create', relatedId:'OPP-1', fundId:'FND-1', amount:0, at:'2026-01-02T00:00:00.000Z', by:FUND_MANAGER, version:1 }));
+  assert(true, '🔒 لم يعد مدير الصندوق يقدر يُنشئ معاملة assetLink مباشرة من العميل -- الكتابة الوحيدة عبر linkAssetToFund بصلاحيات Admin SDK');
+  const dbAdminTxn = ctxFor(ADMIN).firestore();
+  await assertFails(setDoc(doc(dbAdminTxn,'transactions','TXN-2-admin'), { type:'assetLink', action:'create', relatedId:'OPP-1', fundId:'FND-1', amount:0, at:'2026-01-02T00:00:00.000Z', by:ADMIN, version:1 }));
+  assert(true, '🔒 ولا حتى الأدمن -- الاستثناء أُغلق لكل الأدوار، لا مدير الصندوق فقط');
+}
+{
+  // Phase 2R-4D4-C (third review round): assetLinkRequests -- سجل داخلي جديد بحت لتتبّع إعادة تنفيذ
+  // طلبات linkAssetToFund (requestId-keyed idempotent replay؛ راجع تعليقه في functions/index.js
+  // وتعليق هذه القاعدة في firestore.rules). ليس سجل تدقيق (ذاك يبقى في transactions أعلاه)، ولا
+  // للعميل أي سبب مشروع لقراءته أو الكتابة إليه إطلاقاً -- مغلق تماماً لكل الأدوار بما فيها الأدمن،
+  // تماماً مثل معاملات assetLink نفسها في القسم السابق. لم تُختبَر هذه القاعدة ضد المحاكي الحقيقي من
+  // قبل لأنها أُضيفت في هذه المرحلة بعد آخر تشغيل ناجح للمحاكي على جهاز المستخدم.
+  const dbFM = ctxFor(FUND_MANAGER).firestore();
+  const dbAdmin = ctxFor(ADMIN).firestore();
+  const seededPayload = { payload:{ email:FUND_MANAGER, fundId:'FND-1', oppId:'OPP-1', unlink:false, correctionReason:null, expectedVersion:0 }, result:{ ok:true, newVersion:1 }, at:'2026-01-02T00:00:00.000Z' };
+
+  await assertFails(setDoc(doc(dbFM,'assetLinkRequests','REQ-1'), seededPayload));
+  assert(true, '🔒 مدير الصندوق لا يقدر يكتب مباشرة إلى assetLinkRequests -- سجل داخلي لـlinkAssetToFund عبر Admin SDK فقط');
+  await assertFails(setDoc(doc(dbAdmin,'assetLinkRequests','REQ-1-admin'), seededPayload));
+  assert(true, '🔒 ولا حتى الأدمن -- مغلق لكل الأدوار تماماً مثل معاملات assetLink نفسها');
+
+  await testEnv.withSecurityRulesDisabled(async (ctx)=>{
+    await setDoc(doc(ctx.firestore(),'assetLinkRequests','REQ-SEEDED'), seededPayload);
+  });
+  await assertFails(getDoc(doc(dbFM,'assetLinkRequests','REQ-SEEDED')));
+  assert(true, '🔒 مدير الصندوق لا يقدر حتى قراءة سجل موجود فعلاً في assetLinkRequests -- لا قراءة إطلاقاً لأي دور');
+  await assertFails(getDoc(doc(dbAdmin,'assetLinkRequests','REQ-SEEDED')));
+  assert(true, '🔒 ولا الأدمن -- سجل داخلي بحت لـlinkAssetToFund، لا اطّلاع للعميل عليه إطلاقاً');
+  await assertFails(updateDoc(doc(dbFM,'assetLinkRequests','REQ-SEEDED'), { result:{ ok:false } }));
+  assert(true, '🔒 ولا تعديل عليه');
+  await assertFails(deleteDoc(doc(dbFM,'assetLinkRequests','REQ-SEEDED')));
+  assert(true, '🔒 ولا حذف له -- append-only من منظور الخادم فقط، مغلق تماماً من منظور العميل');
+}
+{
+  // Phase 2R-4E: icDecisionRequests -- نفس نمط assetLinkRequests أعلاه بالضبط، لكن لتتبّع إعادة
+  // تنفيذ طلبات approveOpportunity (requestId-keyed idempotent replay؛ راجع تعليقه في
+  // functions/index.js وتعليق هذه القاعدة في firestore.rules). ليس سجل تدقيق (ذاك يبقى في
+  // icDecisions/underwritingVersions)، ولا للعميل أي سبب مشروع لقراءته أو الكتابة إليه إطلاقاً --
+  // مغلق تماماً لكل الأدوار بما فيها الأدمن وSenior IC، تماماً مثل assetLinkRequests.
+  const dbSeniorIc = ctxFor(SENIOR_IC).firestore();
+  const dbAdminIcReq = ctxFor(ADMIN).firestore();
+  const seededIcPayload = { payload:{ email:SENIOR_IC, oppId:'OPP-1', decisionType:'approve', reasons:[], conditions:[], override:false }, result:{ ok:true, decisionId:'ICD-X', versionId:'UWV-X' }, at:'2026-01-02T00:00:00.000Z' };
+
+  await assertFails(setDoc(doc(dbSeniorIc,'icDecisionRequests','ICREQ-1'), seededIcPayload));
+  assert(true, '🔒 حتى Senior IC لا يقدر يكتب مباشرة إلى icDecisionRequests -- سجل داخلي لـapproveOpportunity عبر Admin SDK فقط');
+  await assertFails(setDoc(doc(dbAdminIcReq,'icDecisionRequests','ICREQ-1-admin'), seededIcPayload));
+  assert(true, '🔒 ولا حتى الأدمن -- مغلق لكل الأدوار تماماً مثل assetLinkRequests');
+
+  await testEnv.withSecurityRulesDisabled(async (ctx)=>{
+    await setDoc(doc(ctx.firestore(),'icDecisionRequests','ICREQ-SEEDED'), seededIcPayload);
+  });
+  await assertFails(getDoc(doc(dbSeniorIc,'icDecisionRequests','ICREQ-SEEDED')));
+  assert(true, '🔒 Senior IC لا يقدر حتى قراءة سجل موجود فعلاً في icDecisionRequests -- لا قراءة إطلاقاً لأي دور');
+  await assertFails(getDoc(doc(dbAdminIcReq,'icDecisionRequests','ICREQ-SEEDED')));
+  assert(true, '🔒 ولا الأدمن -- سجل داخلي بحت لـapproveOpportunity، لا اطّلاع للعميل عليه إطلاقاً');
+  await assertFails(updateDoc(doc(dbSeniorIc,'icDecisionRequests','ICREQ-SEEDED'), { result:{ ok:false } }));
+  assert(true, '🔒 ولا تعديل عليه');
+  await assertFails(deleteDoc(doc(dbSeniorIc,'icDecisionRequests','ICREQ-SEEDED')));
+  assert(true, '🔒 ولا حذف له -- append-only من منظور الخادم فقط، مغلق تماماً من منظور العميل');
+}
+{
+  // Phase 2R-4D4-A: transactions يجب أن يطابق سجلاً حقيقياً موجوداً فعلاً — لم يعد كافياً أن يكون
+  // منشئه مدير صندوق فقط. CMT-1/DST-1 مُنشأة في القسم ١٠ أعلاه وما زالت موجودة (محاولات حذفها فشلت).
+  const dbFM = ctxFor(FUND_MANAGER).firestore();
+  await assertFails(setDoc(doc(dbFM,'transactions','capitalCall-create-CC-DOES-NOT-EXIST'), { type:'capitalCall', action:'create', relatedId:'CC-DOES-NOT-EXIST', fundId:'FND-1', amount:1, at:'2026-01-03T00:00:00.000Z', by:FUND_MANAGER, version:1 }));
+  assert(true, '🔒 2R-4D4-A: سجل تدقيق يشير إلى نداء رأس مال غير موجود مرفوض — لم يعد أي relatedId نصي كافياً');
+  await assertFails(setDoc(doc(dbFM,'transactions','commitment-create-CMT-1'), { type:'commitment', action:'create', relatedId:'CMT-1', fundId:'FND-OTHER', amount:1000000, at:'2026-01-03T00:00:00.000Z', by:FUND_MANAGER, version:1 }));
+  assert(true, '🔒 2R-4D4-A: سجل تدقيق يطابق معرّف سجل حقيقي لكن بصندوق مختلف عن صندوق السجل الفعلي مرفوض');
+  await assertFails(setDoc(doc(dbFM,'transactions','commitment-create-CMT-1'), { type:'commitment', action:'create', relatedId:'CMT-1', fundId:'FND-1', amount:999999999, at:'2026-01-03T00:00:00.000Z', by:FUND_MANAGER, version:1 }));
+  assert(true, '🔒 2R-4D4-A: سجل تدقيق بمبلغ لا يطابق مبلغ السجل الحقيقي المُشار إليه مرفوض — لا تضخيم مبلغ مفبرك');
+  await assertSucceeds(setDoc(doc(dbFM,'transactions','commitment-create-CMT-1'), { type:'commitment', action:'create', relatedId:'CMT-1', fundId:'FND-1', amount:1000000, at:'2026-01-03T00:00:00.000Z', by:FUND_MANAGER, version:1 }));
+  assert(true, '✅ 2R-4D4-A: سجل تدقيق يطابق التزاماً حقيقياً بنفس الصندوق والمبلغ بالضبط ينجح كما هو متوقَّع');
+  await assertSucceeds(setDoc(doc(dbFM,'transactions','distribution-create-DST-1'), { type:'distribution', action:'create', relatedId:'DST-1', fundId:'FND-1', amount:300000, at:'2026-01-03T00:00:00.000Z', by:FUND_MANAGER, version:1 }));
+  assert(true, '✅ 2R-4D4-A: سجل تدقيق يطابق توزيعة حقيقية بنفس الصندوق والمبلغ ينجح كما هو متوقَّع');
 }
 
 // ==================== ١١) بوابة الاعتماد الصريحة والمنفصلة (المرحلة السادسة-ب، بطلب صريح
@@ -421,12 +573,14 @@ for(const coll of LEDGER_COLLECTIONS){
   assert(true, '🔒 لا يمكن تخطّي بوابة الاعتماد: نداء "pending" لا يقدر يتحول مباشرة إلى "paid" في طلب واحد');
   await assertFails(updateDoc(doc(dbFM,'capitalCalls','CC-GATE-1'), { status:'waived' }));
   assert(true, '🔒 ولا مباشرة إلى "waived" أيضاً — نفس البوابة بالضبط');
-  await assertSucceeds(updateDoc(doc(dbFM,'capitalCalls','CC-GATE-1'), { status:'approved', approvedBy:FUND_MANAGER, approvedAt:'2026-01-02' }));
-  assert(true, '✅ الانتقال الوحيد المسموح من "pending": إلى "approved" فقط، مع تسجيل معتمِد/توقيت الاعتماد للتدقيق');
+  await assertFails(updateDoc(doc(dbFM,'capitalCalls','CC-GATE-1'), { status:'approved', approvedBy:FUND_MANAGER, approvedAt:'2026-01-02' }));
+  assert(true, '🔒 حتى خطوة الاعتماد pending → approved يجب أن تمر بالخادم.');
+  await seedLedgerStatus('capitalCalls', 'CC-GATE-1', 'approved');
   await assertFails(updateDoc(doc(dbFM,'capitalCalls','CC-GATE-1'), { status:'paid', amount:999999 }));
   assert(true, '🔒 بعد الاعتماد، أي تغيير حقل آخر (المبلغ هنا) بجانب الترحيل إلى "paid" في نفس الطلب مرفوض بالكامل — القيمة مُثبَّتة فعلاً عند الاعتماد');
-  await assertSucceeds(updateDoc(doc(dbFM,'capitalCalls','CC-GATE-1'), { status:'paid' }));
-  assert(true, '✅ ترحيل نظيف (status فقط) من "approved" إلى "paid" ينجح — نقطة القفل النهائي كما في المرحلة السادسة');
+  await assertFails(updateDoc(doc(dbFM,'capitalCalls','CC-GATE-1'), { status:'paid' }));
+  assert(true, '🔒 الانتقال approved → paid مرفوض من العميل حتى دون تغيير المبلغ.');
+  await seedLedgerStatus('capitalCalls', 'CC-GATE-1', 'paid');
   await assertFails(updateDoc(doc(dbFM,'capitalCalls','CC-GATE-1'), { status:'waived' }));
   assert(true, '🔒 بعد الترحيل النهائي (paid) لا رجوع ولا انتقال آخر إطلاقاً — يطابق قفل المرحلة السادسة تماماً');
 }
@@ -436,10 +590,66 @@ for(const coll of LEDGER_COLLECTIONS){
   assert(true, '🔒 إنشاء نداء رأسمال جديد (يدوي عادي) مباشرة بحالة "paid" مرفوض — يجب أن يبدأ "pending" دائماً ويمر عبر البوابة');
   await assertSucceeds(setDoc(doc(dbFM,'capitalCalls','CC-GATE-PENDING-OK'), { fundId:'FND-1', investorId:'INV-1', callNumber:3, callDate:'2026-01-01', amount:100000, status:'pending', linkedCommitmentId:null, reversalOfId:null }));
   assert(true, '✅ إنشاء نداء رأسمال جديد بحالة "pending" (البداية الصحيحة) ينجح كما هو متوقَّع');
-  await assertSucceeds(setDoc(doc(dbFM,'capitalCalls','CC-GATE-REVERSAL-OK'), { fundId:'FND-1', investorId:'INV-1', callNumber:4, callDate:'2026-01-01', amount:-100000, status:'paid', linkedCommitmentId:null, reversalOfId:'CC-GATE-PENDING-OK' }));
-  assert(true, '✅ استثناء القيد العكسي محفوظ: قيد عكسي (reversalOfId) يُنشَأ مباشرة بحالة "paid" بلا حاجة لبوابة الاعتماد — يمثّل تصحيحاً على أمر مُنفَّذ فعلاً، لا نداءً جديداً');
-  await assertSucceeds(setDoc(doc(dbFM,'capitalCalls','CC-GATE-INKIND-OK'), { fundId:'FND-1', investorId:'INV-1', callNumber:5, callDate:'2026-01-01', amount:200000, status:'paid', linkedCommitmentId:'CMT-SOME', reversalOfId:null }));
-  assert(true, '✅ استثناء النقل العيني التلقائي محفوظ: نداء برقم linkedCommitmentId يُنشَأ مباشرة "paid" بلا بوابة اعتماد — ناتج تنفيذي لالتزام مُرحَّل بالفعل، ليس نداءً يحتاج اعتماداً مستقلاً');
+  await assertFails(setDoc(doc(dbFM,'capitalCalls','CC-GATE-REVERSAL-OK'), { fundId:'FND-1', investorId:'INV-1', callNumber:4, callDate:'2026-01-01', amount:-100000, status:'paid', linkedCommitmentId:null, reversalOfId:'CC-GATE-PENDING-OK' }));
+  assert(true, '🔒 القيد العكسي ليس استثناءً لكتابة العميل؛ إنشاؤه عبر reverseTransaction.');
+  await assertFails(setDoc(doc(dbFM,'capitalCalls','CC-GATE-REVERSAL-PENDING'), { fundId:'FND-1', investorId:'INV-1', callNumber:6, callDate:'2026-01-01', amount:-100000, status:'pending', linkedCommitmentId:null, reversalOfId:'CC-GATE-PENDING-OK' }));
+  assert(true, '🔒 2R-4D4-A: قيد عكسي مفبرك بحالة "pending" (بدل "paid") مرفوض أيضاً — هذه بالضبط كانت الثغرة الفعلية قبل هذه المرحلة (ledgerAmountOk وshرط status=="pending" كانا يكفيان معاً بلا أي حظر صريح لـreversalOfId)');
+  await assertFails(setDoc(doc(dbFM,'capitalCalls','CC-EXEC-CMT-DOES-NOT-EXIST'), { fundId:'FND-1', investorId:'INV-1', callNumber:7, callDate:'2026-01-01', amount:50000, status:'paid', linkedCommitmentId:'CMT-DOES-NOT-EXIST', reversalOfId:null }));
+  assert(true, '🔒 2R-4D4-A: linkedCommitmentId يشير إلى مستند التزام غير موجود مرفوض — لم يعد أي معرّف نصي كافياً بحد ذاته');
+  await testEnv.withSecurityRulesDisabled(async (ctx)=>{
+    await setDoc(doc(ctx.firestore(),'commitments','CMT-INKIND-1'), { fundId:'FND-1', investorId:'INV-1', commitmentAmount:200000, dateCommitted:'2026-01-01', contributionType:'in_kind', reversalOfId:null });
+    await setDoc(doc(ctx.firestore(),'commitments','CMT-INKIND-OTHERFUND'), { fundId:'FND-OTHER', investorId:'INV-1', commitmentAmount:200000, dateCommitted:'2026-01-01', contributionType:'in_kind', reversalOfId:null });
+    await setDoc(doc(ctx.firestore(),'commitments','CMT-CASH-1'), { fundId:'FND-1', investorId:'INV-1', commitmentAmount:200000, dateCommitted:'2026-01-01', contributionType:'cash', reversalOfId:null });
+  });
+  await assertFails(setDoc(doc(dbFM,'capitalCalls','CC-EXEC-CMT-INKIND-OTHERFUND'), { fundId:'FND-1', investorId:'INV-1', callNumber:8, callDate:'2026-01-01', amount:200000, status:'paid', linkedCommitmentId:'CMT-INKIND-OTHERFUND', reversalOfId:null }));
+  assert(true, '🔒 2R-4D4-A: linkedCommitmentId يشير لالتزام حقيقي لكن بصندوق مختلف عن صندوق النداء مرفوض');
+  await assertFails(setDoc(doc(dbFM,'capitalCalls','CC-EXEC-CMT-CASH-1'), { fundId:'FND-1', investorId:'INV-1', callNumber:9, callDate:'2026-01-01', amount:200000, status:'paid', linkedCommitmentId:'CMT-CASH-1', reversalOfId:null }));
+  assert(true, '🔒 2R-4D4-A: linkedCommitmentId يشير لالتزام حقيقي لكنه نقدي (cash) لا عيني مرفوض');
+  await assertFails(setDoc(doc(dbFM,'capitalCalls','CC-EXEC-CMT-INKIND-1'), { fundId:'FND-1', investorId:'INV-1', callNumber:10, callDate:'2026-01-01', amount:999, status:'paid', linkedCommitmentId:'CMT-INKIND-1', reversalOfId:null }));
+  assert(true, '🔒 2R-4D4-A: مبلغ النداء لا يطابق مبلغ الالتزام العيني المرتبط بالضبط مرفوض');
+  await assertFails(setDoc(doc(dbFM,'capitalCalls','CC-EXEC-CMT-INKIND-1'), { fundId:'FND-1', investorId:'INV-1', callNumber:11, callDate:'2026-01-01', amount:200000, status:'paid', linkedCommitmentId:'CMT-INKIND-1', reversalOfId:null }));
+  assert(true, '🔒 2R-4D4-B: نداء نقل عيني بلا inKindAssetId مرفوض الآن — التنفيذ يجب أن يوثِّق الأصل المستلَم، لا مجرد نقل بلا إثبات');
+  await assertFails(setDoc(doc(dbFM,'capitalCalls','CC-EXEC-CMT-INKIND-1'), { fundId:'FND-1', investorId:'INV-1', callNumber:12, callDate:'2026-01-01', amount:200000, status:'paid', linkedCommitmentId:'CMT-INKIND-1', inKindAssetId:'OPP-DOES-NOT-EXIST', reversalOfId:null }));
+  assert(true, '🔒 2R-4D4-B: inKindAssetId يشير لمستند opportunities غير موجود مرفوض');
+  await assertFails(setDoc(doc(dbFM,'capitalCalls','CC-EXEC-CMT-INKIND-1'), { fundId:'FND-1', investorId:'INV-1', callNumber:13, amount:200000, status:'paid', linkedCommitmentId:'CMT-INKIND-1', inKindAssetId:'OPP-1', reversalOfId:null }));
+  assert(true, '🔒 2R-4D4-B: نداء نقل عيني بلا تاريخ نقل فعلي (callDate) مرفوض — التوثيق يتطلّب تاريخاً لا قيمة فقط');
+  await assertSucceeds(setDoc(doc(dbFM,'capitalCalls','CC-EXEC-CMT-INKIND-1'), { fundId:'FND-1', investorId:'INV-1', callNumber:14, callDate:'2026-01-01', amount:200000, status:'paid', linkedCommitmentId:'CMT-INKIND-1', inKindAssetId:'OPP-1', reversalOfId:null }));
+  // Phase 2R-4D4-C: معرّف مستند حتمي (CC-EXEC-<commitmentId>) يمنع تنفيذ نقل عيني مكرَّر لنفس
+  // الالتزام — أي محاولة ثانية (نقرة مزدوجة/طلب متزامن/إعادة إرسال) تُرفَض كـ"تحديث" على مستند
+  // موجود بالفعل (allow update: if false)، بصرف النظر عن تطابق البيانات المُرسَلة.
+  await assertFails(setDoc(doc(dbFM,'capitalCalls','CC-EXEC-CMT-INKIND-1'), { fundId:'FND-1', investorId:'INV-1', callNumber:15, callDate:'2026-01-02', amount:200000, status:'paid', linkedCommitmentId:'CMT-INKIND-1', inKindAssetId:'OPP-1', reversalOfId:null }));
+  assert(true, '🔒 2R-4D4-C: محاولة تنفيذ ثانية لنفس الالتزام العيني (نفس المعرّف الحتمي CC-EXEC-CMT-INKIND-1) تُرفَض كتحديث على مستند تنفيذ موجود بالفعل — لا تكرار حتى لو تطابقت البيانات تماماً');
+  // اختبار تزامن حقيقي (لا تسلسلي فقط) على تنفيذ عيني جديد: التزام ثانٍ مستقل، ثم طلبان متزامنان
+  // فعلاً عبر Promise.allSettled لنفس المعرّف الحتمي — Firestore يسلسل الكتابتين على نفس معرّف
+  // المستند، فتنجح واحدة بالضبط وتُرفَض الأخرى.
+  await testEnv.withSecurityRulesDisabled(ctx=>setDoc(doc(ctx.firestore(),'commitments','CMT-INKIND-2'), { fundId:'FND-1', investorId:'INV-1', commitmentAmount:150000, dateCommitted:'2026-01-01', contributionType:'in_kind', reversalOfId:null }));
+  const execConcurrent = ()=>setDoc(doc(ctxFor(FUND_MANAGER).firestore(),'capitalCalls','CC-EXEC-CMT-INKIND-2'), { fundId:'FND-1', investorId:'INV-1', callNumber:16, callDate:'2026-01-02', amount:150000, status:'paid', linkedCommitmentId:'CMT-INKIND-2', inKindAssetId:'OPP-1', reversalOfId:null });
+  const [ex1, ex2] = await Promise.allSettled([execConcurrent(), execConcurrent()]);
+  const execSucceeded = [ex1,ex2].filter(r=>r.status==='fulfilled').length;
+  assert(execSucceeded===1, `🔒 2R-4D4-C: تزامن حقيقي على تنفيذ نقل عيني (طلبان متزامنان فعلاً لنفس المعرّف الحتمي) — نجح ${execSucceeded} بالضبط (يجب أن يكون 1)`);
+  assert(true, '✅ 2R-4D4-B: نداء نقل عيني مطابق فعلاً لالتزام in_kind حقيقي (نفس الصندوق/المستثمر/المبلغ) مع تاريخ نقل وأصل مستلَم موثَّقين (كلاهما جزء من التنفيذ المستقل الجديد، لا التوليد التلقائي القديم) ينجح كما هو متوقَّع');
+}
+{
+  // Phase 2R-4D4-B: انتحال حقل "by" في transactions — كان ممكناً قبل هذه المرحلة (transactionMatchesRecord
+  // لا تتحقق من هوية الكاتب، فقط من أن السجل المشار إليه حقيقي)؛ أُغلق عبر transactionAttributionHonest.
+  const dbFM2 = ctxFor(FUND_MANAGER).firestore();
+  await assertFails(setDoc(doc(dbFM2,'transactions','capitalCall-create-CC-GATE-PENDING-OK'), { type:'capitalCall', action:'create', relatedId:'CC-GATE-PENDING-OK', fundId:'FND-1', amount:100000, at:'2026-01-04T00:00:00.000Z', by:'someone-else@x.com', version:1 }));
+  assert(true, '🔒 2R-4D4-B: transactions بحقل "by" منتحَل (لا يطابق بريد الكاتب الفعلي) مرفوض الآن — قبل هذه المرحلة كانت مطابقة السجل الأصلي وحدها كافية بلا تحقق من هوية الكاتب');
+  // Phase 2R-4D4-C: أُغلقت هنا فعلياً الثغرة الموثَّقة والمتروكة مفتوحة عمداً في 2R-4D4-B (لم يكن
+  // هناك فحص تكرار على سجلات transactions) — معرّف مستند حتمي (transactionCanonicalId =
+  // type-action-relatedId) مفروض الآن في القاعدة نفسها، فأي محاولة تسجيل ثانية لنفس الحدث تُرفَض
+  // كـ"تحديث" على مستند موجود بالفعل (allow update: if false)، بصرف النظر عن نية الكاتب.
+  await assertSucceeds(setDoc(doc(dbFM2,'transactions','capitalCall-create-CC-GATE-PENDING-OK'), { type:'capitalCall', action:'create', relatedId:'CC-GATE-PENDING-OK', fundId:'FND-1', amount:100000, at:'2026-01-04T00:00:01.000Z', by:FUND_MANAGER, version:1 }));
+  assert(true, '✅ 2R-4D4-C: سجل تدقيق أول بمعرّف حتمي (type-action-relatedId) لحدث حقيقي ينجح كالمعتاد');
+  await assertFails(setDoc(doc(dbFM2,'transactions','capitalCall-create-CC-GATE-PENDING-OK'), { type:'capitalCall', action:'create', relatedId:'CC-GATE-PENDING-OK', fundId:'FND-1', amount:100000, at:'2026-01-04T00:00:02.000Z', by:FUND_MANAGER, version:1 }));
+  assert(true, '🔒 2R-4D4-C (كان قيداً مفتوحاً عمداً في 2R-4D4-B — أُغلق هنا فعلياً وليس توثيقاً فقط): محاولة ثانية لتسجيل نفس الحدث بنفس المعرّف الحتمي تُرفَض كتحديث على مستند تدقيق موجود بالفعل — لا تكرار بعد الآن حتى بنفس البيانات تماماً');
+  // اختبار تزامن حقيقي (لا تسلسلي فقط) يحاكي نقرة مزدوجة/طلب متزامن فعلي عبر Promise.allSettled —
+  // Firestore يسلسل الكتابتين على نفس معرّف المستند، فتنجح واحدة بالضبط وتُرفَض الأخرى.
+  const dbFM3 = ctxFor(FUND_MANAGER).firestore();
+  const txnConcurrent = ()=>setDoc(doc(dbFM3,'transactions','capitalCall-create-CC-GATE-1'), { type:'capitalCall', action:'create', relatedId:'CC-GATE-1', fundId:'FND-1', amount:500000, at:'2026-01-04T00:00:03.000Z', by:FUND_MANAGER, version:1 });
+  const [tx1, tx2] = await Promise.allSettled([txnConcurrent(), txnConcurrent()]);
+  const txnSucceeded = [tx1,tx2].filter(r=>r.status==='fulfilled').length;
+  assert(txnSucceeded===1, `🔒 2R-4D4-C: تزامن حقيقي على سجل تدقيق (طلبان متزامنان فعلاً عبر Promise.allSettled لنفس المعرّف الحتمي) — نجح ${txnSucceeded} بالضبط (يجب أن يكون 1)؛ ليس مجرد إعادة محاولة تسلسلية`);
 }
 {
   await testEnv.withSecurityRulesDisabled(async (ctx)=>{
@@ -448,12 +658,16 @@ for(const coll of LEDGER_COLLECTIONS){
   const dbFM = ctxFor(FUND_MANAGER).firestore();
   await assertFails(updateDoc(doc(dbFM,'distributions','DST-GATE-1'), { status:'paid' }));
   assert(true, '🔒 نفس البوابة على التوزيعات: "declared" لا يقدر يتحول مباشرة إلى "paid"');
-  await assertSucceeds(updateDoc(doc(dbFM,'distributions','DST-GATE-1'), { status:'approved', approvedBy:FUND_MANAGER, approvedAt:'2026-01-02' }));
-  assert(true, '✅ الانتقال المسموح من "declared": إلى "approved" فقط');
+  await assertFails(updateDoc(doc(dbFM,'distributions','DST-GATE-1'), { status:'approved', approvedBy:FUND_MANAGER, approvedAt:'2026-01-02' }));
+  assert(true, '🔒 اعتماد التوزيعة declared → approved مرفوض من العميل.');
+  await seedLedgerStatus('distributions', 'DST-GATE-1', 'approved');
   await assertFails(updateDoc(doc(dbFM,'distributions','DST-GATE-1'), { status:'paid', amount:1 }));
   assert(true, '🔒 بعد الاعتماد، لا يجوز تمرير تغيير حقل آخر بجانب الترحيل النهائي');
-  await assertSucceeds(updateDoc(doc(dbFM,'distributions','DST-GATE-1'), { status:'paid' }));
-  assert(true, '✅ ترحيل نظيف من "approved" إلى "paid" ينجح للتوزيعات أيضاً');
+  await assertFails(updateDoc(doc(dbFM,'distributions','DST-GATE-1'), { status:'paid' }));
+  assert(true, '🔒 ترحيل التوزيعة approved → paid مرفوض من العميل حتى دون تغيير المبلغ.');
+  await seedLedgerStatus('distributions', 'DST-GATE-1', 'paid');
+  await assertFails(setDoc(doc(dbFM,'distributions','DST-GATE-REVERSAL-DECLARED'), { fundId:'FND-1', investorId:'INV-1', distDate:'2026-01-01', amount:-50000, type:'x', status:'declared', reversalOfId:'DST-GATE-1', approvedBy:null, approvedAt:null }));
+  assert(true, '🔒 2R-4D4-A: قيد توزيعة عكسي مفبرك بحالة "declared" مرفوض — نفس ثغرة capitalCalls بالضبط قبل هذه المرحلة');
 }
 
 // ==================== ١٢) تكامل Monday.com — إعدادات أدمن + قائمة انتظار append-only ====================
@@ -506,19 +720,14 @@ for(const coll of LEDGER_COLLECTIONS){
   assert(true, '🔒 [السيناريو المسمّى: analyst direct IC mutation] حتى مالك الفرصة نفسه (محلل) لا يقدر يعدّل حقل ic مباشرة من العميل — changesIc() تحجب الحقل بالكامل عن مسار ownsOpp؛ المسار الوحيد المتبقي هو updateIcConditionStatus عبر Cloud Function');
 }
 {
-  // ملاحظة تصميمية مهمة تُختبَر هنا صراحة (وتُفرّق هذا القسم عن القسم ١٤ التالي): isAdminEmail()
-  // هو OR-فرع مستقل تماماً بذاته في allow update لـopportunities (بلا أي AND مع !changesIc) —
-  // فالأدمن *يقدر فعلاً* يعدّل ic مباشرة من العميل بتصميم متعمَّد (نفس امتياز "بلا قيد إضافي"
-  // الذي يملكه على كل حقول الفرصة)، بخلاف fund.assetIds في القسم ١٤ حيث لا يوجد أي استثناء
-  // أدمن إطلاقاً. هذا الفارق التصميمي بين الحقلين موثَّق في تعليق firestore.rules نفسه.
   await testEnv.withSecurityRulesDisabled(async (ctx)=>{
     await setDoc(doc(ctx.firestore(),'opportunities','OPP-1'), baseOpp(ANALYST_OWNER, []));
   });
   const db = ctxFor(ADMIN).firestore();
   const attempt = baseOpp(ANALYST_OWNER, [{ decision:'approve', reasons:[], conditions:[], decidedBy:ADMIN, decidedAt:'x' }]);
   attempt.meta.updatedBy = ADMIN;
-  await assertSucceeds(setDoc(doc(db,'opportunities','OPP-1'), attempt));
-  assert(true, 'ℹ️ الأدمن *يقدر* يعدّل ic مباشرة من العميل (isAdminEmail() فرع مستقل بلا قيد changesIc) — هذا بتصميم متعمَّد يطابق امتيازه العام على بقية حقول الفرصة، ويُذكَر هنا صراحة لتوثيق الفارق عن حالة fund.assetIds في القسم التالي حيث لا استثناء أدمن إطلاقاً');
+  await assertFails(setDoc(doc(db,'opportunities','OPP-1'), attempt));
+  assert(true, 'Phase 4D2: admin cannot fabricate opportunity IC directly.');
 }
 
 // ==================== ١٤) [تغطية دائمة — طلب صريح من المستخدم ضمن P0: Trusted Transaction Layer]
@@ -540,6 +749,114 @@ for(const coll of LEDGER_COLLECTIONS){
   assert(true, '✅ تعديل أي حقل آخر غير assetIds في نفس الوثيقة يبقى مسموحاً للأدمن — القيد ينصبّ على حقل assetIds تحديداً فقط، لا على الوثيقة كاملة');
 }
 
-console.log(failures? `\n${failures} FAILURE(S)` : '\nALL PASSED (against a real Firestore emulator, not a mock)');
+
+// Phase 2R-4D2: creation, preservation and deletion across every authorized role.
+const importedDecision = { decision:'approve', reasons:['historical fixture'], conditions:[], decidedBy:SENIOR_IC, decidedAt:'2025-01-01' };
+for(const [role, email] of [['owner',ANALYST_OWNER],['senior',SENIOR_IC],['manager',FUND_MANAGER],['admin',ADMIN]]){
+  const db = ctxFor(email).firestore();
+  const prefix = `D2-${role}`;
+  for(const [kind, ic] of [['approved',{decisions:[importedDecision]}],['null',null],['string','approved'],['map',{decisions:{}}],['extra',{decisions:[],status:'approved'}]]){
+    await assertFails(setDoc(doc(db,'opportunities',`${prefix}-bad-${kind}`), {...baseOpp(email),ic}));
+    assert(!(await getDoc(doc(db,'opportunities',`${prefix}-bad-${kind}`))).exists(), `${role}: rejected ${kind} create leaves no document`);
+  }
+  const ref = doc(db,'opportunities',`${prefix}-empty`);
+  await assertSucceeds(setDoc(ref,baseOpp(email)));
+  await assertSucceeds(updateDoc(ref,{'land.price':2300,'meta.updatedBy':email}));
+  await assertSucceeds(deleteDoc(ref));
+  const legacy = baseOpp(email); delete legacy.ic;
+  const legacyRef = doc(db,'opportunities',`${prefix}-legacy`);
+  await assertSucceeds(setDoc(legacyRef,legacy));
+  await assertSucceeds(updateDoc(legacyRef,{ic:{decisions:[]},'meta.updatedBy':email}));
+  await assertSucceeds(deleteDoc(legacyRef));
+  const approvedRef = doc(db,'opportunities',`${prefix}-approved`);
+  const approved = baseOpp(email,[importedDecision]);
+  // Admin SDK fixture only; this is not a callable integration test.
+  await testEnv.withSecurityRulesDisabled(ctx=>setDoc(doc(ctx.firestore(),'opportunities',`${prefix}-approved`),approved));
+  await assertSucceeds(updateDoc(approvedRef,{'land.price':2400,'meta.updatedBy':email}));
+  await assertSucceeds(setDoc(approvedRef,{...approved,land:{area:1000,price:2500}}));
+  await assertFails(updateDoc(approvedRef,{'ic.decisions':[],'meta.updatedBy':email}));
+  await assertFails(updateDoc(approvedRef,{ic:deleteField(),'meta.updatedBy':email}));
+  const withoutIc = {...approved}; delete withoutIc.ic;
+  await assertFails(setDoc(approvedRef,withoutIc));
+  await assertFails(deleteDoc(approvedRef));
+  const batch = writeBatch(db);
+  batch.delete(approvedRef); batch.set(approvedRef,baseOpp(email));
+  await assertFails(batch.commit());
+  const saved = (await getDoc(approvedRef)).data();
+  assert(JSON.stringify(saved.ic)===JSON.stringify(approved.ic) && saved.land.price===2500,
+    `${role}: existing IC survives edits; clearing, removal and delete/recreate denied`);
+}
+for(const db of [ctxFor(OUTSIDER).firestore(),testEnv.unauthenticatedContext().firestore()]){
+  await assertFails(setDoc(doc(db,'opportunities','D2-unauthorized'),baseOpp(OUTSIDER)));
+}
+// Fail closed for malformed historical IC, without blocking ordinary owner edits.
+await testEnv.withSecurityRulesDisabled(ctx=>setDoc(doc(ctx.firestore(),'opportunities','D2-malformed'),{...baseOpp(ANALYST_OWNER),ic:null}));
+await assertSucceeds(updateDoc(doc(ctxFor(ANALYST_OWNER).firestore(),'opportunities','D2-malformed'),{'land.price':2600,'meta.updatedBy':ANALYST_OWNER}));
+await assertFails(deleteDoc(doc(ctxFor(ADMIN).firestore(),'opportunities','D2-malformed')));
+
+// Phase 2R-4D3: fund asset links cannot be injected at create or erased by delete.
+for(const [role,email] of [['manager',FUND_MANAGER],['admin',ADMIN]]){
+  const db=ctxFor(email).firestore();
+  for(const [shape,data] of [['empty',{name:'New fund',assetIds:[]}],['absent',{name:'Legacy fund'}]]){
+    const ref=doc(db,'funds',`D3-${role}-${shape}`);
+    await assertSucceeds(setDoc(ref,data));
+    await assertSucceeds(updateDoc(ref,{name:'Edited empty fund'}));
+    // Phase 2R-4D4-C: حذف الصندوق مباشرة من العميل مقفَل تماماً الآن (allow delete: if false) —
+    // حتى صندوق بلا أي تاريخ إطلاقاً لا يُحذَف إلا عبر archiveOrDeleteFund (Cloud Function،
+    // Admin SDK) — هذا الاختبار خارج نطاق محاكاة Firestore الأمنية هنا (لا Functions في هذه الوحدة).
+    await assertFails(deleteDoc(ref));
+    assert((await getDoc(ref)).exists(),`${role}: ${shape} fund direct client delete now denied unconditionally (archiveOrDeleteFund Cloud Function required)`);
+  }
+  for(const [shape,ids] of [['linked',['OPP-1']],['null',null],['string','OPP-1'],['map',{}]]){
+    const ref=doc(db,'funds',`D3-${role}-invalid-${shape}`);
+    await assertFails(setDoc(ref,{name:'Invalid create',assetIds:ids}));
+    assert(!(await getDoc(ref)).exists(),`${role}: ${shape} assetIds creation rejected`);
+  }
+  const id=`D3-${role}-linked`, ref=doc(db,'funds',id);
+  // Fixture setup only, not proof of the callable's authorization or transaction.
+  await testEnv.withSecurityRulesDisabled(ctx=>setDoc(doc(ctx.firestore(),'funds',id),{name:'Linked fund',assetIds:['OPP-1']}));
+  await assertSucceeds(updateDoc(ref,{name:'Edited linked fund'}));
+  await assertSucceeds(setDoc(ref,{name:'Full save linked fund',assetIds:['OPP-1']}));
+  await assertFails(updateDoc(ref,{assetIds:[]}));
+  await assertFails(updateDoc(ref,{assetIds:deleteField()}));
+  await assertFails(setDoc(ref,{name:'Replace without links'}));
+  await assertFails(deleteDoc(ref));
+  const batch=writeBatch(db);batch.delete(ref);batch.set(ref,{name:'Recreated',assetIds:[]});
+  await assertFails(batch.commit());
+  const saved=(await getDoc(ref)).data();
+  assert(saved.name==='Full save linked fund' && JSON.stringify(saved.assetIds)==='["OPP-1"]',
+    `${role}: linked fund keeps assets after rejected mutations and delete/recreate`);
+  const malformed=doc(db,'funds',`D3-${role}-malformed`);
+  await testEnv.withSecurityRulesDisabled(ctx=>setDoc(doc(ctx.firestore(),'funds',`D3-${role}-malformed`),{name:'Legacy malformed',assetIds:null}));
+  await assertFails(deleteDoc(malformed));
+  assert(true,`${role}: malformed legacy fund deletion denied`);
+}
+for(const [role,db] of [['analyst',ctxFor(ANALYST_OWNER).firestore()],['senior',ctxFor(SENIOR_IC).firestore()],['outsider',ctxFor(OUTSIDER).firestore()],['anonymous',testEnv.unauthenticatedContext().firestore()]]){
+  await assertFails(setDoc(doc(db,'funds',`D3-denied-${role}`),{name:'Unauthorized',assetIds:[]}));
+  await assertFails(deleteDoc(doc(db,'funds','D3-manager-linked')));
+  assert(true,`${role}: fund create/delete still denied`);
+}
+await assertSucceeds(getDoc(doc(ctxFor(ANALYST_OWNER).firestore(),'funds','D3-manager-linked')));
+
+console.log(failures? `\n${failures} FAILURE(S)` : '\nALL PASSED (current-rules expectations; real Firestore emulator)');
+// تحديث (هذه الجلسة، بعد مراجعة مقصودة): هذا التحذير كان يسرد ثلاثة عناصر أمنية "مفتوحة" منذ
+// مرحلة سابقة (قبل 2R-4D3/2R-4D4-A/B/C و2R-4E). راجعنا كل عنصر مقابل القواعد والاختبارات الحالية
+// فعلاً (لا افتراضاً) ووجدنا أن الثلاثة أُغلقت منذ ذلك الحين:
+//  • "ledger creation exceptions": أُغلق تدريجياً عبر 2R-4D4-A (linkedCommitmentOk، ledgerAmountOk،
+//    منع reversalOfId من العميل مباشرة) وB/C (معرّفات حتمية canonical id تمنع تكرار سجل transactions
+//    لنفس الحدث، وإغلاق نوع assetLink بالكامل أمام أي كتابة عميل — انظر transactionCanonicalId
+//    وmatch /transactions أعلاه في firestore.rules، والتعليقات المرحلية فيه).
+//  • "linked-fund lifecycle": أُغلق عبر 2R-4D3 (funds create يتطلب fundHasNoAssets، changesAssetIds
+//    يمنع تعديل assetIds من العميل) وأُغلق تماماً في 2R-4D4-C (allow delete: if false بلا أي استثناء
+//    — المسار الوحيد الآن archiveOrDeleteFund عبر Admin SDK، الذي يفحص الأربع مجموعات المحاسبية قبل
+//    أي حذف فعلي). مغطّى في القسم "٧) fund asset links" أعلاه (D3-*).
+//  • "underwriting metric authority": أُغلق في هذه الجلسة (Phase 2R-4E) — v4_ic_approved مرفوضة الآن
+//    من أي كتابة عميل حتى بحمولة صحيحة تماماً ومربوطة بقرار IC حقيقي؛ الكتابة الوحيدة المتبقية عبر
+//    approveOpportunity (Admin SDK) بعقد requestId كامل. مغطّى في القسم "٧) underwritingVersions" أعلاه.
+// ما يبقى خارج نطاق هذه الوحدة عمداً (لا يمكن لهذا الاختبار إثباته، بصرف النظر عن نتيجته):
+// (1) أن القواعد **المنشورة فعلياً** على مشروع Firebase الحقيقي تطابق هذا الملف بالضبط — هذا يتطلب
+//     الوصول لـFirebase Console الحقيقي، غير متاح من هذه البيئة؛ (2) أي مسار كتابة لم يُغطَّ بعد بأي
+//     اختبار في هذا الملف. القرار بشأن التحقق من (1) متروك لك.
+console.warn('SECURITY ITEMS PREVIOUSLY OPEN (ledger creation exceptions; linked-fund lifecycle; underwriting metric authority) are now closed as of Phase 2R-4D3/4D4-A-C and 2R-4E -- see comment above for the evidence trail. Remaining caveat: this suite proves the RULES FILE is correct: it cannot prove the rules deployed to the real Firebase project match this file. Confirm that separately via Firebase Console before relying on it in production.');
 await testEnv.cleanup();
 process.exit(failures?1:0);

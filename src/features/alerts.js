@@ -20,6 +20,13 @@ function computeAlerts(core){
     const d = core.withDefaults(rec.data);
     const name = d.meta.name || rec.id;
     let c; try{ c = core.compute(rec.data); }catch(e){ c = null; }
+    // 3A-2c: فرصة محجوبة (مدخلات غير صالحة/ناقصة) → تنبيه واحد بلا أي رقم، ولا تُحتسب مؤشراتها في تنبيهات DSCR/IRR
+    const _blk = (c && typeof core.oppMetricGuard==='function') ? core.oppMetricGuard(rec, c) : null;
+    if(_blk){
+      alerts.push({ severity:'high', oppId:rec.id, name, kind: core.T('مدخلات','Inputs'),
+        message: core.T('مدخلات غير صالحة أو ناقصة — نتائج هذه الفرصة محجوبة وغير معتمدة حتى تصحيحها','Invalid or incomplete inputs — this opportunity\'s results are withheld and not approved until corrected') });
+      c = null;
+    }
 
     // DD حرجة معلّقة
     const dd = ddStats((d.dd && d.dd.items) || defaultItemsDict());

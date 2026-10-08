@@ -44,6 +44,16 @@
    لا تعديل على core.js — فقط عبر نقاط التوسّع المُصدَّرة.
    ========================================================================= */
 
+// Phase 2R-4E: buildUnderwritingVersionRecord() below is no longer what writes the
+// v4_ic_approved stage against a real Firebase backend. That write now happens exclusively
+// inside functions/index.js::approveOpportunity, in the same trusted server transaction as the
+// icDecisions record, using the server's own recomputed metrics/inputHash/engineVersion (never a
+// client-side recompute) — see ic-workflow.js's ic-decide handler, which no longer calls this
+// function for that path. buildUnderwritingVersionRecord() remains in use for exactly two cases,
+// both intentionally client-authored: the 'manual' stage (uw-save-manual below, always a client
+// write, gated by firestore.rules' isAdminEmail()/ownsOpp() branch, unchanged by this phase), and
+// the narrow demo/local-only fallback in ic-workflow.js (no real Firebase project to call a
+// Cloud Function against at all).
 const UW_COLLECTION = 'underwritingVersions';
 const ACTUALS_COLLECTION = 'assetActuals';
 
@@ -57,6 +67,12 @@ const STAGE_LABELS = {
 
 function snapshotMetrics(core, d){
   let c; try{ c = core.compute(d); }catch(e){ c = {}; }
+  /* 3A-2c: لقطة تسعير لفرصة محجوبة (INVALID/INCOMPLETE) لا تحفظ أي مؤشر ربحية محسوب — تُحفظ فارغة ومعلَّمة. */
+  const _blk = typeof core.metricGuard==='function' ? core.metricGuard(d, c) : null;
+  if(_blk){
+    return { oppType: d.meta.oppType, price: (d.land && d.land.price!=null) ? d.land.price : null,
+      equityIRR: null, projectIRR: null, MOIC: null, dscrMin: null, blocked: true, blockedStatus: _blk.status };
+  }
   return {
     oppType: d.meta.oppType,
     price: (d.land && d.land.price!=null) ? d.land.price : null,

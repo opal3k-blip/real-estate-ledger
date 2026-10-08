@@ -40,6 +40,8 @@ const { onDocumentWritten } = require('firebase-functions/v2/firestore');
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const { initializeApp } = require('firebase-admin/app');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
+const { recompute: recomputeIC, documentHash } = require('./trusted-ic.cjs');
+
 
 initializeApp();
 const db = getFirestore();
@@ -198,75 +200,352 @@ async function paidCallsForInvestorTx(tx, fundId, investorId) {
   return total;
 }
 
-async function allocatedElsewhereTx(tx, fund, excludeOppId) {
+async function allocatedElsewhereTx(tx, fundId, fund, excludeOppId) {
   const ids = (fund.assetIds || []).filter((id) => id !== excludeOppId);
   let total = 0;
   for (const id of ids) {
     const oppSnap = await tx.get(db.collection('opportunities').doc(id));
     if (!oppSnap.exists) continue;
     const alloc = ((oppSnap.data() || {}).capitalAllocation) || {};
-    total += n(alloc.targetEquity);
+    const targetEquity = n(alloc.targetEquity);
+    // Phase 2R-4D4-C (land-first, two-asset correction — see linkAssetToFund's own
+    // earmarkedForThisAsset comment below): a linked asset's executed in-kind earmark covers
+    // ONLY its own targetEquity and never draws on the fund's shared cash pool. Subtracting that
+    // asset's FULL targetEquity here, as before, wrongly counted its land value as cash already
+    // consumed — a second time — against every OTHER asset evaluated afterward: an already-linked,
+    // fully land-funded asset would zero out cash availability for a later, genuinely cash-funded
+    // asset (order-dependent; empirically confirmed before this fix with a real two-asset scenario).
+    // Only the asset's CASH portion (targetEquity minus its own paid, eligible in-kind coverage,
+    // floored at zero so surplus in-kind coverage beyond that asset's own targetEquity never
+    // manufactures spare cash for this sum) is deducted from the shared pool.
+    const inKind = await earmarkedInKindForAssetTx(tx, fundId, id);
+    total += Math.max(0, targetEquity - inKind);
   }
   return total;
 }
 
-/* ⚠️ TEMPORARY TRUST BOUNDARY (P0 — Trusted Transaction Layer، قرار معماري صريح من المستخدم):
-   `readiness` أدناه لا يزال بيانات "يُصرِّح بها العميل" (نتيجة icReadiness(core, draft) المحسوبة
-   في المتصفح) لا يُعاد حسابها هنا على الخادم — basicReadinessOk() تتحقق فقط من *شكل* الكائن
-   (ready===true وكل بوابة داخله ok!==false)، لا من صحة الأرقام المالية/DD/الأدلة/التخطيط/التسعير
-   التي أنتجت تلك النتيجة أصلاً. هذا يعني: عميل يتلاعب بواجهته (لا بـ Firestore مباشرة — ذلك
-   مقفول الآن) لا يزال يقدر نظرياً يُرسل `readiness:{ready:true, gates:{}}` مصطنعة لهذه الدالة.
-   القرار الصريح لهذه المرحلة (بعد نقاش معماري كامل مع المستخدم) هو تأجيل الإصلاح الكامل لمرحلة
-   منفصلة تماماً: "P0 — Shared Domain Engine Extraction" (استخراج src/domain/{financial-engine,
-   ic-readiness, evidence-engine, dd-engine, planning-engine}.js من core.js لتُستهلَك حرفياً من
-   المتصفح وهذه الدالة معاً، فتصبح إعادة الحساب هنا ممكنة بلا تكرار منطق) — رُفض عمداً بناء نسخة
-   Node مبسَّطة/موازية الآن لهذه الحسابات (كانت ستصبح "محرك خامس متضارب"، بالضبط النمط الذي أزالته
-   مراحل Canonical Metrics Consolidation السابقة). لذلك هذه الدالة تُغلق فقط مسارات الكتابة
-   المباشرة على Firestore (opportunity.ic لم يعد قابلاً للكتابة من العميل إطلاقاً — انظر
-   firestore.rules)، وتُبقي basicReadinessOk() كحارس شكلي مؤقت حتى إنجاز مرحلة استخراج المحرك. */
-exports.approveOpportunity = onCall(async (request) => {
+/* Phase 2R-4C: saved opportunity inputs are read and recomputed inside the
+   decision transaction. Client readiness, metrics and audit identity are ignored.
+   A justified override applies only to computed policy failures, never a failed
+   calculation or undefined financial metrics.
+
+   Phase 2R-4E (بطلب المستخدم صراحةً، بعد مراجعته لمسار underwritingVersions/icDecisions
+   وتصحيحه لتصميمين مقترحين سابقين): إغلاق ثلاث ثغرات إضافية بقيت بعد 2R-4C أعلاه:
+
+   ١) لم يكن هناك requestId إطلاقاً — إعادة إرسال نفس طلب الاعتماد (نقرة مزدوجة، أو إعادة محاولة
+      بعد Timeout مجهول النتيجة) كانت تُنشئ *قرار icDecisions ثانياً* لكل محاولة، رغم أن كلاً منها
+      نجحت فعلياً في المرة الأولى — لا حماية على مستوى approveOpportunity نفسها (بعكس
+      linkAssetToFund من 2R-4D4-C، الذي كان محمياً بـassetLinkRequests). الحل هنا مطابق تماماً
+      لذلك النمط: icDecisionRequests أدناه (icDecisionRequestPayloadsMatch) تُخزِّن نتيجة كل طلب
+      بمعرّفه، وإعادة إرسال requestId+حمولة مطابقين تُعيد *نفس* النتيجة الأصلية بلا معاملة جديدة
+      إطلاقاً؛ requestId بحمولة مختلفة (بريد آخر، فرصة أخرى، نوع قرار آخر، شروط/أسباب/تجاوز مختلفة)
+      يُرفَض بوضوح (already-exists). لا آلية expectedVersion هنا كما في linkAssetToFund — بقرار
+      صريح من المستخدم، طلب متأخر يصل بعد تعديل الفرصة، أو طلبان *مختلفان* متنافسان على نفس الفرصة،
+      يبقيان مسألة سياسة مستقلة لم تُحَل في هذه المرحلة (انظر docs/PHASE_2R_4E_HANDOFF.md) —
+      requestId هنا يحل فقط "نفس الطلب المنطقي، أُعيد إرساله، يُنفَّذ مرة واحدة على الأكثر".
+
+   ٢) لم تكن نسخة v4_ic_approved (underwritingVersions) تُكتَب هنا إطلاقاً — كانت تُكتَب لاحقاً من
+      العميل (ic-workflow.js، كتابة منفصلة عن هذه المعاملة تماماً)، بمقاييس (metrics) مُعاد حسابها
+      من جديد على العميل بدل القيم المُحتسَبة هنا فعلاً على الخادم، وبنافذة زمنية حقيقية بين كتابة
+      icDecisions هنا وكتابة underwritingVersions هناك يمكن أن تفشل جزئياً (فشل شبكة بين الطلبين)
+      فتترك قراراً معتمَداً بلا لقطة تسعير مقابلة له إطلاقاً. تُكتَب النسخة الآن هنا، ضمن *نفس*
+      المعاملة الذرّية على قرار approve/approve_conditions فقط تحديداً (سطر tx.set أدناه) — لا نسخة
+      لقرار reject/hold/revise (يبقى مسجَّلاً في icDecisions ونتيجة طلبه فقط، بلا نسخة باسم
+      v4_ic_approved، بالضبط كما طلب المستخدم). القيم المخزَّنة في metrics.equityIRR/projectIRR/
+      MOIC/dscrMin هي evaluated.audit.metrics نفسها المُحتسَبة أعلاه بالضبط (لا حساب ثانٍ منفصل) —
+      لا ثقة بأي قيمة عميل لهذه اللقطة إطلاقاً؛ price/oppType وحدهما (حقلا عرض فقط، لا يدخلان أي
+      حساب مالي) يُقرآن من نفس opp المقروءة هنا لأن trusted-ic.cjs (غير مُعدَّل في هذه المرحلة، لا
+      علاقة له بالاقتصاديات/Golden Master) لا يُعيدهما. thesisSnapshot أيضاً من نفس opp المقروءة
+      هنا بالضبط (لا من أي حقل يرسله العميل).
+
+      تعريف بصمة الإدخال (inputHash) وحدودها — كما طلب المستخدم صراحةً: inputHash هو
+      sha256(inputJson)، وinputJson هو JSON.stringify(auditValue(engine.withDefaults(input)))
+      حيث input هو *كامل* وثيقة الفرصة المحفوظة ناقص حقل ic فقط (انظر trusted-ic.cjs::recompute).
+      هذا يعني أن inputHash يشمل *كل* حقل آخر في الوثيقة — بما فيها meta.updatedBy/meta.updatedAt
+      — لا فقط الحقول التي تدخل فعلاً في engine.compute(): حفظان لنفس الفرصة بنفس الاقتصاديات
+      تماماً لكن بـmeta.updatedAt مختلف يُنتجان inputHash مختلفاً. هذا سلوك موجود أصلاً في
+      trusted-ic.cjs من قبل هذه المرحلة ولم يُغيَّر هنا؛ يُوثَّق فقط الآن بدقة. المدخلات *الفعلية*
+      نفسها (لا بصمتها وحدها) محفوظة بالكامل وبشكل غير قابل للتعديل في evaluated.audit.inputJson
+      داخل سجل icDecisions/{sourceDecisionId} نفسه (immutable، Admin SDK فقط، انظر firestore.rules)
+      — sourceDecisionId أدناه هو ذلك المرجع الثابت، لا حاجة لتكرار inputJson (قد يبلغ 350KB) في
+      وثيقة النسخة نفسها؛ inputHash/engineVersion يُكرَّران هنا فقط لعرض/تحقق سريع بلا الحاجة لقراءة
+      السجل الكامل.
+
+      معرّف الوثيقة UWV-<icRef.id> حتمي (لا عشوائي) — كل قرار اعتماد ناجح واحد فعلياً (icRef.id
+      عشوائي جديد فقط عند التنفيذ الحقيقي، لا عند إعادة تشغيل داخلي لنفس المعاملة من Firestore عند
+      تعارض، ولا عند إعادة تنفيذ requestId مطابق التي تُعيد النتيجة الأصلية بلا تنفيذ إطلاقاً) —
+      يحمل نسخة v4 واحدة بمعرّف يربطها بقراره بوضوح، دفاعاً إضافياً بعد أن أصبحت الحماية الأساسية
+      من التكرار هي requestId نفسه أعلاه.
+
+   ٣) ترتيب القراءات/الكتابات: طلب سجل الحالة (icDecisionRequests) وطلب الفرصة يُقرآن معاً
+      (Promise.all) قبل أي تحقق أو كتابة، بالضبط كما تتطلب معاملات Firestore (كل القراءات قبل أي
+      كتابة) — والمصادقة/الصلاحية (requireEmail/requireRole أعلاه) تحدث *دائماً* قبل الدخول في
+      المعاملة أصلاً، بما فيها عند إعادة تنفيذ requestId ستُعيد نتيجة محفوظة: لا مسار "سريع" يتجاوز
+      التحقق من الهوية لمجرد أن النتيجة ستكون من ذاكرة التخزين. نتيجة الطلب (icDecisionRequests)
+      وتحديث حالة الفرصة (opportunities.ic) وسجل القرار (icDecisions) ونسخة الاعتماد
+      (underwritingVersions، إن وُجدت) تُكتَب جميعها معاً في نفس المعاملة — فشل أي تحقق (هوية غير
+      مصرَّحة، شروط اعتماد غير مستوفاة) يرفض *قبل* أي كتابة إطلاقاً (استثناء JS قبل أول tx.set/
+      tx.update يُلغي المعاملة الذرّية كاملة تلقائياً، بلا كتابة جزئية بأي حال) — فلا قرار ولا نسخة
+      تُكتَب لطلب فاشل، تماماً كما طلب المستخدم. */
+function icDecisionRequestPayloadsMatch(a, b) {
+  return a.email === b.email && a.oppId === b.oppId && a.decisionType === b.decisionType
+    && a.override === b.override
+    && a.warningsAcknowledged === b.warningsAcknowledged
+    && a.expectedDocHash === b.expectedDocHash
+    && JSON.stringify(a.reasons) === JSON.stringify(b.reasons)
+    && JSON.stringify(a.conditions) === JSON.stringify(b.conditions);
+}
+
+/* 3A-3 — Phase L0 (transport) whitelist. A request carries ONLY what a person decides; every status,
+   colour, label, metric and readiness value is derived on the server from the stored document. An unknown
+   field is a probe or a bug, so it is REJECTED rather than silently ignored. */
+const APPROVE_ALLOWED_KEYS = new Set(['oppId', 'decision', 'reasons', 'conditions', 'override', 'warningsAcknowledged', 'requestId', 'expectedDocHash']);
+const DECISION_ALLOWED_KEYS = new Set(['decision']);
+const CONDITION_ALLOWED_KEYS = new Set(['text', 'owner', 'dueDate', 'status']);
+const DOC_HASH_RE = /^[0-9a-f]{64}$/;
+const isStrictPlainObject = v => v !== null && typeof v === 'object' && !Array.isArray(v)
+  && (Object.getPrototypeOf(v) === Object.prototype || Object.getPrototypeOf(v) === null);
+function unexpectedKeys(obj, allowed) {
+  return Object.keys(obj).filter(k => !allowed.has(k));
+}
+function rejectUnexpected(obj, allowed, where) {
+  const extra = unexpectedKeys(obj, allowed);
+  if (extra.length) {
+    throw new HttpsError('invalid-argument', `Unexpected field(s) in ${where}.`, { rejectionCode: 'UNEXPECTED_FIELD', where, fields: extra.slice(0, 10).map(k => String(k).slice(0, 40)) });
+  }
+}
+// Unsafe keys are rejected outright even if a future whitelist were widened by mistake.
+function rejectUnsafeKeys(value, depth = 0) {
+  if (depth > 6 || !value || typeof value !== 'object') return;
+  for (const key of Object.keys(value)) {
+    if (key === '__proto__' || key === 'prototype' || key === 'constructor') {
+      throw new HttpsError('invalid-argument', 'Unsafe key in request.', { rejectionCode: 'UNSAFE_KEY' });
+    }
+    rejectUnsafeKeys(value[key], depth + 1);
+  }
+}
+
+/* 3A-3 — structured, figure-free rejection log (Cloud Logging, severity WARNING). One JSON line per refused call so the
+   rate of INPUTS_BLOCKED / DOC_CHANGED / WARNINGS_ACK_REQUIRED / UNEXPECTED_FIELD ... can be watched with a log-based
+   metric. It carries ONLY codes and identifiers: never an input value, a figure, a reason text or an email address. */
+const LOGGED_DECISIONS = new Set(['approve', 'approve_conditions', 'revise', 'hold', 'reject']);
+function logApprovalRejection(fn, request, error) {
+  try {
+    const data = request && isStrictPlainObject(request.data) ? request.data : {};
+    const details = error && error.details && typeof error.details === 'object' ? error.details : {};
+    const entry = {
+      event: 'IC_APPROVAL_REJECTED', fn,
+      code: String((error && error.code) || 'internal').slice(0, 40),
+      rejectionCode: typeof details.rejectionCode === 'string' ? details.rejectionCode.slice(0, 40) : null,
+      verdictStatus: typeof details.status === 'string' ? details.status.slice(0, 20) : null,
+      verdictColor: typeof details.color === 'string' ? details.color.slice(0, 10) : null,
+      decision: data.decision && typeof data.decision.decision === 'string' && LOGGED_DECISIONS.has(data.decision.decision) ? data.decision.decision : null,
+      oppId: typeof data.oppId === 'string' ? data.oppId.slice(0, 80) : null,
+    };
+    console.warn(JSON.stringify(entry));
+  } catch (e) { /* logging must never change the outcome of a call */ }
+}
+
+async function approveOpportunityImpl(request) {
   const email = requireEmail(request);
   await requireRole(email, 'senior_ic');
-  const { oppId, decision, readiness, reasons, conditions, override } = request.data || {};
-  if (!oppId || !decision || !decision.decision) throw new HttpsError('invalid-argument', 'oppId and decision are required.');
-  if (APPROVAL_DECISIONS.has(decision.decision) && !basicReadinessOk(readiness)) {
-    const hasJustifiedOverride = override === true && Array.isArray(reasons) && reasons.length > 0;
-    if (!hasJustifiedOverride) throw new HttpsError('failed-precondition', 'Approval requires passing IC readiness or a justified override.');
+  const raw = request.data;
+  if (!isStrictPlainObject(raw)) throw new HttpsError('invalid-argument', 'A request object is required.');
+  rejectUnsafeKeys(raw);
+  rejectUnexpected(raw, APPROVE_ALLOWED_KEYS, 'request');
+  const { oppId, decision, reasons = [], conditions = [], override, warningsAcknowledged, requestId, expectedDocHash } = raw;
+  const allowed = new Set(['approve', 'approve_conditions', 'revise', 'hold', 'reject']);
+  if (typeof oppId !== 'string' || !oppId.trim() || oppId.includes('/') || !isStrictPlainObject(decision) || typeof decision.decision !== 'string' || !allowed.has(decision.decision)) {
+    throw new HttpsError('invalid-argument', 'A valid oppId and IC decision are required.');
   }
+  rejectUnexpected(decision, DECISION_ALLOWED_KEYS, 'decision');
+  if (typeof requestId !== 'string' || !requestId.trim()) {
+    throw new HttpsError('invalid-argument', 'requestId (a stable identifier for this specific decision, unchanged on retry) is required.');
+  }
+  for (const [name, v] of [['override', override], ['warningsAcknowledged', warningsAcknowledged]]) {
+    if (v !== undefined && typeof v !== 'boolean') throw new HttpsError('invalid-argument', `${name} must be a boolean.`);
+  }
+  if (expectedDocHash !== undefined && (typeof expectedDocHash !== 'string' || !DOC_HASH_RE.test(expectedDocHash))) {
+    throw new HttpsError('invalid-argument', 'expectedDocHash must be the document hash returned by getApprovalPreview.');
+  }
+  if (APPROVAL_DECISIONS.has(decision.decision) && expectedDocHash === undefined) {
+    throw new HttpsError('invalid-argument', 'An approval must name the reviewed document (expectedDocHash from getApprovalPreview).');
+  }
+  if (Array.isArray(conditions)) conditions.forEach(c => { if (isStrictPlainObject(c)) rejectUnexpected(c, CONDITION_ALLOWED_KEYS, 'condition'); });
+  if (!Array.isArray(reasons) || reasons.length > 100 || reasons.some(r => typeof r !== 'string' || r.length > 4000)) {
+    throw new HttpsError('invalid-argument', 'Reasons must be text.');
+  }
+  const cleanReasons = reasons.map(r => r.trim()).filter(Boolean);
+  if (!Array.isArray(conditions) || conditions.length > 100 || conditions.some(c => !c || typeof c.text !== 'string' || !c.text.trim() || c.text.length > 4000 ||
+    (c.owner != null && (typeof c.owner !== 'string' || c.owner.length > 300)) ||
+    (c.dueDate != null && (typeof c.dueDate !== 'string' || (c.dueDate !== '' && !/^\d{4}-\d{2}-\d{2}$/.test(c.dueDate)))))) {
+    throw new HttpsError('invalid-argument', 'Conditions must contain text, owner and an optional YYYY-MM-DD due date.');
+  }
+  const cleanConditions = conditions.map(c => ({ text: c.text.trim(), owner: (c.owner || '').trim(), dueDate: c.dueDate || '', status: 'pending' }));
+  const payload = { email, oppId, decisionType: decision.decision, reasons: cleanReasons, conditions: cleanConditions, override: override === true, warningsAcknowledged: warningsAcknowledged === true, expectedDocHash: expectedDocHash || null };
 
   const oppRef = db.collection('opportunities').doc(oppId);
   const icRef = db.collection('icDecisions').doc();
-  await db.runTransaction(async (tx) => {
-    const oppSnap = await tx.get(oppRef);
+  const requestRef = db.collection('icDecisionRequests').doc(requestId.trim());
+  return db.runTransaction(async (tx) => {
+    const [requestSnap, oppSnap] = await Promise.all([tx.get(requestRef), tx.get(oppRef)]);
+    if (requestSnap.exists) {
+      const prior = requestSnap.data() || {};
+      if (icDecisionRequestPayloadsMatch(prior.payload || {}, payload)) return prior.result;
+      throw new HttpsError('already-exists', 'This requestId was already used for a different IC decision — a retry must reuse the exact same parameters, never new ones.');
+    }
     if (!oppSnap.exists) throw new HttpsError('not-found', 'Opportunity not found.');
     const opp = oppSnap.data() || {};
-    const icDecision = Object.assign({}, decision, {
-      reasons: Array.isArray(reasons) ? reasons : [],
-      conditions: Array.isArray(conditions) ? conditions : [],
+    const nowMs = Date.now();
+    const approving = APPROVAL_DECISIONS.has(decision.decision);
+    /* 3A-3: the approval is bound to the exact stored document the approver reviewed. The hash is taken from the
+       document read INSIDE this transaction (Firestore retries the callback if it changes before commit), so a
+       change between preview and approval — to ANY field, financial or not — aborts the approval. */
+    let currentDocHash;
+    try { currentDocHash = documentHash(opp); }
+    catch (error) {
+      throw new HttpsError('failed-precondition', 'The saved opportunity could not be fingerprinted.', { rejectionCode: error.rejectionCode || 'DOC_HASH_FAILED' });
+    }
+    if (approving && expectedDocHash !== currentDocHash) {
+      throw new HttpsError('failed-precondition', 'The opportunity changed after it was reviewed. Reload, review it again and then approve.', { rejectionCode: 'DOC_CHANGED' });
+    }
+    let evaluated;
+    try { evaluated = await recomputeIC(opp, nowMs); }
+    catch (error) {
+      console.error('Trusted IC calculation failed', error.message);
+      throw new HttpsError('failed-precondition', 'Server IC calculation could not complete. Review the saved opportunity and domain deployment.',
+        error.rejectionCode ? { rejectionCode: error.rejectionCode, path: error.rejectionPath || null } : undefined);
+    }
+    const verdict = evaluated.verdict;
+    /* Red (INVALID / INCOMPLETE / classification error) never approves — no override, no client label can change it. */
+    if (approving && verdict.blocked) {
+      throw new HttpsError('failed-precondition', 'Approval requires valid, complete inputs.', {
+        rejectionCode: 'INPUTS_BLOCKED', status: verdict.status, color: verdict.color,
+        issueCodes: verdict.issueCodes.filter(i => i.severity !== 'WARNING').slice(0, 50),
+      });
+    }
+    if (approving && evaluated.invalidMetrics.length) {
+      throw new HttpsError('failed-precondition', 'Approval requires valid financial metrics.', { invalidMetrics: evaluated.invalidMetrics });
+    }
+    const overridden = approving && !evaluated.readiness.ready && override === true && cleanReasons.length > 0;
+    if (approving && !evaluated.readiness.ready && !overridden) {
+      throw new HttpsError('failed-precondition', 'Approval requires server IC readiness or an explicit written override.', { readiness: evaluated.audit.readiness });
+    }
+    /* Compound financial risk (yellow, count >= threshold) is not blocked, but needs a written acknowledgement
+       that the server records with the exact reasons. Separate from the readiness override. */
+    const warningsAck = approving && verdict.compound.requiresAcknowledgement && warningsAcknowledged === true && cleanReasons.length > 0;
+    if (approving && verdict.compound.requiresAcknowledgement && !warningsAck) {
+      throw new HttpsError('failed-precondition', 'Several high-risk conditions apply together; approval needs a written acknowledgement.', {
+        rejectionCode: 'WARNINGS_ACK_REQUIRED', color: verdict.color, highRiskCodes: verdict.highRiskCodes, count: verdict.compound.count, threshold: verdict.compound.threshold,
+      });
+    }
+    const icDecision = {
+      decision: decision.decision,
+      reasons: cleanReasons,
+      conditions: cleanConditions,
       decidedBy: email,
-      decidedAt: new Date().toISOString(),
-      readiness: readiness || null,
-      overridden: override === true,
-    });
+      decidedAt: new Date(nowMs).toISOString(),
+      readiness: evaluated.audit.readiness,
+      readinessSchema: 'canonical-ic-v1',
+      gateReasonsAtDecision: overridden ? evaluated.legacyReasons : [],
+      engineVersion: evaluated.audit.engineVersion,
+      inputHash: evaluated.audit.inputHash,
+      docHash: currentDocHash,
+      validation: verdict,
+      warningsAcknowledged: warningsAck,
+      decisionId: icRef.id,
+      overridden,
+    };
     const ic = opp.ic || {};
     const decisions = Array.isArray(ic.decisions) ? ic.decisions.slice() : [];
     decisions.push(icDecision);
     tx.update(oppRef, {
       ic: Object.assign({}, ic, { decisions }),
       'meta.updatedBy': email,
-      'meta.updatedAt': new Date().toISOString().slice(0, 10),
+      'meta.updatedAt': new Date(nowMs).toISOString().slice(0, 10),
     });
     tx.set(icRef, {
       oppId,
       decision: icDecision,
-      readiness: readiness || null,
+      readiness: evaluated.audit.readiness,
+      evaluation: evaluated.audit,
       recordedBy: email,
       recordedAt: FieldValue.serverTimestamp(),
       source: 'approveOpportunity',
-      version: 1,
+      version: 2,
     });
+    let versionId = null;
+    if (approving) {
+      versionId = 'UWV-' + icRef.id;
+      const price = (opp.land && opp.land.price != null) ? opp.land.price : null;
+      const oppType = (opp.meta && opp.meta.oppType) || null;
+      tx.set(db.collection('underwritingVersions').doc(versionId), {
+        oppId,
+        stage: 'v4_ic_approved',
+        label: 'v4 — معتمَدة من اللجنة',
+        savedAt: new Date(nowMs).toISOString(),
+        savedBy: email,
+        trigger: 'ic_decision',
+        sourceDecisionId: icRef.id,
+        metrics: {
+          oppType,
+          price,
+          equityIRR: evaluated.audit.metrics.equityIRR,
+          projectIRR: evaluated.audit.metrics.projectIRR,
+          MOIC: evaluated.audit.metrics.MOIC,
+          dscrMin: evaluated.audit.metrics.dscrMin,
+        },
+        thesisSnapshot: (opp.thesis || '').trim(),
+        engineVersion: evaluated.audit.engineVersion,
+        inputHash: evaluated.audit.inputHash,
+        docHash: currentDocHash,
+        validationStatus: verdict.status,
+        validationColor: verdict.color,
+      });
+    }
+    const result = { ok: true, decisionId: icRef.id, versionId };
+    tx.set(requestRef, { payload, result, at: FieldValue.serverTimestamp() });
+    return result;
   });
-  return { ok: true, decisionId: icRef.id };
+}
+exports.approveOpportunity = onCall(async (request) => {
+  try { return await approveOpportunityImpl(request); }
+  catch (error) { logApprovalRejection('approveOpportunity', request, error); throw error; }
+});
+
+/* 3A-3 — read-only approval preview. Returns what the SERVER computes for the stored document: the fingerprint to
+   send back as expectedDocHash and the colour/verdict. No figures leave the server here (codes only). */
+async function getApprovalPreviewImpl(request) {
+  const email = requireEmail(request);
+  await requireRole(email, 'senior_ic');
+  const raw = request.data;
+  if (!isStrictPlainObject(raw)) throw new HttpsError('invalid-argument', 'A request object is required.');
+  rejectUnsafeKeys(raw);
+  rejectUnexpected(raw, new Set(['oppId', 'displayedDocHash']), 'request');
+  const { oppId, displayedDocHash } = raw;
+  if (typeof oppId !== 'string' || !oppId.trim() || oppId.includes('/')) throw new HttpsError('invalid-argument', 'A valid oppId is required.');
+  if (displayedDocHash !== undefined && (typeof displayedDocHash !== 'string' || !/^[0-9a-f]{64}$/.test(displayedDocHash))) {
+    throw new HttpsError('invalid-argument', 'displayedDocHash must be a 64-character lowercase hex string.');
+  }
+  const snap = await db.collection('opportunities').doc(oppId).get();
+  if (!snap.exists) throw new HttpsError('not-found', 'Opportunity not found.');
+  const opp = snap.data() || {};
+  let evaluated;
+  try { evaluated = await recomputeIC(opp, Date.now()); }
+  catch (error) {
+    throw new HttpsError('failed-precondition', 'Server IC calculation could not complete.',
+      error.rejectionCode ? { rejectionCode: error.rejectionCode, path: error.rejectionPath || null } : undefined);
+  }
+  return {
+    docHash: evaluated.docHash, inputHash: evaluated.audit.inputHash, engineVersion: evaluated.audit.engineVersion,
+    verdict: evaluated.verdict, ready: !!evaluated.readiness.ready, invalidMetrics: evaluated.invalidMetrics,
+    // 3A-3: did the server's stored document hash to exactly what the client displayed? null = client sent no hash.
+    displayedMatches: displayedDocHash === undefined ? null : displayedDocHash === evaluated.docHash,
+  };
+}
+exports.getApprovalPreview = onCall(async (request) => {
+  try { return await getApprovalPreviewImpl(request); }
+  catch (error) { logApprovalRejection('getApprovalPreview', request, error); throw error; }
 });
 
 /* P0 — Trusted Transaction Layer: يُبقي ميزة "تبديل حالة شرط اعتماد" (ic-toggle-condition في
@@ -314,46 +593,235 @@ exports.updateIcConditionStatus = onCall(async (request) => {
   return { ok: true };
 });
 
+/* Phase 2R-4D4-C: unlinking an asset with an executed in-kind transfer earmarked to it (a real,
+   already-transferred contribution — see linkedCommitmentOk in firestore.rules) would orphan that
+   transfer: it stays 'paid' in capitalCalls, pointing at an asset no longer linked to any fund, with
+   no trace back to why. Blocked by default; an admin may override with a documented reason, itself
+   audited as its own distinct action ('unlink-override'), never silently folded into a plain unlink. */
+async function earmarkedInKindForAssetTx(tx, fundId, oppId) {
+  const snap = await tx.get(db.collection('capitalCalls')
+    .where('fundId', '==', fundId).where('inKindAssetId', '==', oppId).where('status', '==', 'paid'));
+  let total = 0;
+  snap.forEach((doc) => { total += n((doc.data() || {}).amount); });
+  return total;
+}
+
+// Phase 2R-4D4-C (الجولة الرابعة من المراجعة -- تصحيح تصنيف الاستبعاد النقدي): استبعاد نداء رأس مال
+// من paidIn بالاعتماد على inKindAssetId وحده (كما كان في الجولة السابقة من هذه المرحلة) أغفل شكلين
+// حقيقيين لسجلات عينية يجب استبعادهما أيضاً، لا اعتبارهما نقداً:
+//   (أ) سجل سابق لمرحلة 2R-4D4-B (لم يكن حقل inKindAssetId موجوداً أصلاً حين كُتب) لا يحمل سوى
+//       linkedCommitmentId -- تماماً تصنيف 'missingAssetLink' في
+//       functions/scripts/legacy-inkind-audit.cjs لهذا الشكل بالذات.
+//   (ب) القيد العكسي لسجل كهذا: reverseTransaction (أدناه) يُصفِّر linkedCommitmentId دائماً على أي
+//       عكس غير commitment، والسجل القديم أصلاً بلا inKindAssetId ليرتكز عليه القيد العكسي -- فيغدو
+//       عكسه بلا أي علامة مباشرة إطلاقاً، غير قابل للتمييز عن عكس نقدي عادي بالنظر إلى وثيقة العكس
+//       وحدها.
+// الدالة أدناه تتحقق أولاً من العلامتين المباشرتين (inKindAssetId أو linkedCommitmentId)؛ إن غابتا
+// كلتاهما على سجل هو نفسه عكس (reversalOfId)، ترجع لتصنيف السجل الأصلي (يبقى 'paid' ضمن نفس هذه
+// المجموعة دائماً -- انظر isPostedForReversal وreverseTransaction). سجل يتعذّر إيجاد أصله إطلاقاً
+// (مرجع مفقود أو سجل تالف) لا يُفترَض نقداً افتراضياً بأي حال -- يُستبعَد تماماً كسجل عيني مؤكَّد، دون
+// أي محاولة لتخمين تصنيفه. هذا لا يمنح أي سجل غامض تغطيةً لأصل بعينه: earmarkedInKindForAssetTx
+// أعلاه يبقى صارماً بمطابقة inKindAssetId تماماً، غير متأثر بهذا التعديل إطلاقاً.
+function isInKindCapitalCallRecord(data, byId, seen) {
+  if (data.inKindAssetId || data.linkedCommitmentId) return true;
+  if (data.reversalOfId) {
+    seen = seen || new Set();
+    if (seen.has(data.reversalOfId)) return true; // حارس دوري (غير متوقَّع عملياً) -- نتحفَّظ ونستبعد
+    const orig = byId.get(data.reversalOfId);
+    if (!orig) return true; // مرجع أصل غير موجود ضمن هذه المجموعة -- لا يُفترَض نقداً افتراضياً
+    seen.add(data.reversalOfId);
+    return isInKindCapitalCallRecord(orig, byId, seen);
+  }
+  return false;
+}
+
+// Phase 2R-4D4-C (assetLink hardening): client creation of `type:'assetLink'` transactions is now
+// closed entirely in firestore.rules (see its own comment) — these records are written only here,
+// via the Admin SDK, inside the same transaction that changes fund.assetIds. The id embeds fundId
+// (not just oppId+seq) so the same oppId linked to a DIFFERENT fund at a different point in its
+// lifetime — nothing elsewhere in this codebase prevents that — can never collide on the same
+// document id (Phase 2R-4D4-C third review round). `assetLinkEventCountTx` returns how many
+// assetLink events have already been recorded for this exact (fundId, oppId) pair — this doubles as
+// both the next event's sequence number (count+1, for the deterministic transaction id) AND the
+// "version" a caller must present back to prove its request was formed against current state (see
+// linkAssetToFund below).
+async function assetLinkEventCountTx(tx, fundId, oppId) {
+  const snap = await tx.get(db.collection('transactions')
+    .where('fundId', '==', fundId).where('relatedId', '==', oppId).where('type', '==', 'assetLink'));
+  return snap.size;
+}
+
+// Phase 2R-4D4-C (third review round — stale/out-of-order request protection): the original
+// already-linked/already-unlinked no-op guards correctly deduped an IMMEDIATE retry of the very
+// same undelivered request, but had no way to tell a genuinely STALE request — one superseded by a
+// later, real link/unlink that already changed the state — from a fresh, legitimate one carrying
+// identical parameters; both look the same on the wire, and a state-only check (linked/unlinked)
+// can't tell them apart once the state has cycled back to the same value (link → unlink → link
+// again leaves the boolean exactly where it started, but a stale request meant for the middle event
+// is not safe to apply against the final one). Replaced by two combined mechanisms, both enforced
+// inside the same Firestore transaction as the mutation itself, so they never diverge from it:
+//   1. expectedVersion: the caller states which version of this exact (fundId, oppId) link history
+//      it believes is current (assetLinkEventCountTx above). The server re-derives the ACTUAL
+//      current version fresh, inside the transaction, and rejects outright — HttpsError('aborted')
+//      — on any mismatch. A stale request's expectedVersion can never match once a real intervening
+//      event has happened, however the boolean linked/unlinked state has cycled. Missing or
+//      malformed expectedVersion is rejected up front as invalid-argument, never treated as "skip
+//      the check" — an old, unpatched client that never learned to send one gets a loud, clear
+//      rejection, not silent unprotected access.
+//   2. requestId: a caller-chosen, stable identifier for one specific logical action, unchanged on
+//      retry, bound to (email, fundId, oppId, unlink, correctionReason, expectedVersion) via
+//      assetLinkRequestPayloadsMatch. A retry of an ALREADY-SUCCEEDED request — same id, identical
+//      parameters — returns the ORIGINAL result again, with no new read of business state and no new
+//      write at all: true idempotent replay, not a second event. Reusing the same id with ANY
+//      different parameter — HttpsError('already-exists') — is rejected: an id is a promise about
+//      one specific action, never a license to overwrite it with something else.
+// assetLinkRequests is Admin-SDK-only bookkeeping (see firestore.rules — clients have no read or
+// write access to it at all); it is not part of the audit trail itself (that remains `transactions`)
+// and records only enough to answer "was this exact request already done, and with what result".
+function assetLinkRequestPayloadsMatch(a, b) {
+  return a.email === b.email && a.fundId === b.fundId && a.oppId === b.oppId
+    && a.unlink === b.unlink && a.correctionReason === b.correctionReason
+    && a.expectedVersion === b.expectedVersion;
+}
+
 exports.linkAssetToFund = onCall(async (request) => {
   const email = requireEmail(request);
   await requireRole(email, 'fund_manager');
-  const { fundId, oppId, unlink } = request.data || {};
+  const { fundId, oppId, unlink, correctionReason, expectedVersion, requestId } = request.data || {};
   if (!fundId || !oppId) throw new HttpsError('invalid-argument', 'fundId and oppId are required.');
+  if (!Number.isInteger(expectedVersion) || expectedVersion < 0) {
+    throw new HttpsError('invalid-argument', 'expectedVersion (a non-negative integer reflecting the last known link state for this asset) is required — it protects against a stale or out-of-order request silently overriding a more recent link/unlink. An old client that does not send it cannot bypass this check.');
+  }
+  if (typeof requestId !== 'string' || !requestId.trim()) {
+    throw new HttpsError('invalid-argument', 'requestId (a stable identifier for this specific action, unchanged on retry) is required.');
+  }
+  const normalizedCorrectionReason = typeof correctionReason === 'string' && correctionReason.trim() ? correctionReason.trim() : null;
+  const payload = { email, fundId, oppId, unlink: !!unlink, correctionReason: normalizedCorrectionReason, expectedVersion };
   const fundRef = db.collection('funds').doc(fundId);
   const oppRef = db.collection('opportunities').doc(oppId);
-  await db.runTransaction(async (tx) => {
+  const requestRef = db.collection('assetLinkRequests').doc(requestId.trim());
+  return db.runTransaction(async (tx) => {
+    const requestSnap = await tx.get(requestRef);
+    if (requestSnap.exists) {
+      const prior = requestSnap.data() || {};
+      if (assetLinkRequestPayloadsMatch(prior.payload || {}, payload)) return prior.result;
+      throw new HttpsError('already-exists', 'This requestId was already used for a different link/unlink action — a retry must reuse the exact same parameters, never new ones.');
+    }
     const [fundSnap, oppSnap] = await Promise.all([tx.get(fundRef), tx.get(oppRef)]);
     if (!fundSnap.exists || !oppSnap.exists) throw new HttpsError('not-found', 'Fund or opportunity not found.');
     const fund = fundSnap.data() || {};
     const opp = oppSnap.data() || {};
     const assetIds = Array.isArray(fund.assetIds) ? fund.assetIds.slice() : [];
     const existing = assetIds.includes(oppId);
+    const currentVersion = await assetLinkEventCountTx(tx, fundId, oppId);
+    if (currentVersion !== expectedVersion) {
+      throw new HttpsError('aborted', `This action is stale: the link state for this asset changed since it was prepared (expected version ${expectedVersion}, actual ${currentVersion}). Refresh and retry against the current state.`);
+    }
+    // إذا تطابق الإصدار فالحالة الراهنة (existing) يجب أن تتوافق حتماً مع العملية المطلوبة، لأن كل
+    // حدث assetLink ناجح سابق يُبدّل existing ويزيد العدّاد معاً بخطوة ذرّية واحدة؛ أي تعارض هنا (غير
+    // متوقَّع في الاستخدام الطبيعي) يُرفَض بوضوح بدل تجاهله أو التخمين.
+    if (unlink && !existing) throw new HttpsError('failed-precondition', 'Version matched but the asset is not currently linked — inconsistent state, refusing to guess.');
+    if (!unlink && existing) throw new HttpsError('failed-precondition', 'Version matched but the asset is already linked — inconsistent state, refusing to guess.');
+    const newVersion = currentVersion + 1;
+    const txnId = 'assetLink-' + fundId + '-' + oppId + '-' + newVersion;
+    let result;
     if (unlink) {
+      const earmarked = await earmarkedInKindForAssetTx(tx, fundId, oppId);
+      const hasExecutedInKind = earmarked > 0;
+      const overridden = hasExecutedInKind && isAdminEmail(email) && !!normalizedCorrectionReason;
+      if (hasExecutedInKind && !overridden) {
+        throw new HttpsError('failed-precondition', 'This asset has an executed in-kind contribution earmarked to it — unlinking would orphan that transfer. Only an admin may override this, with a documented correction reason.');
+      }
       tx.update(fundRef, { assetIds: assetIds.filter((id) => id !== oppId), updatedAt: new Date().toISOString().slice(0, 10) });
+      const txn = { type: 'assetLink', action: 'unlink', relatedId: oppId, fundId, amount: 0, by: email, at: FieldValue.serverTimestamp(), version: 1 };
+      if (overridden) { txn.action = 'unlink-override'; txn.correctionReason = normalizedCorrectionReason; }
+      // Phase 2R-4D4-C: the link path has always logged its own transactions entry; unlink never did
+      // (link/unlink audit asymmetry) — closed here so every state change to fund.assetIds is
+      // traceable, not only additions.
+      tx.set(db.collection('transactions').doc(txnId), txn);
+      result = { ok: true, newVersion };
+    } else {
+      const decisions = (((opp.ic || {}).decisions) || []);
+      const latest = decisions.length ? decisions[decisions.length - 1] : null;
+      if (!latest || !APPROVAL_DECISIONS.has(latest.decision) || !decisionConditionsMet(latest)) {
+        throw new HttpsError('failed-precondition', 'Asset linking requires approved IC decision with conditions met.');
+      }
+      const allocation = opp.capitalAllocation || {};
+      const targetEquity = n(allocation.targetEquity);
+      const maxAllocation = n(allocation.maxAllocation);
+      if (!(targetEquity > 0)) throw new HttpsError('failed-precondition', 'Target equity allocation is required.');
+      if (maxAllocation > 0 && targetEquity > maxAllocation) throw new HttpsError('failed-precondition', 'Target allocation exceeds maxAllocation.');
+      const paidSnap = await tx.get(db.collection('capitalCalls').where('fundId', '==', fundId).where('status', '==', 'paid'));
+      const distSnap = await tx.get(db.collection('distributions').where('fundId', '==', fundId).where('status', '==', 'paid'));
+      let paidIn = 0; let distPaid = 0;
+      // Phase 2R-4D4-B: نداءات رأس المال المرتبطة بمساهمة عينية (linkedCommitmentId) تمثّل نقل
+      // ملكية أصل (مثل أرض) لا نقداً فعلياً — تُستبعد من السيولة القابلة للنشر (deployable) رغم
+      // بقائها ضمن رأس المال المسدّد (paidIn) لأغراض PIC/DPI/TVPI على مستوى المستثمر (غير مُغيّر هنا).
+      // Phase 2R-4D4-C (تصحيح): كان الاستبعاد يعتمد على linkedCommitmentId وحده — لكن عكس
+      // مساهمة عينية (reverseTransaction) يُصفِّر linkedCommitmentId على القيد العكسي نفسه مع إبقاء
+      // inKindAssetId كما هو، فكان القيد العكسي (مبلغ سالب) يسقط ضمن paidIn كأنه نقد حقيقي منخفض
+      // بدل أن يُصفِّر تغطية الأصل الأصلي — عكس كامل لمساهمة عينية كان يُنتج نقداً وهمياً سالباً
+      // بدل تصفير التغطية إلى صفر كما يجب. المعيار الأصح هو وجود inKindAssetId نفسه (يبقى على القيد
+      // العكسي أيضاً)، لا linkedCommitmentId (يُصفَّر عليه فقط)؛ earmarkedForThisAsset تُحسَب الآن
+      // عبر نفس earmarkedInKindForAssetTx المستخدَمة في بوابة فك الربط أعلاه وفي allocatedElsewhereTx،
+      // فتُصفِّر تلقائياً أي عكس بمبلغ سالب بنفس inKindAssetId، بدل حسابها هنا بمنطق منفصل قد ينحرف.
+      // Phase 2R-4D4-C (الجولة الرابعة): التصنيف يمر الآن عبر isInKindCapitalCallRecord (انظر
+      // تعليقها أعلاه) لا فحص inKindAssetId المباشر وحده -- يبني أولاً خريطة كل نداءات هذا الصندوق
+      // المُرحَّلة (paid) بمعرّفاتها، لأن تتبع عكس سجل قديم يحتاج الرجوع إلى السجل الأصلي بالمعرّف.
+      const paidCallsById = new Map();
+      paidSnap.forEach((doc) => { paidCallsById.set(doc.id, doc.data() || {}); });
+      paidCallsById.forEach((d) => {
+        if (!isInKindCapitalCallRecord(d, paidCallsById)) paidIn += n(d.amount);
+      });
+      distSnap.forEach((doc) => { distPaid += n((doc.data() || {}).amount); });
+      const earmarkedForThisAsset = await earmarkedInKindForAssetTx(tx, fundId, oppId);
+      const allocated = await allocatedElsewhereTx(tx, fundId, fund, oppId);
+      const deployable = Math.max(0, paidIn - distPaid - allocated) + earmarkedForThisAsset;
+      if (targetEquity > deployable) throw new HttpsError('failed-precondition', 'Insufficient deployable fund cash.');
+      assetIds.push(oppId);
+      tx.update(fundRef, { assetIds, updatedAt: new Date().toISOString().slice(0, 10) });
+      tx.set(db.collection('transactions').doc(txnId), { type: 'assetLink', action: 'create', relatedId: oppId, fundId, amount: targetEquity, by: email, at: FieldValue.serverTimestamp(), version: 1 });
+      result = { ok: true, newVersion };
+    }
+    tx.set(requestRef, { payload, result, at: FieldValue.serverTimestamp() });
+    return result;
+  });
+});
+
+/* Phase 2R-4D4-C: direct client deletion of a fund (firestore.rules) only ever checked assetIds —
+   never whether any commitments/capitalCalls/distributions/transactions still reference it, which
+   rules cannot query. That allowed link → execute real in-kind transfer → unlink → delete to leave
+   every ledger record pointing at a deleted fund, permanently orphaned. firestore.rules now locks
+   funds' allow delete to false unconditionally; this callable is the only path left, and it checks
+   all four collections (plus assetIds) with the Admin SDK before deciding: any history at all means
+   archive (status:'archived'), never an actual delete; true hard-delete is reserved for a fund that
+   is genuinely empty and has never had any history. */
+exports.archiveOrDeleteFund = onCall(async (request) => {
+  const email = requireEmail(request);
+  await requireRole(email, 'fund_manager');
+  const { fundId } = request.data || {};
+  if (!fundId) throw new HttpsError('invalid-argument', 'fundId is required.');
+  const fundRef = db.collection('funds').doc(fundId);
+  await db.runTransaction(async (tx) => {
+    const fundSnap = await tx.get(fundRef);
+    if (!fundSnap.exists) throw new HttpsError('not-found', 'Fund not found.');
+    const fund = fundSnap.data() || {};
+    if (fund.status === 'archived') throw new HttpsError('failed-precondition', 'Fund is already archived.');
+    const assetIds = Array.isArray(fund.assetIds) ? fund.assetIds : [];
+    const [cmtSnap, ccSnap, dstSnap, txnSnap] = await Promise.all([
+      tx.get(db.collection('commitments').where('fundId', '==', fundId)),
+      tx.get(db.collection('capitalCalls').where('fundId', '==', fundId)),
+      tx.get(db.collection('distributions').where('fundId', '==', fundId)),
+      tx.get(db.collection('transactions').where('fundId', '==', fundId)),
+    ]);
+    const hasHistory = assetIds.length > 0 || !cmtSnap.empty || !ccSnap.empty || !dstSnap.empty || !txnSnap.empty;
+    if (!hasHistory) {
+      tx.delete(fundRef);
+      tx.set(db.collection('transactions').doc(), { type: 'fund', action: 'delete', relatedId: fundId, fundId, amount: 0, by: email, at: FieldValue.serverTimestamp(), version: 1 });
       return;
     }
-    if (existing) return;
-    const decisions = (((opp.ic || {}).decisions) || []);
-    const latest = decisions.length ? decisions[decisions.length - 1] : null;
-    if (!latest || !APPROVAL_DECISIONS.has(latest.decision) || !decisionConditionsMet(latest)) {
-      throw new HttpsError('failed-precondition', 'Asset linking requires approved IC decision with conditions met.');
-    }
-    const allocation = opp.capitalAllocation || {};
-    const targetEquity = n(allocation.targetEquity);
-    const maxAllocation = n(allocation.maxAllocation);
-    if (!(targetEquity > 0)) throw new HttpsError('failed-precondition', 'Target equity allocation is required.');
-    if (maxAllocation > 0 && targetEquity > maxAllocation) throw new HttpsError('failed-precondition', 'Target allocation exceeds maxAllocation.');
-    const paidSnap = await tx.get(db.collection('capitalCalls').where('fundId', '==', fundId).where('status', '==', 'paid'));
-    const distSnap = await tx.get(db.collection('distributions').where('fundId', '==', fundId).where('status', '==', 'paid'));
-    let paidIn = 0; let distPaid = 0;
-    paidSnap.forEach((doc) => { paidIn += n((doc.data() || {}).amount); });
-    distSnap.forEach((doc) => { distPaid += n((doc.data() || {}).amount); });
-    const allocated = await allocatedElsewhereTx(tx, fund, oppId);
-    const deployable = Math.max(0, paidIn - distPaid - allocated);
-    if (targetEquity > deployable) throw new HttpsError('failed-precondition', 'Insufficient deployable fund cash.');
-    assetIds.push(oppId);
-    tx.update(fundRef, { assetIds, updatedAt: new Date().toISOString().slice(0, 10) });
-    tx.set(db.collection('transactions').doc(), { type: 'assetLink', action: 'create', relatedId: oppId, fundId, amount: targetEquity, by: email, at: FieldValue.serverTimestamp(), version: 1 });
+    tx.update(fundRef, { status: 'archived', archivedAt: new Date().toISOString().slice(0, 10), archivedBy: email });
+    tx.set(db.collection('transactions').doc(), { type: 'fund', action: 'archive', relatedId: fundId, fundId, amount: 0, by: email, at: FieldValue.serverTimestamp(), version: 1 });
   });
   return { ok: true };
 });

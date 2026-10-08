@@ -63,7 +63,7 @@ service cloud.firestore {
     }
 
     // نقطة ٧-٢: صلاحية اعتماد لجنة الاستثمار (canApproveIC في roles-permissions.js) — عضو لجنة
-    // استثمار أول فأعلى. تبقى مُعرَّفة هنا (تُستخدم في underwritingVersions/icDecisions أدناه)
+    // استثمار أول فأعلى. تبقى مُعرَّفة هنا (تُستخدم في underwritingVersions أدناه)
     // رغم أن مسار اعتماد القرار نفسه (icOnlyChange سابقاً) أُلغي تماماً — انظر تعليق P0 أدناه.
     function currentRoleIsSeniorICOrAbove() {
       return isAllowlisted() && currentRole() in ['senior_ic','fund_manager'];
@@ -90,7 +90,32 @@ service cloud.firestore {
     function changesIc(before, after) {
       return after.diff(before).affectedKeys().hasAny(['ic']);
     }
+    // 📋 نقطة مفتوحة مُسجَّلة صراحة (قرار المستخدم أثناء مراجعة P0 — Trusted Transaction Layer):
+    // isAdminEmail() أعلاه في allow update لـopportunities هو OR-فرع مستقل بلا أي شرط changesIc،
+    // أي أن الأدمن *يقدر فعلياً* اليوم يعدّل ic.decisions مباشرة من Firestore client. هذا مقصود
+    // حالياً (يطابق امتياز الأدمن العام على بقية حقول الفرصة)، لكنه لا يتوافق مع هدف "Server-only
+    // investment decision" الكامل عند 99%+. القرار المطلوب قبل الشهادة النهائية (final
+    // certification): إغلاق هذا المسار حتى للأدمن — لا bypass صامت من العميل — واستبداله بصلاحية
+    // Cloud Function مخصَّصة (Break-glass Function بتدقيق صريح) إن احتاج الأدمن تعديلاً استثنائياً.
+    // لا تُنفَّذ هذه النقطة الآن ضمن Shared Domain Engine Extraction — مُسجَّلة فقط. مُوثَّقة أيضاً
+    // في tests/rules/rules.test.mjs (قسم "analyst direct IC mutation") حيث الاختبار الحالي يثبت
+    // السلوك الحالي (نجاح الأدمن) صراحة كي لا يُفهَم لاحقاً كسهو غير مقصود.
     // ============================================================================
+    // ============================================================================
+
+    // Phase 2R-4D2 supersedes the historical admin-bypass note above.
+    // Existing decisions remain server-owned, including for administrators.
+    // Empty legacy IC shapes can be normalized by the ordinary editor.
+    function emptyClientIc(data) {
+      let ic = data.get('ic', {});
+      return ic is map && ic.keys().hasOnly(['decisions'])
+        && ic.get('decisions', []) is list
+        && ic.get('decisions', []).size() == 0;
+    }
+    function preservesIc(before, after) {
+      return !changesIc(before, after)
+        || (emptyClientIc(before) && emptyClientIc(after));
+    }
 
     // ==================== المرحلة الخامسة (محرك ربط رأس المال) ====================
     // نقطة ٥-١: capitalAllocation (targetEquity/maxAllocation/priority/committeeNote) حقل
@@ -121,15 +146,17 @@ service cloud.firestore {
     // رأس مال).
     match /opportunities/{oppId} {
       allow read: if isAuthorized();
-      allow create: if isAuthorized() && attributionHonest();
-      allow update: if attributionHonest() && (
+      allow create: if isAuthorized() && attributionHonest()
+        && emptyClientIc(request.resource.data);
+      allow update: if attributionHonest()
+        && preservesIc(resource.data, request.resource.data) && (
              isAdminEmail()
           || (isAllowlisted() && ownsOpp(resource.data)
-                && !changesCapitalAllocation(resource.data, request.resource.data)
-                && !changesIc(resource.data, request.resource.data))
+                && !changesCapitalAllocation(resource.data, request.resource.data))
           || (isFundManagerOrAbove() && capitalAllocationOnlyChange(resource.data, request.resource.data))
       );
-      allow delete: if isAdminEmail() || (isAllowlisted() && ownsOpp(resource.data));
+      allow delete: if emptyClientIc(resource.data)
+        && (isAdminEmail() || (isAllowlisted() && ownsOpp(resource.data)));
     }
 
     // أعضاء الفريق المصرَّح لهم — إدارة (إضافة/إزالة/تعديل المدة) للمسؤول فقط.
@@ -216,11 +243,26 @@ service cloud.firestore {
     function changesAssetIds(before, after) {
       return after.diff(before).affectedKeys().hasAny(['assetIds']);
     }
+    // Phase 2R-4D3: clients may create/delete only funds with no linked assets.
+    // Missing assetIds is supported for legacy empty funds; malformed values fail closed.
+    function fundHasNoAssets(data) {
+      let ids = data.get('assetIds', []);
+      return ids is list && ids.size() == 0;
+    }
+    // Phase 2R-4D4-C: fundHasNoAssets(resource.data) only ever checked assetIds — never whether any
+    // commitments/capitalCalls/distributions/transactions still reference this fund, which rules
+    // cannot check here (no collection-query support inside a security rule; only get()/exists() on
+    // a known document path). That gap allowed a real orphaning sequence: link an asset, execute a
+    // real in-kind transfer against it, unlink (previously unaudited/unchecked), then delete the now
+    // asset-free fund — leaving every ledger record that pointed at it permanently orphaned. Direct
+    // client deletion is now closed entirely; the only path is archiveOrDeleteFund (functions/index.js,
+    // Admin SDK), which checks all four collections and soft-archives whenever any history exists,
+    // reserving true hard-delete for a fund that is genuinely empty and history-free.
     match /funds/{id} {
       allow read: if isAuthorized();
-      allow create: if isFundManagerOrAbove();
+      allow create: if isFundManagerOrAbove() && fundHasNoAssets(request.resource.data);
       allow update: if isFundManagerOrAbove() && !changesAssetIds(resource.data, request.resource.data);
-      allow delete: if isFundManagerOrAbove();
+      allow delete: if false;
     }
 
     // ⚠️ إعادة هندسة محاسبية كاملة (المرحلة السادسة)، ثم P0 — Trusted Transaction Layer فوقها:
@@ -238,7 +280,9 @@ service cloud.firestore {
     //    allow update: if false بالكامل، لا استثناء (لا توجد أي ميزة "تعديل مسودة حرة" فعلية في
     //    الواجهة لهذين النوعين أصلاً — تحقَّقنا من عدم وجود أي زر if-edit لهما في core.js قبل هذا
     //    التضييق، فلا ميزة تُكسَر بإغلاق update بالكامل).
-    //  • transactions: سجل تدقيق (Audit Trail) — append-only بالكامل كما كان، بلا تغيير.
+    //  • transactions: سجل تدقيق (Audit Trail) — append-only كما كان؛ ومنذ 2R-4D4-A، الإنشاء نفسه
+    //    (لأنواع commitment/capitalCall/distribution) يجب أن يطابق سجلاً حقيقياً موجوداً فعلاً بنفس
+    //    الصندوق والمبلغ، لا أي محتوى حر (انظر transactionMatchesRecord أدناه).
     match /commitments/{id} {
       allow read: if isAuthorized();
       allow create: if isFundManagerOrAbove()
@@ -249,29 +293,131 @@ service cloud.firestore {
     function ledgerAmountOk(data) {
       return data.get('reversalOfId', null) != null ? data.amount < 0 : data.amount >= 0;
     }
+    // Phase 2R-4D4-A: نداء عيني تلقائي (linkedCommitmentId) لم يعد كافياً وجود المعرّف وحده — يجب أن
+    // يشير فعلاً إلى التزام in_kind حقيقي موجود بنفس الصندوق/المستثمر وبنفس المبلغ بالضبط، وأن يُنشأ
+    // 'paid' دائماً (الحالة الوحيدة التي ينتجها المسار الفعلي في core.js عند حفظ التزام عيني). قبل
+    // هذا التحقق كان أي معرّف نصي (حتى لمستند غير موجود) يكفي لتمرير أي حالة/مبلغ.
+    // Phase 2R-4D4-B: تنفيذ نقل ملكية عيني أصبح إجراءً مستقلاً وموثّقاً (بدل توليد تلقائي عند حفظ
+    // الالتزام) — يجب أن يحمل تاريخ نقل فعلي (callDate) وأصلاً حقيقياً موجوداً (inKindAssetId يشير
+    // لمستند opportunities موجود فعلاً)، وإلا فالنداء "موثّق" بالاسم فقط بلا أي إثبات فعلي.
+    // Phase 2R-4D4-C: the doc id itself must equal the canonical deterministic id for this
+    // commitment's execution ('CC-EXEC-'+commitmentId) — not just a convention the client follows.
+    // capitalCalls' allow update is unconditionally false, so once that exact id exists, no second
+    // write (retry, double-click, or a genuinely concurrent request racing on the same id) can ever
+    // create a second 'paid' execution for the same commitment: Firestore serializes writes to the
+    // same document id, and the second one is evaluated as an update, not a create.
+    function linkedCommitmentOk(id, data) {
+      let cid = data.get('linkedCommitmentId', null);
+      let assetId = data.get('inKindAssetId', null);
+      return cid != null
+        && id == ('CC-EXEC-' + cid)
+        && exists(/databases/$(database)/documents/commitments/$(cid))
+        && get(/databases/$(database)/documents/commitments/$(cid)).data.fundId == data.fundId
+        && get(/databases/$(database)/documents/commitments/$(cid)).data.investorId == data.investorId
+        && get(/databases/$(database)/documents/commitments/$(cid)).data.contributionType == 'in_kind'
+        && get(/databases/$(database)/documents/commitments/$(cid)).data.commitmentAmount == data.amount
+        && data.status == 'paid'
+        && data.get('callDate', null) != null
+        && assetId != null
+        && exists(/databases/$(database)/documents/opportunities/$(assetId));
+    }
     match /capitalCalls/{id} {
       allow read: if isAuthorized();
-      // إنشاء عادي (يدوي) يجب أن يبدأ 'pending' دائماً، أو يكون نداء النقل العيني التلقائي
-      // (linkedCommitmentId، من منطق if-save الموجود لالتزام عيني — ناتج تنفيذي للالتزام نفسه
-      // لحظة توثيقه، ليس نداءً يحتاج اعتماداً مستقلاً). لا إنشاء عكسي مباشر بعد الآن (أعلاه).
-      allow create: if isFundManagerOrAbove() && ledgerAmountOk(request.resource.data) && (
-             request.resource.data.get('status', null) == 'pending'
-          || request.resource.data.get('linkedCommitmentId', null) != null
+      // إنشاء عادي (يدوي) يجب أن يبدأ 'pending' دائماً بلا ربط عيني، أو يكون نداء النقل العيني
+      // التلقائي المتحقَّق أعلاه. لا إنشاء عكسي مباشر بعد الآن مهما كانت الحالة (2R-4D4-A: كان
+      // ممكناً سابقاً بحقل reversalOfId مع status='pending' ومبلغ سالب مفبرك بالكامل من العميل،
+      // دون المرور بـreverseTransaction إطلاقاً ولا أي تحقق أن الأصل موجود أو لم يُعكَس من قبل).
+      allow create: if isFundManagerOrAbove()
+        && request.resource.data.get('reversalOfId', null) == null
+        && ledgerAmountOk(request.resource.data) && (
+             (request.resource.data.get('status', null) == 'pending'
+               && request.resource.data.get('linkedCommitmentId', null) == null)
+          || linkedCommitmentOk(id, request.resource.data)
       );
       allow update: if false;
       allow delete: if isFundManagerOrAbove() && resource.data.status == 'pending' && resource.data.linkedCommitmentId == null;
     }
     match /distributions/{id} {
       allow read: if isAuthorized();
-      allow create: if isFundManagerOrAbove() && ledgerAmountOk(request.resource.data)
+      // 2R-4D4-A: نفس إغلاق reversalOfId المباشر من العميل المطبَّق على capitalCalls أعلاه —
+      // 'declared' مع reversalOfId ومبلغ سالب مفبرك كان يمر بلا أي تحقق من reverseTransaction.
+      allow create: if isFundManagerOrAbove()
+        && request.resource.data.get('reversalOfId', null) == null
+        && ledgerAmountOk(request.resource.data)
         && request.resource.data.get('status', null) == 'declared';
       allow update: if false;
       allow delete: if isFundManagerOrAbove() && resource.data.status == 'declared';
     }
+    // Phase 2R-4D4-A: سجل التدقيق (transactions) كان يقبل أي محتوى من مدير الصندوق بلا أي تحقق أنه
+    // يعكس فعلاً حركة حقيقية موجودة — الآن، لأنواع دفتر الأستاذ الثلاثة (commitment/capitalCall/
+    // distribution) يجب أن يطابق سجلاً حقيقياً موجوداً فعلاً بنفس الصندوق والمبلغ بالضبط. النوع
+    // 'assetLink' يبقى بلا هذا التحقق الإضافي: مصدره الحقيقي الوحيد في الإنتاج هو Cloud Function
+    // linkAssetToFund التي تكتب transactions بصلاحيات Admin SDK (تتجاوز هذه القواعد أصلاً)، والمسار
+    // الاحتياطي في العميل بلا Firebase حقيقي لا يقدر أصلاً على تغيير funds.assetIds مباشرة (محظور في
+    // قاعدة funds أعلاه)، فسجل assetLink مزوَّر من هذا المسار مضلِّل فقط، لا يفتح أي صلاحية أو سيولة.
+    function ledgerRecordAmount(coll, rid) {
+      let rec = get(/databases/$(database)/documents/$(coll)/$(rid)).data;
+      return coll == 'commitments' ? rec.commitmentAmount : rec.amount;
+    }
+    function transactionMatchesRecord(data) {
+      let t = data.get('type', null);
+      let rid = data.get('relatedId', null);
+      let coll = t == 'commitment' ? 'commitments' : (t == 'capitalCall' ? 'capitalCalls' : (t == 'distribution' ? 'distributions' : null));
+      return coll != null && rid != null && exists(/databases/$(database)/documents/$(coll)/$(rid))
+        && get(/databases/$(database)/documents/$(coll)/$(rid)).data.fundId == data.fundId
+        && ledgerRecordAmount(coll, rid) == data.amount;
+    }
+    // Phase 2R-4D4-B: مطابقة السجل الأصلي (transactionMatchesRecord) وحدها لا تمنع (أ) أكثر من سجل
+    // transactions واحد يشير لنفس relatedId (لا فحص تكرار — قيد معروف، يحتاج معرّف مستند حتمي أو
+    // عداد تفرّد، مؤجّل لمرحلة لاحقة)، ولا (ب) انتحال حقل "by" — أُغلقت (ب) هنا فقط عبر
+    // transactionAttributionHonest، بنفس نمط attributionHonest() المستخدم لـopportunities.
+    function transactionAttributionHonest(data) {
+      return data.get('by', null) != null
+        && data.by.lower() == request.auth.token.email.lower();
+    }
+    // Phase 2R-4D4-C: transactionMatchesRecord alone never prevented a second, differently-id'd
+    // transactions doc from also matching the same real ledger record (TXN-DUPLICATE-1/-2,
+    // documented as an open gap in 2R-4D4-B). Closed the same way as capitalCalls execution above:
+    // for the three ledger types (commitment/capitalCall/distribution, each a genuinely one-time
+    // event per relatedId+action — a given record is created once, approved once, posted once,
+    // waived once), the doc id itself must equal the canonical id derived from the event
+    // (type-action-relatedId); allow update/delete stays false, so a retry or a race on the same
+    // logical event collides on the same id and is rejected as an update, not a fresh create.
+    // 'assetLink' is deliberately excluded: it is written only by linkAssetToFund via Admin SDK in
+    // production (bypassing these rules entirely), and unlike the ledger types it can legitimately
+    // recur for the same relatedId (link, unlink, re-link) — a fixed canonical id would wrongly
+    // block a real second link after a real earlier unlink.
+    function transactionCanonicalId(data) {
+      return data.type + '-' + data.action + '-' + data.relatedId;
+    }
     match /transactions/{id} {
       allow read: if isAuthorized();
-      allow create: if isFundManagerOrAbove();
+      // Phase 2R-4D4-C (assetLink hardening): the previous unconditional exception for
+      // type=='assetLink' was meant to describe that in production these writes come only from
+      // linkAssetToFund via the Admin SDK — but the rule itself never enforced that: an ordinary
+      // fund_manager client could create an arbitrary assetLink transaction directly (this file's
+      // own rules.test.mjs proved it with a genuine client write, not an Admin SDK bypass), with no
+      // transactionMatchesRecord check and no canonical id (a fixed id can't fit a type that
+      // legitimately recurs — link, unlink, re-link — for the same relatedId). Closing this at
+      // the rule layer, for every role including admin, is the only way to actually guarantee it,
+      // since an Admin SDK write bypasses this file entirely regardless of what it says;
+      // duplicate/retry safety for the trusted path itself now lives in linkAssetToFund's own
+      // sequence-numbered document ids, its expectedVersion staleness check, and its
+      // requestId-keyed idempotent replay (functions/index.js, assetLinkRequests below).
+      allow create: if isFundManagerOrAbove() && transactionAttributionHonest(request.resource.data)
+          && request.resource.data.get('type', null) != 'assetLink'
+          && transactionMatchesRecord(request.resource.data) && id == transactionCanonicalId(request.resource.data);
       allow update, delete: if false;
+    }
+
+    // Phase 2R-4D4-C (third review round): bookkeeping for linkAssetToFund's requestId-keyed
+    // idempotent replay ("was this exact request already done, and with what result") -- not
+    // part of the audit trail itself (that stays in transactions above). Written and read only
+    // by the Admin SDK inside the same transaction as the actual mutation; clients have no
+    // legitimate reason to read or write it directly, so it is closed to them entirely, for
+    // every role including admin, the same way assetLink transactions are.
+    match /assetLinkRequests/{id} {
+      allow read, write: if false;
     }
 
     // المقارنات العقارية (comparables.js) والمعايير المرجعية (benchmark-engine.js) — مكتبات
@@ -364,26 +510,41 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/icDecisions/$(request.resource.data.sourceDecisionId)).data.recordedBy.lower() == requestEmail()
         && get(/databases/$(database)/documents/icDecisions/$(request.resource.data.sourceDecisionId)).data.decision.decision in ['approve','approve_conditions'];
     }
+    // Phase 2R-4E: v4_ic_approved is no longer created by ANY client write at all -- it is now
+    // written exclusively by approveOpportunity (functions/index.js) inside the same trusted
+    // transaction as the icDecisions record itself, using the Admin SDK, which bypasses these
+    // rules entirely by Firebase's own design (a trusted backend, not an untrusted client, is
+    // exactly the case that bypass exists for). Closing the v4_ic_approved branch here, for
+    // every role including admin, is the only way to actually guarantee no client-fabricated
+    // v4 baseline can ever exist -- the same reasoning as assetLinkRequests below. linkedDecisionValid()
+    // and currentRoleIsSeniorICOrAdmin() are kept (not deleted) purely as documentation of what a
+    // v4 write would have had to satisfy, and because functions/index.js's own in-transaction write
+    // constructs an equivalent, server-trusted version of the same shape; they are unused by any
+    // "allow" rule below now.
     function underwritingVersionCreateAllowed(versionId) {
       return isAuthorized()
         && !exists(/databases/$(database)/documents/underwritingVersions/$(versionId))
         && linkedOpportunityExists()
         && createActorSavedByHonest()
         && request.resource.data.metrics is map
-        && (
-             (request.resource.data.stage == 'v4_ic_approved'
-              && request.resource.data.trigger == 'ic_decision'
-              && currentRoleIsSeniorICOrAdmin()
-              && linkedDecisionValid())
-          || (request.resource.data.stage == 'manual'
-              && request.resource.data.trigger == 'manual'
-              && (isAdminEmail() || ownsOpp(get(/databases/$(database)/documents/opportunities/$(request.resource.data.oppId)).data)))
-        );
+        && request.resource.data.stage == 'manual'
+        && request.resource.data.trigger == 'manual'
+        && (isAdminEmail() || ownsOpp(get(/databases/$(database)/documents/opportunities/$(request.resource.data.oppId)).data));
     }
     match /underwritingVersions/{id} {
       allow read: if isAuthorized();
       allow create: if underwritingVersionCreateAllowed(id);
       allow update, delete: if false;
+    }
+
+    // Phase 2R-4E: bookkeeping for approveOpportunity's requestId-keyed idempotent replay ("was
+    // this exact IC decision request already done, and with what result") -- not part of the
+    // audit trail itself (that stays in icDecisions/underwritingVersions above). Written and read
+    // only by the Admin SDK inside the same transaction as the actual decision; clients have no
+    // legitimate reason to read or write it directly, so it is closed to them entirely, for every
+    // role including admin -- the exact same pattern as assetLinkRequests above.
+    match /icDecisionRequests/{id} {
+      allow read, write: if false;
     }
 
     // الأداء الفعلي المتكرر (assetActuals، underwriting-versions.js، إضافة بطلب المستخدم بعد
@@ -403,11 +564,11 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
-    // سجل قرارات لجنة الاستثمار المؤسسي — append-only: إنشاء لعضو لجنة أول فأعلى، قراءة للفريق، ولا تعديل/حذف.
+    // IC audit records are written only by trusted server code using Admin SDK.
+    // No client role, including admin, may fabricate, update or delete an audit.
     match /icDecisions/{id} {
       allow read: if isAuthorized();
-      allow create: if currentRoleIsSeniorICOrAbove() || isAdminEmail();
-      allow update, delete: if false;
+      allow create, update, delete: if false;
     }
   }
 }

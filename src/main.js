@@ -83,6 +83,14 @@ registerICWorkflow(core);
 import { registerMaxAcquisitionPrice } from './features/max-acquisition-price.js';
 registerMaxAcquisitionPrice(core);
 
+// لوحة XIRR المقارنة (Shadow، للمقارنة فقط، تاريخ أساس يدوي) — لا تغيّر IRR ولا بوابة اللجنة.
+import { registerXirrComparisonPanel } from './features/xirr-comparison-panel.js';
+registerXirrComparisonPanel(core);
+
+// لوحة التحقق من المدخلات (Phase 3A-2): تعرض المشكلات وتحجب مؤشرات الربحية عند INVALID/INCOMPLETE؛ لا تغيّر الحساب ولا الحفظ.
+import { registerInputValidationPanel } from './features/input-validation-panel.js';
+registerInputValidationPanel(core);
+
 import { registerNegotiation } from './features/negotiation.js';
 registerNegotiation(core);
 

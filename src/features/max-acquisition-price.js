@@ -7,61 +7,26 @@
    منها بالضبط، فقط نبحث عكسياً عن السعر الذي يُنتج target IRR بدل حساب IRR من
    سعر معطى. غير مخزَّن كحقل ثابت في بيانات الفرصة (لا داعي: يُعاد حسابه حياً في
    كل عرض من land.price/criteria.irrMin الحاليين) — يُصدَّر كدالة يستخدمها أيضاً
-   negotiation.js لحساب Walk-away Price الافتراضي. لا تعديل على core.js.
+   negotiation.js لحساب Walk-away Price الافتراضي.
+
+   Phase 2R-4B — Client Cutover: البحث الثنائي الفعلي أصبح في
+   src/domain/financial/max-acquisition-price.js (الجهة الرسمية الوحيدة،
+   بعد إثبات تطابقها Shadow-Mode في Phase 2R-4A — 17/17). هذا الملف أصبح
+   UI wrapper فقط + توقيع (core, d, ...) للتوافق الخلفي مع كل المستوردين
+   الحاليين (excel-workbook.js, ic-book-print.js, ic-presentation.js,
+   negotiation.js, valuation-engine.js, ic-decision-gate.js). لا تعديل
+   على core.js.
    ========================================================================= */
+import {
+  maxAcquisitionPrice as domainMaxAcquisitionPrice,
+  irrAtPrice as domainIrrAtPrice,
+} from '../domain/financial/max-acquisition-price.js';
 
-function metricsAtPrice(core, d, price){
-  const trial = JSON.parse(JSON.stringify(d));
-  trial.land.price = price;
-  try{ const c = core.compute(trial); return { irr: c.equityIRR, dscr: c.dscrMin }; }
-  catch(e){ return { irr: -1, dscr: null }; }
-}
-function irrAtPrice(core, d, price){ return metricsAtPrice(core, d, price).irr; }
-
-/* السعر "قابل للدفع" فقط لو حقق كلا القيدين معاً: Equity IRR ≥ الحد الأدنى، وDSCR الأدنى عبر
-   مدة التشغيل ≥ الحد الأدنى المعتمد (لو كان للصفقة تمويل بنكي أصلاً — dscr يكون null لصفقات
-   لا معنى لـDSCR فيها، كبيع كامل بلا تمويل، فلا يُفرَض القيد حينها). قبل هذا الإصلاح كان البحث
-   الثنائي يستهدف IRR فقط، فقد يُبلِّغ المستخدم بسعر "أقصى مسموح" يحقق العائد المستهدف لكنه فعلياً
-   يخالف حد تغطية خدمة الدين المعتمد لنفس الصفقة — وهو قيد تمويلي أساسي لا يقل أهمية عن العائد. */
-function feasibleAtPrice(core, d, price, targetIRR, targetDSCR){
-  const m = metricsAtPrice(core, d, price);
-  const irrOk = isFinite(m.irr) && m.irr >= targetIRR;
-  const dscrOk = targetDSCR==null || m.dscr==null || !isFinite(m.dscr) || m.dscr >= targetDSCR;
-  return irrOk && dscrOk;
-}
-
-/* يُعيد: maxPrice (الحد الأقصى الذي يحقق كلا القيدين معاً)، targetIRR، targetDSCR، currentPrice،
-   currentIRR، currentDSCR، infeasible (true لو حتى أرض مجانية "٠" لا تحقق أحد الهدفين)،
-   bindingConstraint ('irr' أو 'dscr' — أيهما فعلياً القيد الحاكم عند السعر الأقصى الناتج). */
 function maxAcquisitionPrice(core, d, targetIRR, targetDSCR){
-  targetIRR = targetIRR!=null ? targetIRR : (d.criteria.irrMin || 0.15);
-  targetDSCR = targetDSCR!=null ? targetDSCR : (d.criteria.dscrMin!=null ? d.criteria.dscrMin : null);
-  const currentPrice = d.land.price || 0;
-  const curM = metricsAtPrice(core, d, currentPrice);
-  const currentIRR = curM.irr, currentDSCR = curM.dscr;
-
-  if(!feasibleAtPrice(core, d, 0, targetIRR, targetDSCR)){
-    const zero = metricsAtPrice(core, d, 0);
-    const irrBlocks = !(isFinite(zero.irr) && zero.irr>=targetIRR);
-    const dscrBlocks = targetDSCR!=null && zero.dscr!=null && isFinite(zero.dscr) && zero.dscr<targetDSCR;
-    return { maxPrice: 0, targetIRR, targetDSCR, currentPrice, currentIRR, currentDSCR, infeasible: true,
-      bindingConstraint: (irrBlocks && dscrBlocks) ? 'both' : (dscrBlocks ? 'dscr' : 'irr') };
-  }
-
-  let lo = 0, hi = Math.max(currentPrice, 100) * 3;
-  let guard = 0;
-  while(feasibleAtPrice(core, d, hi, targetIRR, targetDSCR) && guard < 40){ hi *= 1.6; guard++; }
-
-  for(let i=0;i<50;i++){
-    const mid = (lo+hi)/2;
-    if(feasibleAtPrice(core, d, mid, targetIRR, targetDSCR)) lo = mid; else hi = mid;
-  }
-
-  const atMax = metricsAtPrice(core, d, lo);
-  const irrSlack = isFinite(atMax.irr) ? (atMax.irr - targetIRR) : Infinity;
-  const dscrSlack = (targetDSCR!=null && atMax.dscr!=null && isFinite(atMax.dscr)) ? (atMax.dscr - targetDSCR) : Infinity;
-  const bindingConstraint = dscrSlack < irrSlack ? 'dscr' : 'irr';
-  return { maxPrice: lo, targetIRR, targetDSCR, currentPrice, currentIRR, currentDSCR, infeasible: false, bindingConstraint };
+  return domainMaxAcquisitionPrice(core.compute.bind(core), d, targetIRR, targetDSCR);
+}
+function irrAtPrice(core, d, price){
+  return domainIrrAtPrice(core.compute.bind(core), d, price);
 }
 
 export function registerMaxAcquisitionPrice(core){

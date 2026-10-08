@@ -10,12 +10,26 @@
    "من أين أتى هذا الرقم؟ وهل تحقق منه أحد بصلاحية كافية؟" ضغطة واحدة بدل
    بحث. مخزَّنة في قاموس evidence مفتاحه مسار الحقل (نفس نمط المفاتيح
    الثابتة لتفادي مشكلة إعادة توليد المعرّفات العشوائية بين كل
-   withDefaults()). لا تعديل على core.js.
+   withDefaults()).
 
-   evidenceCoverageStats(core, d) مُصدَّرة لإعادة استخدامها من
-   ic-decision-gate.js (بوابة الحوكمة) دون تكرار المنطق.
+   Phase 2R-4B — Client Cutover: KEY_FIELDS وevidenceCoverageStats أصبحا
+   مُستورَدَين من src/domain/evidence/evidence-engine.js (الجهة الرسمية
+   الوحيدة، بعد إثبات تطابقهما Shadow-Mode في Phase 2R-4A — 17/17). هذا
+   الملف يحتفظ فقط بمنطق العرض/الصلاحيات (UI) — CONFIDENCE/SOURCE_TIERS
+   ثوابت عرض محلية لا علاقة لها بالحساب. لا تعديل على core.js.
+
+   evidenceCoverageStats(core, d) تبقى بنفس التوقيع القديم لإعادة
+   استخدامها من ic-decision-gate.js/decision-confidence.js/... دون كسر
+   الاستيراد الحالي.
    ========================================================================= */
 import { canApproveIC } from './roles-permissions.js';
+import {
+  KEY_FIELDS,
+  evidenceFieldsFor,
+  evidenceCoverageStats as domainEvidenceCoverageStats,
+} from '../domain/evidence/evidence-engine.js';
+
+export { KEY_FIELDS };
 
 const CONFIDENCE = [
   { key:'high',   ar:'عالية',   en:'High',   color:'#34d399' },
@@ -35,25 +49,7 @@ const SOURCE_TIERS = [
 ];
 const TIER_BY_KEY = Object.fromEntries(SOURCE_TIERS.map(t=>[t.key,t]));
 
-// critical:true — حقول ذات أثر مباشر وكبير على IRR/MOIC؛ عدم توثيقها هو
-// "🔴 IC BLOCKER" لا مجرد تحذير، تماشياً مع مبدأ المستخدم "NO SILENT
-// ASSUMPTIONS" (الأرقام المؤثرة جداً غير المُسنَدة تمنع جهوزية اللجنة).
-const KEY_FIELDS = [
-  { path:'land.price',              ar:'سعر متر الأرض',              en:'Land price/m²',           appliesTo:null,          fmt:'sar', critical:true  },
-  { path:'land.far',                ar:'معامل البناء (FAR)',         en:'FAR',                     appliesTo:null,          fmt:'num', critical:false },
-  { path:'financing.saibor',        ar:'السايبور',                   en:'SAIBOR',                  appliesTo:null,          fmt:'pct', critical:false },
-  { path:'financing.margin',        ar:'هامش البنك',                 en:'Bank margin',             appliesTo:null,          fmt:'pct', critical:false },
-  { path:'income.rent',             ar:'الإيجار السنوي/م²',          en:'Annual rent/m²',          appliesTo:'income',      fmt:'sar', critical:true  },
-  { path:'income.occupancy',        ar:'نسبة الإشغال',                en:'Occupancy',               appliesTo:'income',      fmt:'pct', critical:true  },
-  { path:'wacc.marketCap',          ar:'معدل الرسملة عند الخروج',      en:'Exit cap rate',           appliesTo:'income',      fmt:'pct', critical:true  },
-  { path:'development.salePrice',   ar:'سعر البيع المتوقع/م²',        en:'Expected sale price/m²',  appliesTo:'development', fmt:'sar', critical:true  },
-  { path:'development.buildCost',   ar:'تكلفة البناء/م²',             en:'Build cost/m²',           appliesTo:'development', fmt:'sar', critical:true  },
-  { path:'development.exitCapRate', ar:'معدل الرسملة عند الخروج',      en:'Exit cap rate',           appliesTo:'development', fmt:'pct', critical:false },
-  { path:'landbank.appreciation',   ar:'معدل نمو قيمة الأرض',          en:'Land appreciation rate',  appliesTo:'landbank',    fmt:'pct', critical:false },
-];
-export { KEY_FIELDS };
-
-function fieldsFor(oppType){ return KEY_FIELDS.filter(f=>f.appliesTo===null || f.appliesTo===oppType); }
+function fieldsFor(oppType){ return evidenceFieldsFor(oppType); }
 function fmtVal(core, fmt, v){
   if(v==null) return '—';
   if(fmt==='sar') return core.fmtSAR(v);
@@ -61,30 +57,8 @@ function fmtVal(core, fmt, v){
   return core.fmtNum(v);
 }
 
-// evidenceCoverageStats(core, d) — يُعاد استخدامها من ic-decision-gate.js.
-// لا تُعدِّل أي شيء، تقرأ فقط. تُرجع: عدد/نسبة التوثيق، الحقول الحرجة غير
-// الموثَّقة (unsourcedCritical → "🔴 IC BLOCKER")، والحقول غير الحرجة غير
-// الموثَّقة (unsourcedMinor → "⚠️ UNSOURCED").
 export function evidenceCoverageStats(core, d){
-  const evidence = (d && d.evidence) || {};
-  const fields = fieldsFor(d && d.meta && d.meta.oppType);
-  const sourced = [], unsourcedCritical = [], unsourcedMinor = [], verified = [];
-  fields.forEach(f=>{
-    const ev = evidence[f.path];
-    const hasSource = !!(ev && ev.source);
-    if(hasSource){
-      sourced.push(f.path);
-      if(ev.verifiedBy) verified.push(f.path);
-    } else if(f.critical){
-      unsourcedCritical.push(f);
-    } else {
-      unsourcedMinor.push(f);
-    }
-  });
-  const total = fields.length;
-  const pct = total? Math.round((sourced.length/total)*100) : 100;
-  const verifiedPct = total? Math.round((verified.length/total)*100) : 100;
-  return { total, sourcedCount: sourced.length, pct, verifiedCount: verified.length, verifiedPct, unsourcedCritical, unsourcedMinor };
+  return domainEvidenceCoverageStats(d);
 }
 
 export function registerEvidenceTracking(core){

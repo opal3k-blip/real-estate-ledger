@@ -30,7 +30,7 @@
 | `src/features/comparables.js` | ✅ المقارنات السوقية (Comparable Transactions) — قاعدة بيانات مستقلة (`registerDataCollection`) + صفحة إدارة كاملة + مقارنة تلقائية بسعر أرض كل فرصة حسب مدينتها |
 | `src/features/valuation-engine.js` | ✅ محرك التقييم (Valuation Engine) — ثلاث طرق تقييم مؤسسية (مقارنات/قيمة متبقية/DCF) وقيمة سوقية مُقترَحة (وسيط الطرق) مقابل سعر طلب البائع |
 | `src/features/evidence-tracking.js` | ✅ المصادر والأدلة (Source & Evidence Tracking) — مصدر/تاريخ/مستوى ثقة لكل رقم رئيسي في الفرصة، وآخر أنظمة المرحلة ٢ |
-| `src/features/portfolio.js` | ✅ ذكاء المحفظة (Portfolio Intelligence) — أول أنظمة المرحلة ٣: AUM، رأس المال المستثمر/غير المستثمر، NAV، Gross/Net IRR (حساب XIRR حقيقي بتواريخ فعلية)، مضاعف المحفظة، الدين وLTV وDSCR، وتركّز المحفظة حسب الصندوق/المدينة/النوع |
+| `src/features/portfolio.js` | ✅ ذكاء المحفظة (Portfolio Intelligence) — أول أنظمة المرحلة ٣: AUM، رأس المال المستثمر/غير المستثمر، NAV، Gross/Net IRR (Net XIRR بالحلّال المشترك بتاريخَي السجل callDate/distDate، ويُحجب عند غياب أساس موثوق للقيمة المتبقية)، مضاعف المحفظة، الدين وLTV وDSCR، وتركّز المحفظة حسب الصندوق/المدينة/النوع |
 | `src/features/concentration-risk.js` | ✅ تحذيرات تركّز المحفظة (Concentration Risk) — بانر تحذيري تلقائي على اللوحة الرئيسية + ملاحظة سياقية داخل كل فرصة، عند تجاوز أي صندوق/مدينة/نوع فرصة ٣٥٪ من إجمالي المحفظة |
 | `src/features/benchmark-engine.js` | ✅ مكتبة أوبال المرجعية (OPAL Benchmark Library) — قاعدة معايير سوق قابلة للتحرير حسب المدينة×النوع (IRR/Cap Rate/DSCR/YoC/أسعار م²) + قسم "الفرصة مقابل المعيار المرجعي" داخل كل فرصة |
 | `src/features/command-center.js` | ✅ مركز القيادة الاستثماري (OPAL Investment Command Center) — شاشة تجميعية واحدة (Pipeline/Capital/IC/Returns/Alerts) من الأنظمة القائمة، بلا أي حساب جديد |

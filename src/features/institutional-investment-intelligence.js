@@ -109,7 +109,9 @@ function opportunityIntelligenceRows(core){
     const riskScore = riskMaxScore(d);
     const actual = latestActualFor(core, rec.id);
     const baseline = baselineFor(core, rec.id);
-    return { rec, d, c, suite, riskScore, risk: riskBand(riskScore), actual, baseline };
+    // 3A-2c: فرصة محجوبة (INVALID/INCOMPLETE) تُعلَّم blocked ولا تدخل أي مجموع/ترتيب/اختبار جهد/تخصيص/إنذار مبكر
+    const blocked = typeof core.oppMetricGuard==='function' ? core.oppMetricGuard(rec, c) : null;
+    return { rec, d, c, suite, riskScore, risk: riskBand(riskScore), actual, baseline, blocked };
   });
 }
 
@@ -317,7 +319,9 @@ function miniScore(core, title, item){
 }
 
 function renderInstitutionalInvestmentIntelligenceDashboard(core){
-  const rows = opportunityIntelligenceRows(core);
+  const allRows = opportunityIntelligenceRows(core);
+  const rows = allRows.filter(r=>!r.blocked);
+  const blockedRows = allRows.filter(r=>r.blocked);
   const p = portfolioIntelligenceStats(core);
   const stress = portfolioStressRows(core, rows);
   const optimizer = allocationOptimizer(core, rows);
@@ -328,7 +332,7 @@ function renderInstitutionalInvestmentIntelligenceDashboard(core){
   const top = rows.slice().sort((a,b)=> b.suite.investmentQuality.score-a.suite.investmentQuality.score).slice(0,5);
   const worst = rows.slice().sort((a,b)=> a.suite.executionConfidence.score-b.suite.executionConfidence.score).slice(0,5);
 
-  return `
+  return `${blockedRows.length ? `<div class="panel" data-blocked-excluded="${blockedRows.length}" style="margin:0 0 14px;padding:10px 14px;border:1px solid var(--bad);"><b style="color:var(--bad);">⛔ ${blockedRows.length} ${core.T('فرصة محجوبة (مدخلات غير صالحة أو ناقصة) مستثناة من كل الدرجات والمجاميع واختبارات الجهد والتخصيص والإنذار المبكر','blocked opportunity(ies) (invalid or incomplete inputs) excluded from every score, total, stress test, allocation and early-warning')}</b></div>` : ''}
   <div class="section" style="margin-bottom:14px;display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap;">
     <div>
       <h2 style="margin:0;">🧠 ${core.T('محرك الذكاء الاستثماري المؤسسي','Institutional Investment Intelligence Engine')}</h2>
@@ -345,7 +349,10 @@ function renderInstitutionalInvestmentIntelligenceDashboard(core){
       ${miniScore(core, core.T('ثقة التنفيذ','Execution Confidence'), { score: median(rows.map(r=>r.suite.executionConfidence.score)) || 0, band: confidenceBand(median(rows.map(r=>r.suite.executionConfidence.score)) || 0) })}
     </div>
     <div class="tablewrap" style="margin-top:10px;"><table class="db" style="font-size:12px;"><thead><tr><th>${core.T('الفرصة','Opportunity')}</th><th>${core.T('الجودة','Quality')}</th><th>${core.T('القرار','Decision')}</th><th>${core.T('التنفيذ','Execution')}</th><th>${core.T('الأدلة','Evidence')}</th><th>${core.T('لماذا؟','Why?')}</th></tr></thead><tbody>
-      ${rows.map(r=>`<tr>
+      ${allRows.map(r=>r.blocked ? `<tr data-blocked-row="1">
+        <td><button class="btn btn-sm btn-ghost" data-action="institutional-intelligence-open-opp" data-id="${r.rec.id}">${core.esc(r.d.meta.name||r.rec.id)}</button></td>
+        <td colspan="5" style="color:var(--bad);font-weight:700;">⛔ ${core.T('غير معتمد — مدخلات غير صالحة أو ناقصة (النتائج محجوبة)','Not approved — invalid or incomplete inputs (results withheld)')}</td>
+      </tr>` : `<tr>
         <td><button class="btn btn-sm btn-ghost" data-action="institutional-intelligence-open-opp" data-id="${r.rec.id}">${core.esc(r.d.meta.name||r.rec.id)}</button></td>
         <td class="num">${r.suite.investmentQuality.score.toFixed(0)}</td>
         <td class="num">${r.suite.decisionConfidence.score.toFixed(0)}</td>
@@ -491,7 +498,7 @@ export function registerInstitutionalInvestmentIntelligence(core){
   core.registerDetailSection((d, c, rec)=>{
     const oppId = core.openDetailId;
     const row = opportunityIntelligenceRows(core).find(x=>x.rec.id===oppId);
-    return row ? renderPassport(core, row) : '';
+    return (row && !row.blocked) ? renderPassport(core, row) : '';
   });
   core.registerActionHandler(async (action, el)=>{
     if(action==='institutional-intelligence-open'){

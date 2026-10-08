@@ -1,0 +1,21 @@
+{
+  "schema": 1,
+  "engineVersion": "658889b89f8e2933a12efe41a19b5ae8a2501b8993b2e4acb1fdfb9bee7ad4be",
+  "files": {
+    "document-canonical.cjs": "ce6cb0409eafc365ee5a4f6958d5994dd90b9eb5f6b1c41c3e20ecaefeb4141a",
+    "package.json": "89c47db7851f89caec72da4f215ebc21cf1e294aeef3b45d2583562d846ab035",
+    "src/domain/data-quality/data-quality-engine.js": "e83d1574c1be8750fbe38c6a7b8aee52e8a6ced8b9e05eeb557a4e539aa05591",
+    "src/domain/due-diligence/dd-engine.js": "5cfd3716c40cc2d9c4db65ab49b4790ded291af2f03557cd3121b3baa44868f5",
+    "src/domain/evidence/evidence-engine.js": "41eed3b8bdb79bd897548589fb38f18a0dd0ad07a7bd3746574160dcc3499c4e",
+    "src/domain/financial/financial-context.js": "101bfeac04d91356b486aee9a3bf27fd513622167068dde24be608251005910f",
+    "src/domain/financial/financial-engine.js": "d3a10015490b47b5988ef134d08e091258c5cc85de1a023e2e6c78906e7f7fa3",
+    "src/domain/financial/max-acquisition-price.js": "75557cdfcf3cb8458ba7179f355f2ff7c6120132c5b625d7385254df79605436",
+    "src/domain/ic/ic-readiness-engine.js": "0c8868f6cf54e58aa199634777d361970fefbd0420b125a2773f5041d25a3f40",
+    "src/domain/planning/planning-engine.js": "77a0008566836a14f6839a7e6938a68dc4d36e311f9755c5915dddeebc3ba985",
+    "src/domain/validation/debt-coverage.js": "8ecf2e77288221a8fde09fc176e018f06be73a289be3b902eec3b3250d73dfd9",
+    "src/domain/validation/document-canonical.js": "d06d2a94674443065b2d2a4eec0893e4abc3eda6849f1364d3efc6fcfd5273e5",
+    "src/domain/validation/input-validation-engine.js": "a264af2bfed5635ccb0c8423d06110406a8749f70fc0e1c146bfbae0ee7425cb",
+    "src/domain/validation/risk-classification.js": "efcb0a80f6d69149745596165a4d4322264631aaaccfa319cb0f726414822c83",
+    "src/features/ic-decision-gate.js": "04ff8e40e1d41d5f084d02e068c0b5c5bdddb30645b846c1ba7488511bcce7b4"
+  }
+}
