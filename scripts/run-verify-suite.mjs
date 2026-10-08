@@ -61,7 +61,7 @@ export const GROUPS = {
       'verify-timing-baseline.mjs',
     ],
   },
-  // XIRR shadow package: 1 validate-* + 13 verify-* = 14 scripts.
+  // XIRR shadow package: 1 validate-* + 14 verify-* = 15 scripts (incl. verify-portfolio-xirr.mjs).
   xirr: {
     dir: 'src/domain/financial/xirr',
     pattern: /^(verify|validate)-.*\.mjs$/,
@@ -77,6 +77,7 @@ export const GROUPS = {
       'verify-opal-bug5-wrapper-e2e.mjs',
       'verify-opal-round-6-bugs.mjs',
       'verify-opal-round-7-bugs.mjs',
+      'verify-portfolio-xirr.mjs',
       'verify-scale-invariance.mjs',
       'verify-t19-direct-sale-sequence.mjs',
       'verify-xirr-opportunity-reference-cases.mjs',
@@ -93,6 +94,7 @@ export const GROUPS = {
       'xirr-comparison-panel.test.mjs',
       'input-validation-panel.test.mjs',
       'blocked-cross-view.test.mjs',
+      'portfolio-net-xirr.test.mjs',
     ],
   },
   // The runner's own self-test (explicit file, no pattern discovery).
