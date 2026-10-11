@@ -125,6 +125,31 @@ async function runExternalActionHandlers(action, el, e){
   }
   return false;
 }
+/* R1-B2 / B2-1 — ثلاثة نقاط التصاق إضافية، بلا أي منطق مالي: (١) قسم داخل تفاصيل الصندوق، (٢) تفكيك عند
+   إنهاء الجلسة (خروج/تبديل مستخدم مباشر)، (٣) نهاية كل رسم لمعرفة هل بقي القسم ظاهراً (مغادرة العرض/إغلاق
+   الصندوق لا تمرّ بخطاف التفكيك). فشل أي خطاف يُسجَّل ولا يكسر الصفحة. */
+const _fundDetailSectionHooks = [];
+const _sessionTeardownHooks = [];
+const _renderEndHooks = [];
+function registerFundDetailSection(fn){ _fundDetailSectionHooks.push(fn); }
+function registerSessionTeardown(fn){ _sessionTeardownHooks.push(fn); }
+function registerRenderEnd(fn){ _renderEndHooks.push(fn); }
+function renderFundDetailSections(fundId){
+  let out = '';
+  for(const fn of _fundDetailSectionHooks){
+    try{ const h = fn(fundId); if(typeof h==='string') out += h; }
+    catch(err){ console.error('fund detail section error:', err); out += `<div class="panel" style="margin-top:14px;"><p class="note" style="margin:0;">⚠️ ${T('تعذّر عرض هذا القسم.','This section could not be displayed.')}</p></div>`; }
+  }
+  return out;
+}
+function runSessionTeardownHooks(){
+  for(const fn of _sessionTeardownHooks){ try{ fn(); }catch(err){ console.error('session teardown hook error:', err); } }
+}
+function runRenderEndHooks(){
+  for(const fn of _renderEndHooks){ try{ fn(); }catch(err){ console.error('render-end hook error:', err); } }
+}
+/* هل وصلت مجموعة (مثل team_roles) لقطة مؤكدة من الخادم منذ بدء الجلسة الحالية؟ (قراءة فقط) */
+function isIfCollectionServerConfirmed(name){ return ifCollSyncedOnce.has(name); }
 /* registerMainView(key, fn) — عرض رئيسي كامل بديل (بنفس مبدأ "المستثمرون والصناديق" القائم
    أصلاً في core.js)، لأنظمة تحتاج شاشة كاملة خاصة بها بدل قسم إضافي صغير (مثال: لوحة خط
    الأنابيب الاستثماري، لوحة المحفظة، لوحة لجنة الاستثمار). mainView (حالة عامة، تُضبط عبر
@@ -336,6 +361,23 @@ async function saveBranding(patch){
   await DB.collection('settings').doc('branding').set(branding, { merge:true });
 }
 
+/* تفكيك كل اشتراكات/بيانات المستخدم السابق عند الخروج أو التبديل المباشر بين مستخدمين. (نُقلت من داخل initDb
+   كما هي حرفياً إلى المستوى الأعلى ليمكن اختبار توصيلها؛ أُضيف فقط النداء الأخير لخطافات إنهاء الجلسة.) */
+function teardownUserSubscriptions(){
+  if(unsubscribeOpportunities){ unsubscribeOpportunities(); unsubscribeOpportunities=null; }
+  if(unsubscribeAllowlist){ unsubscribeAllowlist(); unsubscribeAllowlist=null; }
+  if(unsubscribeBranding){ unsubscribeBranding(); unsubscribeBranding=null; }
+  unsubscribeIfCollections();
+  stopPresence();
+  opportunities = [];
+  allowlistEmails = [];
+  branding = { companyName:'', logoDataUrl:'' };
+  recentActivity = [];
+  recentActivityOpen = false;
+  fundsViewOpen = false; openFundId = null;
+  runSessionTeardownHooks();
+}
+
 async function initDb(){
   try{
     if(DEMO_MODE){
@@ -345,19 +387,6 @@ async function initDb(){
     } else if(window.FIREBASE_CONFIG && window.FIREBASE_CONFIG.apiKey && window.FIREBASE_CONFIG.apiKey !== 'REPLACE_ME'){
       firebase.initializeApp(window.FIREBASE_CONFIG);
       DB = firebase.firestore();
-      const teardownUserSubscriptions = () => {
-        if(unsubscribeOpportunities){ unsubscribeOpportunities(); unsubscribeOpportunities=null; }
-        if(unsubscribeAllowlist){ unsubscribeAllowlist(); unsubscribeAllowlist=null; }
-        if(unsubscribeBranding){ unsubscribeBranding(); unsubscribeBranding=null; }
-        unsubscribeIfCollections();
-        stopPresence();
-        opportunities = [];
-        allowlistEmails = [];
-        branding = { companyName:'', logoDataUrl:'' };
-        recentActivity = [];
-        recentActivityOpen = false;
-        fundsViewOpen = false; openFundId = null;
-      };
       firebase.auth().onAuthStateChanged(user => {
         // Phase 2R-4D4-C (third review round): a direct switch from one signed-in uid to a
         // different one (Firebase Auth can deliver this as a single non-null-to-non-null callback,
@@ -3551,7 +3580,8 @@ function renderFundDetail(fundId){
         `).join('')}
       </tbody>
     </table></div>
-  </div>`;
+  </div>
+  ${renderFundDetailSections(fundId)}`;
 }
 
 function renderInvestorFundsView(){
@@ -3690,6 +3720,9 @@ function restoreUnsavedFieldValues(values){
 }
 
 function render(){
+  try{ return renderInner(); } finally { runRenderEndHooks(); }
+}
+function renderInner(){
   const app = document.getElementById('app');
   if(DB && !authReady){ app.innerHTML = renderAuthLoading(); return; }
   if(DB && authReady && !currentUser){ app.innerHTML = renderLogin(); return; }
@@ -5619,6 +5652,10 @@ export {
   renderFundDetail,
   renderInvestorFundsView,
   render,
+  registerFundDetailSection,
+  registerSessionTeardown,
+  registerRenderEnd,
+  isIfCollectionServerConfirmed,
   XL,
   xlBorderAll,
   xlColLetter,

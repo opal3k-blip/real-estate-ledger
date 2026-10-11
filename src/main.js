@@ -16,7 +16,7 @@
    Firestore)، فأي مجموعة بيانات إضافية (registerDataCollection) يجب أن تكون مُسجَّلة قبلها
    حتى تُحمَّل من أول تشغيل.
    ========================================================================= */
-import * as core from './core.js?v=20260913-institutional-intelligence';
+import * as core from './core.js?v=20261011-b2-1-fund-valuation-panel';
 
 // إتاحة كل صادرات core.js على window — للتوافق الخلفي الكامل مع كل سكربتات
 // الاختبار (Playwright) المكتوبة طوال هذا المشروع (تستدعي
@@ -151,6 +151,11 @@ registerICPresentation(core);
 // بترتيب التسجيل نفسه (وحدات ES تُحل عند الاستيراد بصرف النظر عن هذا الترتيب)، فقط توضيح منطقي.
 import { registerRolesPermissions } from './features/roles-permissions.js';
 registerRolesPermissions(core);
+
+/* R1-B2 / B2-1 — لوحة تقييم القيمة المتبقية للصندوق (قراءة فقط) داخل تفاصيل الصندوق. بعد الأدوار (تعتمد على team_roles)
+   وقبل core.initDb(). لا callables ولا كتابة ولا تفعيل لـNet XIRR. */
+import { registerFundValuationPanel } from './features/fund-valuation-panel.js';
+registerFundValuationPanel(core);
 
 // مكتبة الكفاءة المعمارية والتكلفة المرجعية — تُسجَّل بعد الأدوار مباشرة (تستورد
 // canManageLibraries/certifyBadge منها). طلب المستخدم الثاني في هذه المرحلة: مكتبة
