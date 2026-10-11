@@ -40,7 +40,8 @@ const { onDocumentWritten } = require('firebase-functions/v2/firestore');
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const { initializeApp } = require('firebase-admin/app');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
-const { recompute: recomputeIC, documentHash } = require('./trusted-ic.cjs');
+const { recompute: recomputeIC, documentHash, validateInput: validateStoredInput } = require('./trusted-ic.cjs');
+const { createFundValuationService, makeDomainLoader } = require('./fund-valuations.cjs');
 
 
 initializeApp();
@@ -1073,6 +1074,28 @@ exports.mirrorOpportunityAuditLog = require('firebase-functions/v1').firestore.d
 });
 
 // مُصدَّرة للاختبار البنيوي المباشر (test_functions.mjs) بلا الحاجة لمحاكي Functions كامل.
+/* =========================================================================
+   R1-B1 — fund residual valuations: draft, review, approval, eligibility suspension (server only).
+   No UI and no Net XIRR rate. Roles are GLOBAL (declared limitation: the ledger has no per-fund entitlement).
+   Logic and its contract: ./fund-valuations.cjs, ../docs/XIRR_RESIDUAL_VALUATION_WORKFLOW_CONTRACT.md
+   ========================================================================= */
+const fundValuations = createFundValuationService({
+  db, FieldValue, HttpsError, documentHash, validateInput: validateStoredInput,
+  requireAuthorized, roleForEmail, isAdminEmail, loadDomain: makeDomainLoader(__dirname),
+});
+exports.createValuationDraft = onCall((request) => fundValuations.createDraft(request, requireEmail));
+exports.updateValuationDraft = onCall((request) => fundValuations.updateDraft(request, requireEmail));
+exports.submitValuation = onCall((request) => fundValuations.submit(request, requireEmail));
+exports.reviewValuation = onCall((request) => fundValuations.review(request, requireEmail));
+exports.returnValuation = onCall((request) => fundValuations.returnDraft(request, requireEmail));
+exports.rejectValuation = onCall((request) => fundValuations.reject(request, requireEmail));
+exports.withdrawValuation = onCall((request) => fundValuations.withdraw(request, requireEmail));
+exports.approveValuation = onCall((request) => fundValuations.approve(request, requireEmail));
+exports.suspendValuationEligibility = onCall((request) => fundValuations.suspend(request, requireEmail));
+exports.reinstateValuationEligibility = onCall((request) => fundValuations.reinstate(request, requireEmail));
+exports.getValuationPreview = onCall((request) => fundValuations.preview(request, requireEmail));
+exports._fundValuations = fundValuations; // test seam (clock injection); not a callable
+
 exports._internal = { deepDiff, fieldLabel, FIELD_LABELS, IGNORE_PATHS, actorFromData, basicReadinessOk, decisionConditionsMet, assertLedgerAmount, roleRank, isAdminEmail, ledgerTransitionAllowed, isPostedForReversal };
 
 // تكامل Monday.com الخلفي الآمن: يعالج mondayTaskQueue من الخادم فقط، بعد ضبط

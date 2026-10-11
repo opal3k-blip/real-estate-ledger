@@ -72,3 +72,7 @@ Flow dates remain ledger record dates (`callDate` / `distDate`), not proven paym
 
 ## 9. R1-B (later) and proposed permissions (not approved)
 Storage (`fundValuations`, append-only), Firestore rules, approval function, entry/approval UI, wiring into `netXirrInput`. Proposal only until approved explicitly: preparer = fund manager; approver = a different person with senior IC or above; no self-approval, including admin; `approved` only through a server function.
+
+## 10. R1-B1 additions (eligibility input and candidate validator)
+* `input.eligibility` (optional): `{[fundId]: {headId, state: 'ELIGIBLE'|'SUSPENDED'}}`. When given it must cover every scope fund: a missing or malformed entry is `ELIGIBILITY_INVALID`; a `headId` that is not the selected head is `ELIGIBILITY_HEAD_MISMATCH`; a `SUSPENDED` head is `VALUATION_SUSPENDED` and blocks the whole result with **no fallback** to an older version. When omitted, the R1-A behaviour is unchanged (R1-C must make it mandatory).
+* `validateValuationCandidate({asOfDate, scope, candidate, ancestors, records, baseHeadValuationId})`: content check of a draft with the selector's own content checks (only the approval-data check is skipped), per fund. It returns `{status:'CANDIDATE_OK'|'CANDIDATE_BLOCKED'|'INVALID_INPUT', ok, candidateOnly:true, issues, reasonCodes, warnings}`: no `value`, no `complete`, never usable as a valuation. See `XIRR_RESIDUAL_VALUATION_WORKFLOW_CONTRACT.md` §9.

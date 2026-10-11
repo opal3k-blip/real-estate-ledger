@@ -27,6 +27,8 @@ export const FORMULA_TOLERANCE = 0.01; // SAR
 // LEDGER_INITIAL_STATUS / transitions). 'waived' exists for capital calls ONLY and is therefore unknown here.
 export const DISTRIBUTION_UNPAID_STATUSES = ['declared', 'approved'];
 export const DISTRIBUTION_KNOWN_STATUSES = ['declared', 'approved', 'paid'];
+// R1-B1: eligibility of the effective (head) version of a fund/date, kept next to the head pointer by the workflow.
+export const ELIGIBILITY_STATES = ['ELIGIBLE', 'SUSPENDED'];
 
 const isStr = (v) => typeof v === 'string' && v.trim() !== '';
 const isNum = (v) => typeof v === 'number' && Number.isFinite(v); // strings are NOT coerced
@@ -49,6 +51,11 @@ function standardWarnings() {
  * @param {Array<object>} input.valuations  all valuation versions of every fund for asOfDate (complete chains)
  * @param {Array<{kind:string,id:string,fundId:string,date:string,status:string}>} input.records
  *        ledger records, same shape as the XIRR-P input (only capitalCall / distribution kinds are read)
+ * @param {Object<string,{headId:string,state:'ELIGIBLE'|'SUSPENDED'}>} [input.eligibility]
+ *        OPTIONAL (R1-B1). When supplied it must name, for every scope fund, the head valuationId and its state:
+ *        a SUSPENDED head yields no valuation (VALUATION_SUSPENDED) and there is NO fallback to an older version;
+ *        a missing entry or a headId that is not the selected head blocks. When omitted the R1-A behaviour is unchanged
+ *        (the rate-enabling step, R1-C, must make it mandatory).
  */
 export function selectResidualValuation(input) {
   const base = (extra) => ({
@@ -57,7 +64,7 @@ export function selectResidualValuation(input) {
   });
 
   if (!isPlainObject(input)) return base({ status: 'INVALID_INPUT', reason: 'input must be an object.' });
-  const { asOfDate, scope, valuations, records } = input;
+  const { asOfDate, scope, valuations, records, eligibility } = input;
   if (!isRealIsoDate(asOfDate)) return base({ status: 'INVALID_INPUT', reason: 'asOfDate is required and must be a real calendar date (YYYY-MM-DD).' });
   if (!Array.isArray(valuations)) return base({ status: 'INVALID_INPUT', reason: 'valuations must be an array.', valuationDate: asOfDate });
   if (!Array.isArray(records)) return base({ status: 'INVALID_INPUT', reason: 'records must be an array.', valuationDate: asOfDate });
@@ -83,6 +90,67 @@ export function selectResidualValuation(input) {
   };
 
   /* ---- 1. scope snapshot (explicit dates only; no clock) ---- */
+  const { scopeOk, scopeFunds } = validateScope(scope, asOfDate, add);
+  if (!scopeOk) return finish([], null);
+
+  /* ---- 2. ledger scan: unpaid distributions, unknown statuses, corrupt dates, funds outside the scope ---- */
+  scanLedger(records, scopeFunds, asOfDate, add);
+
+  /* ---- 3. group valuation versions ---- */
+  const byId = new Map();
+  const dupIds = new Set();
+  const forFund = new Map(); // fundId -> versions dated asOfDate
+  const otherDates = new Map(); // fundId -> Set of other dates seen
+  for (const v of valuations) {
+    if (!isPlainObject(v) || !isStr(v.valuationId)) { add('VALUATION_RECORD_INVALID', ['fundValuation:(no id)'], 'valuationId missing'); continue; }
+    if (byId.has(v.valuationId)) dupIds.add(v.valuationId);
+    byId.set(v.valuationId, v);
+    if (!isStr(v.fundId)) { add('VALUATION_RECORD_INVALID', [`fundValuation:${v.valuationId}`], 'fundId missing'); continue; }
+    if (!isRealIsoDate(v.valuationDate)) { add('INVALID_VALUATION_DATE', [`fundValuation:${v.valuationId}`]); continue; }
+    if (!scopeFunds.has(v.fundId)) { if (v.valuationDate === asOfDate) add('COVERAGE_FUND_UNKNOWN', [`fundValuation:${v.valuationId}`], v.fundId); continue; }
+    if (v.valuationDate !== asOfDate) {
+      if (!otherDates.has(v.fundId)) otherDates.set(v.fundId, new Set());
+      otherDates.get(v.fundId).add(v.valuationDate);
+      continue;
+    }
+    if (!forFund.has(v.fundId)) forFund.set(v.fundId, []);
+    forFund.get(v.fundId).push(v);
+  }
+  for (const id of dupIds) add('AMBIGUOUS_VALUATION_VERSIONS', [`fundValuation:${id}`], 'duplicate-valuationId');
+
+  const eligibilityGiven = eligibility !== undefined;
+  if (eligibilityGiven && !isPlainObject(eligibility)) add('ELIGIBILITY_INVALID', ['eligibility'], 'eligibility must be an object keyed by fund id');
+
+  const perFund = [];
+  let total = 0;
+  for (const fundId of scope.funds) {
+    const fRef = `fund:${fundId}`;
+    const versions = forFund.get(fundId) || [];
+    if (versions.length === 0) {
+      if (otherDates.has(fundId)) add('VALUATION_DATE_MISMATCH', [fRef], `valuations exist only for other dates: ${[...otherDates.get(fundId)].sort().join(',')}`);
+      else add('COVERAGE_FUND_MISSING', [fRef], 'no-valuation-for-fund');
+      continue;
+    }
+    const res = effectiveVersion(versions, byId, fRef, add);
+    if (!res) continue;
+    if (eligibilityGiven && isPlainObject(eligibility)) {
+      const e = eligibility[fundId];
+      if (!isPlainObject(e) || !ELIGIBILITY_STATES.includes(e.state) || !isStr(e.headId)) { add('ELIGIBILITY_INVALID', [fRef], 'eligibility entry missing or malformed for this fund'); continue; }
+      if (e.headId !== res.valuationId) { add('ELIGIBILITY_HEAD_MISMATCH', [fRef, `fundValuation:${res.valuationId}`], `eligibility names ${e.headId}, selected head is ${res.valuationId}`); continue; }
+      if (e.state === 'SUSPENDED') { add('VALUATION_SUSPENDED', [fRef, `fundValuation:${res.valuationId}`], 'head-suspended-no-fallback-to-older-versions'); continue; }
+    }
+    const rec = validateEffective(res, fundId, scope.linksByFund[fundId], add);
+    if (rec) {
+      perFund.push(rec);
+      total += rec.residualValue;
+      if (!Number.isFinite(total)) { add('NUMERIC_OVERFLOW', ['portfolio'], 'sum-of-residual-values-is-not-finite'); break; }
+    }
+  }
+  return finish(perFund, total);
+}
+
+/* Scope snapshot validation (shared by the selector and the candidate validator). Behaviour unchanged from R1-A. */
+function validateScope(scope, asOfDate, add) {
   let scopeOk = isPlainObject(scope) && Array.isArray(scope.funds) && isPlainObject(scope.linksByFund);
   const scopeFunds = new Set();
   if (!scopeOk) add('COVERAGE_SCOPE_INVALID', ['scope'], 'scope must carry snapshotDate, funds[] and linksByFund{}');
@@ -100,9 +168,11 @@ export function selectResidualValuation(input) {
       if (!Array.isArray(l) || l.some((a) => !isStr(a)) || new Set(l).size !== l.length) { add('COVERAGE_SCOPE_INVALID', [`fund:${f}`], 'linksByFund entry missing, not an array of unique asset ids'); scopeOk = false; }
     }
   }
-  if (!scopeOk) return finish([], null);
+  return { scopeOk, scopeFunds };
+}
 
-  /* ---- 2. ledger scan: unpaid distributions, unknown statuses, corrupt dates, funds outside the scope ---- */
+/* Ledger scan (shared). Behaviour unchanged from R1-A. */
+function scanLedger(records, scopeFunds, asOfDate, add) {
   // Distribution statuses in the code are declared -> approved -> paid. There is no declaration date in the model,
   // so a distDate (past or future) is NOT evidence that an unpaid distribution was not yet declared / due at the
   // valuation date. Any unpaid distribution of a scope fund therefore blocks. A pair of unpaid records is not
@@ -130,49 +200,6 @@ export function selectResidualValuation(input) {
     else if (DISTRIBUTION_UNPAID_STATUSES.includes(r.status)) add('DISTRIBUTIONS_PAYABLE_UNRESOLVED', [ref], 'ledger-shows-unpaid-distribution');
     if (!isRealIsoDate(r.date)) add('DISTRIBUTION_DATE_INVALID', [ref]);
   }
-
-  /* ---- 3. group valuation versions ---- */
-  const byId = new Map();
-  const dupIds = new Set();
-  const forFund = new Map(); // fundId -> versions dated asOfDate
-  const otherDates = new Map(); // fundId -> Set of other dates seen
-  for (const v of valuations) {
-    if (!isPlainObject(v) || !isStr(v.valuationId)) { add('VALUATION_RECORD_INVALID', ['fundValuation:(no id)'], 'valuationId missing'); continue; }
-    if (byId.has(v.valuationId)) dupIds.add(v.valuationId);
-    byId.set(v.valuationId, v);
-    if (!isStr(v.fundId)) { add('VALUATION_RECORD_INVALID', [`fundValuation:${v.valuationId}`], 'fundId missing'); continue; }
-    if (!isRealIsoDate(v.valuationDate)) { add('INVALID_VALUATION_DATE', [`fundValuation:${v.valuationId}`]); continue; }
-    if (!scopeFunds.has(v.fundId)) { if (v.valuationDate === asOfDate) add('COVERAGE_FUND_UNKNOWN', [`fundValuation:${v.valuationId}`], v.fundId); continue; }
-    if (v.valuationDate !== asOfDate) {
-      if (!otherDates.has(v.fundId)) otherDates.set(v.fundId, new Set());
-      otherDates.get(v.fundId).add(v.valuationDate);
-      continue;
-    }
-    if (!forFund.has(v.fundId)) forFund.set(v.fundId, []);
-    forFund.get(v.fundId).push(v);
-  }
-  for (const id of dupIds) add('AMBIGUOUS_VALUATION_VERSIONS', [`fundValuation:${id}`], 'duplicate-valuationId');
-
-  const perFund = [];
-  let total = 0;
-  for (const fundId of scope.funds) {
-    const fRef = `fund:${fundId}`;
-    const versions = forFund.get(fundId) || [];
-    if (versions.length === 0) {
-      if (otherDates.has(fundId)) add('VALUATION_DATE_MISMATCH', [fRef], `valuations exist only for other dates: ${[...otherDates.get(fundId)].sort().join(',')}`);
-      else add('COVERAGE_FUND_MISSING', [fRef], 'no-valuation-for-fund');
-      continue;
-    }
-    const res = effectiveVersion(versions, byId, fRef, add);
-    if (!res) continue;
-    const rec = validateEffective(res, fundId, scope.linksByFund[fundId], add);
-    if (rec) {
-      perFund.push(rec);
-      total += rec.residualValue;
-      if (!Number.isFinite(total)) { add('NUMERIC_OVERFLOW', ['portfolio'], 'sum-of-residual-values-is-not-finite'); break; }
-    }
-  }
-  return finish(perFund, total);
 }
 
 /* Version chain over APPROVED records only. Drafts are outside the chain (as record or as predecessor). */
@@ -208,7 +235,8 @@ function effectiveVersion(versions, byId, fRef, add) {
 }
 
 /* Validates the single effective record; returns the per-fund entry or null (issues recorded). */
-function validateEffective(v, fundId, linkedNow, add) {
+function validateEffective(v, fundId, linkedNow, add, opts) {
+  const candidate = !!(opts && opts.candidate === true); // true ONLY for validateValuationCandidate; the selector never passes it
   const ref = `fundValuation:${v.valuationId}`;
   const before = new Set();
   const bad = (code, detail) => { add(code, [ref], detail); before.add(code); };
@@ -220,8 +248,11 @@ function validateEffective(v, fundId, linkedNow, add) {
   if (!isPlainObject(v.source) || !isStr(v.source.ref) || !isStr(v.source.provider)) bad('SOURCE_MISSING', 'source.ref and source.provider are both required');
 
   // approval data (values only; their authenticity is not verifiable here)
-  if (!isStr(v.approvedBy) || !isStr(v.enteredBy)) bad('APPROVAL_DATA_INVALID', 'enteredBy and approvedBy are required for an approved version');
-  else if (v.approvedBy.trim().toLowerCase() === v.enteredBy.trim().toLowerCase()) bad('APPROVAL_DATA_INVALID', 'approvedBy-equals-enteredBy');
+  // (skipped only for a candidate draft, which has no approval to check and must never be given a fabricated one)
+  if (!candidate) {
+    if (!isStr(v.approvedBy) || !isStr(v.enteredBy)) bad('APPROVAL_DATA_INVALID', 'enteredBy and approvedBy are required for an approved version');
+    else if (v.approvedBy.trim().toLowerCase() === v.enteredBy.trim().toLowerCase()) bad('APPROVAL_DATA_INVALID', 'approvedBy-equals-enteredBy');
+  }
 
   // components
   const c = v.components;
@@ -302,4 +333,84 @@ function validateEffective(v, fundId, linkedNow, add) {
     components: { ...comps, distributionsPayable: v.components.distributionsPayable },
     method: v.method, sourceRef: v.source.ref, provider: v.source.provider,
   };
+}
+
+/**
+ * R1-B1 — content check of a DRAFT (candidate) valuation, with no approval fabricated and no condition of the
+ * selector weakened: it runs the very same content checks (`validateEffective`) and the same scope / ledger helpers,
+ * and skips ONLY the approval-data check, which has no meaning for a draft.
+ *
+ * Per-fund: `scope` carries the candidate's fund only and the ledger records are filtered to that fund. The
+ * portfolio-level conditions (coverage of every fund, funds outside the scope) remain the selector's job at read time.
+ *
+ * It returns NO value and no `complete`/OK-for-use flag: the result is `{ ok, issues, ... candidateOnly:true }` and
+ * cannot be mapped to `nav`. `ancestors` must be ALL approved versions of that fund/date (complete chain); their own
+ * content is not re-validated (a replacement may be exactly what repairs a defective head), but the chain must be
+ * sound and its head must be the one the candidate is based on (`baseHeadValuationId`, null when there is none).
+ *
+ * @param {{asOfDate:string, scope:object, candidate:object, ancestors:object[], records:object[], baseHeadValuationId:(string|null)}} input
+ */
+export function validateValuationCandidate(input) {
+  const out = (extra) => ({ status: 'INVALID_INPUT', ok: false, candidateOnly: true, issues: [], reasonCodes: [], warnings: candidateWarnings(), ...extra });
+  if (!isPlainObject(input)) return out({ reason: 'input must be an object.' });
+  const { asOfDate, scope, candidate, ancestors, records, baseHeadValuationId } = input;
+  if (!isRealIsoDate(asOfDate)) return out({ reason: 'asOfDate is required and must be a real calendar date (YYYY-MM-DD).' });
+  if (!isPlainObject(candidate)) return out({ reason: 'candidate must be an object.' });
+  if (!Array.isArray(ancestors)) return out({ reason: 'ancestors must be an array.' });
+  if (!Array.isArray(records)) return out({ reason: 'records must be an array.' });
+  if (!(baseHeadValuationId === null || isStr(baseHeadValuationId))) return out({ reason: 'baseHeadValuationId must be a string or null.' });
+
+  const issues = [];
+  const add = (code, ids, detail) => {
+    let e = issues.find((x) => x.code === code && x.detail === detail);
+    if (!e) { e = { code, ids: [], ...(detail ? { detail } : {}) }; issues.push(e); }
+    for (const id of ids) if (!e.ids.includes(id)) e.ids.push(id);
+  };
+  const cRef = `fundValuation:${isStr(candidate.valuationId) ? candidate.valuationId : '(no id)'}`;
+  const fundId = candidate.fundId;
+  if (!isStr(candidate.valuationId)) add('VALUATION_RECORD_INVALID', [cRef], 'valuationId missing');
+  if (!isStr(fundId)) add('VALUATION_RECORD_INVALID', [cRef], 'fundId missing');
+  if (candidate.status !== 'draft') add('INVALID_STATUS', [cRef], `candidate must have status "draft", got ${String(candidate.status)}`);
+  if (!isRealIsoDate(candidate.valuationDate)) add('INVALID_VALUATION_DATE', [cRef]);
+  else if (candidate.valuationDate !== asOfDate) add('VALUATION_DATE_MISMATCH', [cRef], `candidate dated ${candidate.valuationDate}, valuation date is ${asOfDate}`);
+
+  if (isStr(fundId)) {
+    const { scopeOk, scopeFunds } = validateScope(scope, asOfDate, add);
+    if (scopeOk) {
+      if (scopeFunds.size !== 1 || !scopeFunds.has(fundId)) add('COVERAGE_SCOPE_INVALID', [cRef], 'candidate scope must contain exactly the candidate fund');
+      else {
+        scanLedger(records.filter((r) => isPlainObject(r) && r.fundId === fundId), scopeFunds, asOfDate, add);
+        // chain of the approved ancestors (same function the selector uses)
+        const byId = new Map();
+        let chainInputOk = true;
+        for (const a of ancestors) {
+          if (!isPlainObject(a) || !isStr(a.valuationId)) { add('VALUATION_RECORD_INVALID', ['fundValuation:(no id)'], 'ancestor without valuationId'); chainInputOk = false; continue; }
+          if (byId.has(a.valuationId)) { add('AMBIGUOUS_VALUATION_VERSIONS', [`fundValuation:${a.valuationId}`], 'duplicate-valuationId'); chainInputOk = false; }
+          byId.set(a.valuationId, a);
+          if (a.status !== 'approved') { add('INVALID_STATUS', [`fundValuation:${a.valuationId}`], 'ancestors must all be approved versions'); chainInputOk = false; }
+          if (a.fundId !== fundId || a.valuationDate !== candidate.valuationDate) { add('AMBIGUOUS_VALUATION_VERSIONS', [`fundValuation:${a.valuationId}`], 'ancestor-belongs-to-another-fund-or-date'); chainInputOk = false; }
+          if (a.valuationId === candidate.valuationId) { add('AMBIGUOUS_VALUATION_VERSIONS', [cRef], 'candidate-id-equals-an-approved-version'); chainInputOk = false; }
+        }
+        if (chainInputOk) {
+          let head = null;
+          if (ancestors.length > 0) head = effectiveVersion(ancestors, byId, `fund:${fundId}`, add);
+          const headId = head ? head.valuationId : null;
+          if (ancestors.length > 0 && !head) { /* chain issues already recorded */ }
+          else if (headId !== baseHeadValuationId) add('STALE_HEAD', [cRef], `candidate is based on ${String(baseHeadValuationId)}, the effective head is ${String(headId)}`);
+        }
+        validateEffective(candidate, fundId, scope.linksByFund[fundId], add, { candidate: true });
+      }
+    }
+  }
+  return {
+    status: issues.length ? 'CANDIDATE_BLOCKED' : 'CANDIDATE_OK', ok: issues.length === 0, candidateOnly: true,
+    issues, reasonCodes: [...new Set(issues.map((i) => i.code))], warnings: candidateWarnings(),
+  };
+}
+
+function candidateWarnings() {
+  return [
+    { code: 'CANDIDATE_NOT_APPROVED', message: 'This is a content check of a draft. It carries no value, is not an approval, and cannot be used as a valuation.' },
+    ...standardWarnings(),
+  ];
 }

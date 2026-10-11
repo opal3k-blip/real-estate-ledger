@@ -837,6 +837,36 @@ for(const [role,db] of [['analyst',ctxFor(ANALYST_OWNER).firestore()],['senior',
   assert(true,`${role}: fund create/delete still denied`);
 }
 await assertSucceeds(getDoc(doc(ctxFor(ANALYST_OWNER).firestore(),'funds','D3-manager-linked')));
+{
+  // R1-B1 (decision of Opal, 2026-10-08 15:36): fundValuations / fundValuationHeads / fundValuationEvents are server-written only
+  // (Admin SDK) and readable ONLY by fund_manager, senior_ic and admin -- the analyst cannot read. Roles are global (no per-fund
+  // entitlement exists). fundValuationRequests is closed to everyone. The expectation below is a hand-written literal.
+  const READS = { analyst: false, senior: true, manager: true, admin: true };
+  const actors = { analyst: ctxFor(ANALYST_OTHER).firestore(), senior: ctxFor(SENIOR_IC).firestore(), manager: ctxFor(FUND_MANAGER).firestore(), admin: ctxFor(ADMIN).firestore() };
+  const outsiderDb = ctxFor(OUTSIDER).firestore();
+  await testEnv.withSecurityRulesDisabled(async (ctx)=>{
+    for(const c of ['fundValuations','fundValuationHeads','fundValuationEvents','fundValuationRequests']){
+      await setDoc(doc(ctx.firestore(),c,'SEED-1'), { fundId:'F1', valuationDate:'2026-10-08', state:'draft' });
+    }
+  });
+  for(const c of ['fundValuations','fundValuationHeads','fundValuationEvents']){
+    for(const [who, d] of Object.entries(actors)){
+      if(READS[who]) await assertSucceeds(getDoc(doc(d,c,'SEED-1'))); else await assertFails(getDoc(doc(d,c,'SEED-1')));
+      await assertFails(setDoc(doc(d,c,'NEW-'+who), { fundId:'F1', state:'approved', status:'approved', approvedBy:'x@x.com' }));
+      await assertFails(updateDoc(doc(d,c,'SEED-1'), { state:'approved', status:'approved' }));
+      await assertFails(deleteDoc(doc(d,c,'SEED-1')));
+    }
+    await assertFails(getDoc(doc(outsiderDb,c,'SEED-1')));
+    assert(true, `🔒 ${c}: only fund_manager / senior_ic / admin read (analyst and outsider cannot); NO client write of any kind (admin included)`);
+  }
+  for(const [who, d] of Object.entries(actors)){
+    await assertFails(getDoc(doc(d,'fundValuationRequests','SEED-1')));
+    await assertFails(setDoc(doc(d,'fundValuationRequests','NEW-'+who), { actor:'x', result:{ ok:true } }));
+    await assertFails(updateDoc(doc(d,'fundValuationRequests','SEED-1'), { result:{ ok:false } }));
+    await assertFails(deleteDoc(doc(d,'fundValuationRequests','SEED-1')));
+  }
+  assert(true, '🔒 fundValuationRequests: closed to every role including admin (internal replay bookkeeping)');
+}
 
 console.log(failures? `\n${failures} FAILURE(S)` : '\nALL PASSED (current-rules expectations; real Firestore emulator)');
 // تحديث (هذه الجلسة، بعد مراجعة مقصودة): هذا التحذير كان يسرد ثلاثة عناصر أمنية "مفتوحة" منذ

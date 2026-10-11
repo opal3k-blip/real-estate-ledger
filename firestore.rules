@@ -72,6 +72,12 @@ service cloud.firestore {
       return isAdminEmail() || currentRoleIsSeniorICOrAbove();
     }
 
+    // R1-B1 (decision of Opal, 2026-10-08 15:36): who may READ fund residual valuations, heads and events.
+    // fund_manager, senior_ic and admin only -- an analyst (the default role) cannot. Roles are global (no per-fund entitlement).
+    function canReadFundValuations() {
+      return isAdminEmail() || (isAllowlisted() && currentRole() in ['fund_manager','senior_ic','admin']);
+    }
+
     // ==================== P0 — Trusted Transaction Layer ====================
     // نقطة ٧-٣ سابقاً كانت icOnlyChange(): مسار ضيّق يسمح لعضو لجنة استثمار أول فأعلى (غير مالك
     // الفرصة) بتعديل opportunity.ic مباشرة من العميل، بشرط ألا يلمس أي حقل آخر. هذا أُلغي بالكامل
@@ -569,6 +575,28 @@ service cloud.firestore {
     match /icDecisions/{id} {
       allow read: if isAuthorized();
       allow create, update, delete: if false;
+    }
+
+    // R1-B1 -- fund residual valuations (draft / review / approval / eligibility). Written ONLY by the trusted
+    // callables in functions/fund-valuations.cjs through the Admin SDK: no client role, admin included, may create,
+    // edit, approve, suspend or delete any of these. Reads: fund_manager, senior_ic and admin only (analyst excluded);
+    // roles are global because the ledger has no per-fund entitlement (declared limitation of B1).
+    // Events are an append-only audit written by the same transaction as the effect.
+    match /fundValuations/{id} {
+      allow read: if canReadFundValuations();
+      allow create, update, delete: if false;
+    }
+    match /fundValuationHeads/{id} {
+      allow read: if canReadFundValuations();
+      allow create, update, delete: if false;
+    }
+    match /fundValuationEvents/{id} {
+      allow read: if canReadFundValuations();
+      allow create, update, delete: if false;
+    }
+    // Request-replay bookkeeping (requestId -> stored result): internal, closed to every role including admin.
+    match /fundValuationRequests/{id} {
+      allow read, write: if false;
     }
   }
 }

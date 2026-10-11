@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { selectResidualValuation, NAV_BASIS, NAV_SOURCE_LABEL } from './residual-valuation.js';
+import { selectResidualValuation, validateValuationCandidate, NAV_BASIS, NAV_SOURCE_LABEL } from './residual-valuation.js';
 import { computePortfolioNetXirr } from './portfolio-xirr.js';
 
 let pass = 0, fail = 0;
@@ -417,6 +417,140 @@ t('pure and deterministic: same input twice gives the same output and the input 
   const i = chain(), snap = JSON.stringify(i);
   assert.deepEqual(selectResidualValuation(i), selectResidualValuation(i));
   assert.equal(JSON.stringify(i), snap);
+});
+
+/* ---------- R1-B1: eligibility input (optional) ---------- */
+const elig = (o = {}) => ({ f1: { headId: 'v-f1', state: 'ELIGIBLE' }, f2: { headId: 'v-f2', state: 'ELIGIBLE' }, ...o });
+t('eligibility omitted: R1-A behaviour unchanged (OK)', () => { assert.equal(sel().status, 'OK'); });
+t('eligibility ELIGIBLE for every fund: same value as without it', () => {
+  const o = sel({ eligibility: elig() }); assert.equal(o.status, 'OK'); assert.equal(o.value, 1500000);
+});
+t('SUSPENDED head: blocked VALUATION_SUSPENDED, no value, no partial portfolio', () => {
+  const o = sel({ eligibility: elig({ f1: { headId: 'v-f1', state: 'SUSPENDED' } }) });
+  blocked(o, 'VALUATION_SUSPENDED');
+});
+t('SUSPENDED head with an older approved version: NO fallback to the older version', () => {
+  const i = chain(); i.eligibility = elig({ f1: { headId: 'v2', state: 'SUSPENDED' } });
+  const o = selectResidualValuation(i);
+  blocked(o, 'VALUATION_SUSPENDED');
+  assert.ok(o.issues.find((x) => x.code === 'VALUATION_SUSPENDED').ids.includes('fundValuation:v2'));
+});
+t('eligibility naming an older version while v2 is the head: ELIGIBILITY_HEAD_MISMATCH (blocked, never silently eligible)', () => {
+  const i = chain(); i.eligibility = elig({ f1: { headId: 'v1', state: 'ELIGIBLE' } });
+  blocked(selectResidualValuation(i), 'ELIGIBILITY_HEAD_MISMATCH');
+});
+t('eligibility present but missing a scope fund / malformed state / not an object: blocked ELIGIBILITY_INVALID', () => {
+  blocked(sel({ eligibility: { f1: { headId: 'v-f1', state: 'ELIGIBLE' } } }), 'ELIGIBILITY_INVALID');
+  blocked(sel({ eligibility: elig({ f2: { headId: 'v-f2', state: 'MAYBE' } }) }), 'ELIGIBILITY_INVALID');
+  blocked(sel({ eligibility: elig({ f2: { state: 'ELIGIBLE' } }) }), 'ELIGIBILITY_INVALID');
+  for (const bad of [null, 'x', [], 5]) blocked(sel({ eligibility: bad }), 'ELIGIBILITY_INVALID');
+});
+
+/* ---------- R1-B1: candidate (draft) validator ---------- */
+const draftOf = (fundId, id, o = {}) => { const d = val(fundId, id, { status: 'draft', approvedBy: null, version: undefined, supersedes: undefined, ...o }); delete d.version; delete d.supersedes; return d; };
+const cand = (o = {}) => clone({
+  asOfDate: AS, scope: { snapshotDate: AS, funds: ['f1'], linksByFund: { f1: ['a1', 'a2'] } },
+  candidate: draftOf('f1', 'd1'), ancestors: [], records: [call('c1', '2025-03-31', 1000000)], baseHeadValuationId: null, ...o,
+});
+const vc = (o) => validateValuationCandidate(cand(o));
+t('candidate: a valid draft passes; the result has no value/complete and says candidateOnly', () => {
+  const o = vc();
+  assert.equal(o.status, 'CANDIDATE_OK'); assert.equal(o.ok, true); assert.equal(o.candidateOnly, true);
+  for (const k of ['value', 'complete', 'perFund', 'basis', 'source']) assert.ok(!(k in o), k);
+  assert.ok(o.warnings.some((w) => w.code === 'CANDIDATE_NOT_APPROVED'));
+  assert.ok(o.warnings.some((w) => w.code === 'VALUATION_NOT_VERIFIED_BY_VALIDATOR'));
+});
+t('candidate: no approval is needed or fabricated, yet the SAME data as an approved version without approvedBy is refused by the selector', () => {
+  assert.equal(vc().status, 'CANDIDATE_OK');
+  const i = mk(); i.valuations[0] = val('f1', 'v-f1', { approvedBy: null });
+  blocked(selectResidualValuation(i), 'APPROVAL_DATA_INVALID');
+});
+t('candidate: approvedBy-equals-enteredBy is NOT a candidate concern (no approval exists) but IS refused by the selector', () => {
+  const c = draftOf('f1', 'd1', { approvedBy: 'prep@x.sa' }); assert.equal(vc({ candidate: c }).status, 'CANDIDATE_OK');
+  const i = mk(); i.valuations[0] = val('f1', 'v-f1', { approvedBy: 'prep@x.sa' });
+  blocked(selectResidualValuation(i), 'APPROVAL_DATA_INVALID');
+});
+const contentDefects = [
+  ['INVALID_CURRENCY', (v) => { v.currency = 'USD'; }],
+  ['NAV_BASIS_UNRESOLVED', (v) => { v.basis = 'X'; }],
+  ['INVALID_METHOD', (v) => { v.method = 'guess'; }],
+  ['INVALID_METHOD', (v) => { v.method = 'other'; }],
+  ['SOURCE_MISSING', (v) => { v.source = { ref: 'x' }; }],
+  ['INVALID_AMOUNT', (v) => { v.components.cashRetained = -1; }],
+  ['INVALID_AMOUNT', (v) => { v.components.assetsValue = '5'; }],
+  ['RESIDUAL_FORMULA_MISMATCH', (v) => { v.residualValue = 1000000.5; }],
+  ['OTHER_ASSETS_ITEMS_INVALID', (v) => { v.components.otherAssetsItems = []; }],
+  ['DISTRIBUTIONS_PAYABLE_UNDECLARED', (v) => { delete v.components.distributionsPayable; }],
+  ['DISTRIBUTIONS_PAYABLE_UNRESOLVED', (v) => { v.components.distributionsPayable = 5; }],
+  ['NON_OVERLAP_UNDECLARED', (v) => { v.nonOverlap.cashNotInAssets = false; }],
+  ['COVERAGE_ASSET_MISSING', (v) => { v.coverage.linkedAssets = ['a1']; }],
+  ['COVERAGE_ASSET_UNKNOWN', (v) => { v.coverage.linkedAssets = ['a1', 'a2', 'a9']; }],
+  ['COVERAGE_UNLINKED_UNSTATED', (v) => { delete v.coverage.unlinkedHoldings; }],
+  ['UNLINKED_ITEMS_EXCEED_ASSETS', (v) => { v.coverage.unlinkedHoldings = { declared: 'included', items: [{ description: 'x', amount: 2e6 }] }; }],
+  ['NUMERIC_OVERFLOW', (v) => { v.components = { assetsValue: 1.7e308, cashRetained: 1.7e308, otherAssets: 0, otherAssetsItems: [], liabilities: 0, distributionsPayable: 0 }; v.residualValue = 1; }],
+];
+t('candidate: every content defect the selector refuses is refused with the SAME code (no weakened condition)', () => {
+  for (const [code, mut] of contentDefects) {
+    const i = mk(); i.scope = { snapshotDate: AS, funds: ['f1'], linksByFund: { f1: ['a1', 'a2'] } };
+    i.valuations = [val('f1', 'v-f1')]; mut(i.valuations[0]);
+    const sOut = selectResidualValuation(i);
+    assert.ok(has(sOut, code), `selector must flag ${code}: ${codes(sOut)}`);
+    const c = draftOf('f1', 'd1'); mut(c);
+    const cOut = vc({ candidate: c });
+    assert.equal(cOut.status, 'CANDIDATE_BLOCKED', code); assert.ok(cOut.reasonCodes.includes(code), `candidate must flag ${code}: ${cOut.reasonCodes}`);
+  }
+});
+t('candidate: status other than draft, wrong date, bad ids are refused', () => {
+  assert.ok(vc({ candidate: draftOf('f1', 'd1', { status: 'approved' }) }).reasonCodes.includes('INVALID_STATUS'));
+  assert.ok(vc({ candidate: draftOf('f1', 'd1', { valuationDate: '2026-03-30' }) }).reasonCodes.includes('VALUATION_DATE_MISMATCH'));
+  assert.ok(vc({ candidate: draftOf('f1', 'd1', { valuationDate: '2026-02-30' }) }).reasonCodes.includes('INVALID_VALUATION_DATE'));
+  assert.ok(vc({ candidate: draftOf('f1', undefined) }).reasonCodes.includes('VALUATION_RECORD_INVALID'));
+});
+t('candidate: scope must be exactly the candidate fund and dated the valuation date', () => {
+  assert.ok(vc({ scope: { snapshotDate: AS, funds: ['f1', 'f2'], linksByFund: { f1: ['a1', 'a2'], f2: [] } } }).reasonCodes.includes('COVERAGE_SCOPE_INVALID'));
+  assert.ok(vc({ scope: { snapshotDate: '2026-03-30', funds: ['f1'], linksByFund: { f1: ['a1', 'a2'] } } }).reasonCodes.includes('COVERAGE_SNAPSHOT_DATE_MISMATCH'));
+  assert.ok(vc({ scope: { snapshotDate: AS, funds: ['f9'], linksByFund: { f9: [] } } }).reasonCodes.includes('COVERAGE_SCOPE_INVALID'));
+});
+t('candidate: ledger rules of the fund apply (unpaid / unknown-status distribution, corrupt date); other funds are ignored', () => {
+  assert.ok(vc({ records: [dist('d1', '2027-01-01', 5, { status: 'approved' })] }).reasonCodes.includes('DISTRIBUTIONS_PAYABLE_UNRESOLVED'));
+  assert.ok(vc({ records: [dist('d1', '2026-01-01', 5, { status: 'waived' })] }).reasonCodes.includes('DISTRIBUTION_STATUS_UNKNOWN'));
+  assert.ok(vc({ records: [dist('d1', 'nope', 5)] }).reasonCodes.includes('DISTRIBUTION_DATE_INVALID'));
+  assert.equal(vc({ records: [dist('d1', '2027-01-01', 5, { status: 'approved', fundId: 'f2' })] }).status, 'CANDIDATE_OK');
+});
+t('candidate: complete approved chain required; base head must be the effective head (STALE_HEAD otherwise)', () => {
+  const v1 = val('f1', 'v1'), v2 = val('f1', 'v2', { version: 2, supersedes: 'v1' });
+  assert.equal(vc({ ancestors: [v1], baseHeadValuationId: 'v1' }).status, 'CANDIDATE_OK');
+  assert.equal(vc({ ancestors: [v1, v2], baseHeadValuationId: 'v2' }).status, 'CANDIDATE_OK');
+  assert.ok(vc({ ancestors: [v1, v2], baseHeadValuationId: 'v1' }).reasonCodes.includes('STALE_HEAD'));
+  assert.ok(vc({ ancestors: [v1], baseHeadValuationId: null }).reasonCodes.includes('STALE_HEAD'));
+  assert.ok(vc({ ancestors: [], baseHeadValuationId: 'v1' }).reasonCodes.includes('STALE_HEAD'));
+  assert.ok(vc({ ancestors: [v2], baseHeadValuationId: 'v2' }).reasonCodes.includes('VERSION_CHAIN_INCOMPLETE'));
+  assert.ok(vc({ ancestors: [v1, val('f1', 'vx', { version: 2, supersedes: 'v1' }), v2], baseHeadValuationId: 'v2' }).reasonCodes.includes('AMBIGUOUS_VALUATION_VERSIONS'));
+  assert.ok(vc({ ancestors: [{ ...v1, status: 'draft' }], baseHeadValuationId: 'v1' }).reasonCodes.includes('INVALID_STATUS'));
+  assert.ok(vc({ ancestors: [val('f2', 'w1')], baseHeadValuationId: 'w1' }).reasonCodes.includes('AMBIGUOUS_VALUATION_VERSIONS'));
+  assert.ok(vc({ ancestors: [val('f1', 'd1')], baseHeadValuationId: 'd1' }).reasonCodes.includes('AMBIGUOUS_VALUATION_VERSIONS'));
+});
+t('candidate: a defective HEAD does not block its replacement (content of ancestors is not re-validated)', () => {
+  const bad = val('f1', 'v1', { currency: 'USD' });
+  assert.equal(vc({ ancestors: [bad], baseHeadValuationId: 'v1' }).status, 'CANDIDATE_OK');
+});
+t('candidate: invalid structural input -> INVALID_INPUT with warnings, never throws', () => {
+  for (const bad of [null, 5, {}, { ...cand(), asOfDate: 'x' }, { ...cand(), candidate: null }, { ...cand(), ancestors: {} }, { ...cand(), records: 'x' }, { ...cand(), baseHeadValuationId: 5 }]) {
+    const o = validateValuationCandidate(bad); assert.equal(o.status, 'INVALID_INPUT'); assert.equal(o.ok, false); assert.ok(o.warnings.length >= 1);
+  }
+});
+t('candidate: pure — input not mutated, deterministic', () => {
+  const i = cand({ ancestors: [val('f1', 'v1')], baseHeadValuationId: 'v1' }), snap = JSON.stringify(i);
+  assert.deepEqual(validateValuationCandidate(i), validateValuationCandidate(i)); assert.equal(JSON.stringify(i), snap);
+});
+t('structure: the candidate path never reads approvedBy / status approval, and only it passes candidate:true to the shared checks', () => {
+  const src = readFileSync(fileURLToPath(new URL('./residual-valuation.js', import.meta.url)), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+  const candFn = src.slice(src.indexOf('export function validateValuationCandidate'), src.indexOf('function candidateWarnings'));
+  assert.ok(!/approvedBy/.test(candFn));
+  assert.equal((src.match(/candidate:\s*true/g) || []).length, 1);
+  const selFn = src.slice(src.indexOf('export function selectResidualValuation'), src.indexOf('function validateScope'));
+  assert.ok(!/candidate/i.test(selFn));
+  assert.ok(!/status\s*[:=]+\s*'approved'/.test(candFn), 'candidate path must not write status approved');
 });
 
 console.log(`\n${pass} passed, ${fail} failed.`);

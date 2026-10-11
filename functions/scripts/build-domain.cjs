@@ -20,6 +20,10 @@ const files = [
   'src/domain/validation/debt-coverage.js',
   'src/domain/validation/risk-classification.js',
   'src/domain/validation/document-canonical.js',
+  // R1-B1: the pure residual-valuation selector / candidate validator and the two pure modules it imports.
+  'src/domain/financial/xirr/residual-valuation.js',
+  'src/domain/financial/xirr/portfolio-xirr.js',
+  'src/domain/financial/xirr/xirr-opportunity.js',
 ];
 const hash = s => crypto.createHash('sha256').update(s).digest('hex');
 const payload = { 'package.json': '{"type":"module","private":true}\n' };
