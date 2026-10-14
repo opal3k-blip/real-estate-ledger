@@ -134,6 +134,25 @@ const _renderEndHooks = [];
 function registerFundDetailSection(fn){ _fundDetailSectionHooks.push(fn); }
 function registerSessionTeardown(fn){ _sessionTeardownHooks.push(fn); }
 function registerRenderEnd(fn){ _renderEndHooks.push(fn); }
+/* R1-B2 / B2-2b-b0 (مُطبَّقة في النسخة المعزولة؛ لم تُنقل ولم تُدمج) — بوابة رسم: تُؤجِّل render() *المتكرر لنفس العرض* فقط ما دامت دالة بوابة مسجَّلة تعيد true (مثلاً: تركيب IME مفتوح داخل حقل؛
+   استبدال العقدة يُفسد التركيب). لا سقف زمني يكسر التركيب (الرسم الإجباري يفسده): الحجز ينتهي بحالة العقدة لا بالزمن، أي حين يفقد حقل التركيب التركيز أو يغادر الصفحة أو تنتهي الجلسة أو العرض أو الصلاحية. التفريغ مضمون بمؤقّت إعادة محاولة (250ms)، لا بانتظار render() تالٍ.
+   لا تؤخّر أبداً: (١) الجلسة غير السليمة (خروج/تبديل/منع وصول) — تُفحص قبل أي بوابة؛ (٢) تغيّر العرض/الجلسة عمّا هو معروض فعلاً (توقيع _renderSig)؛
+   (٣) أي لحظة تعيد فيها دالة البوابة false (فقدان الصلاحية وإغلاق القسم تعيدهما دالة اللوحة). */
+const _renderGates = [];
+const _RENDER_GATE_RETRY_MS = 250;
+let _renderDeferred = false;
+let _renderGateTimer = null;
+let _renderShownSig = null;                         // توقيع العرض الذي رُسم آخر مرة
+function _renderSig(){ return [DB?1:0, authReady?1:0, currentUser&&currentUser.uid||'', accessDenied?1:0, mainView||'', openDetailId||'', fundsViewOpen?1:0, openFundId||''].join('|'); }
+function registerRenderGate(fn){ _renderGates.push(fn); }
+function renderGateHolds(){
+  if(DB && (!authReady || !currentUser || accessDenied)) return false;          // الجلسة/الصلاحية تغلب دائماً
+  if(_renderShownSig !== _renderSig()) return false;                             // عرض آخر/مستخدم آخر: لا تأجيل
+  for(const fn of _renderGates){ try{ if(fn()===true) return true; }catch(err){ console.error('render gate error:', err); } }
+  return false;
+}
+function _renderGateRetry(){ _renderGateTimer = null; if(_renderDeferred) render(); }
+function flushDeferredRender(){ if(_renderDeferred) render(); }
 function renderFundDetailSections(fundId){
   let out = '';
   for(const fn of _fundDetailSectionHooks){
@@ -3720,7 +3739,9 @@ function restoreUnsavedFieldValues(values){
 }
 
 function render(){
-  try{ return renderInner(); } finally { runRenderEndHooks(); }
+  if(renderGateHolds()){ _renderDeferred = true; if(!_renderGateTimer) _renderGateTimer = setTimeout(_renderGateRetry, _RENDER_GATE_RETRY_MS); return; }
+  _renderDeferred = false; if(_renderGateTimer){ clearTimeout(_renderGateTimer); _renderGateTimer = null; }
+  try{ return renderInner(); } finally { _renderShownSig = _renderSig(); runRenderEndHooks(); }
 }
 function renderInner(){
   const app = document.getElementById('app');
@@ -5655,6 +5676,8 @@ export {
   registerFundDetailSection,
   registerSessionTeardown,
   registerRenderEnd,
+  registerRenderGate,
+  flushDeferredRender,
   isIfCollectionServerConfirmed,
   XL,
   xlBorderAll,

@@ -16,7 +16,9 @@
       What ends the wait is EVIDENCE, of two kinds only: (a) IDENTITY: the view shows the very artifact the reply names (the draft id the
       create returned; the content hash the update returned; the state the submit/withdraw returned) - never merely something different;
       (b) ORDER: either the reply carries a revision and the view's document is at/after it, or a CONFIRMED read that STARTED AFTER the reply
-      was received (ctx.read.epoch > the epoch recorded at receipt, same fund/date/session, confirmed) shows the state. A different hash, a
+      was received shows the state: ctx.read.epoch (the number of the read that PRODUCED the shown data; null when the data came from a
+      listener) must exceed ctx.read.issued (the high-water mark of reads STARTED) recorded when the reply was received; same fund/date/session,
+      confirmed. Issuing and data are two different numbers: a read that started before the reply and finished after it never counts. A different hash, a
       missing draft or another occupant of the slot is never enough by itself; ABSENCE (empty slot) counts only under (b).
       VIEW_OVERTAKEN needs (b) and a state that does not show the effect. Without evidence the wait stays and the reader is asked to re-read.
    5. Input typed while a request is in flight or while the view catches up is never replaced: it stays as unsaved edits over the version
@@ -169,7 +171,7 @@ export function createValuationActions(deps) {
   /** A confirmed read that STARTED after the reply was received, for the same session, fund and date. */
   function readAfterResult(aw, ctx) {
     const r = ctx.read;
-    return !!r && r.confirmed === true && Number.isInteger(r.epoch) && Number.isInteger(aw.epochAtResult) && r.epoch > aw.epochAtResult
+    return !!r && r.confirmed === true && Number.isInteger(r.epoch) && Number.isInteger(aw.issuedAtResult) && r.epoch > aw.issuedAtResult
       && r.fundId === aw.fundId && r.valuationDate === aw.valuationDate && ctx.fundId === aw.fundId && ctx.valuationDate === aw.valuationDate && guard.isCurrent(aw.gen);
   }
   /** 'reflected' = the view shows the effect of THIS request; 'overtaken' = a read ordered after the reply shows a state without it; null = no evidence.
@@ -228,9 +230,9 @@ export function createValuationActions(deps) {
       const result = pickResult(res.data);
       const vid = result.valuationId || (meta && meta.valuationId) || null;
       const sentForm = meta ? meta.sentForm || (meta.entryId && st.sentForms.get(meta.entryId)) || null : null;
-      const c0 = ctxFor(st.valuationDate); // the read epoch at the moment the reply was RECEIVED: only a later epoch can prove order
-      const epochAtResult = c0 && c0.read && Number.isInteger(c0.read.epoch) ? c0.read.epoch : null;
-      startAwaiting(key, st, { action, valuationId: vid, result, prev: meta ? meta.prev || null : null, sentForm, opensEditor: !!(meta && meta.opensEditor), fundId: st.fundId, valuationDate: st.valuationDate, gen: guard.current(), epochAtResult, startedAt: now().getTime() });
+      const c0 = ctxFor(st.valuationDate); // reads STARTED so far at the moment the reply was RECEIVED: only data from a read numbered above it can prove order
+      const issuedAtResult = c0 && c0.read && Number.isInteger(c0.read.issued) ? c0.read.issued : null;
+      startAwaiting(key, st, { action, valuationId: vid, result, prev: meta ? meta.prev || null : null, sentForm, opensEditor: !!(meta && meta.opensEditor), fundId: st.fundId, valuationDate: st.valuationDate, gen: guard.current(), issuedAtResult, startedAt: now().getTime() });
       if (sentForm && st.editor) st.editor.baseline = JSON.parse(JSON.stringify(sentForm)); // from now on "unsaved" means: typed AFTER what was sent
       st.outcome = { action, status: 'success_waiting_view', code: null, replayed: result.replayed };
       refreshScope(st, key); notify();
@@ -267,6 +269,15 @@ export function createValuationActions(deps) {
       changedByMe: sections(mineChanged), changedOnServer: sections(serverChanged),
       overlapping: sections(mineChanged.filter((p) => serverChanged.includes(p))),
     };
+  }
+  /** the conflicting VALUES, one row per differing field: what the draft was when she started (base), what she typed (mine) and what the server holds now (server).
+      Plain strings, built fresh at every call — nothing the caller does to them reaches the editor. null = the field is absent on that side. Nothing is merged here. */
+  function conflictRows(ed) {
+    const c = ed.conflict; const fb = E.flatten(c.base); const fm = E.flatten(ed.form); const fs = E.flatten(c.serverForm);
+    const keys = [...new Set([...Object.keys(fb), ...Object.keys(fm), ...Object.keys(fs)])].filter((k) => !k.startsWith('coverage.linkedAssets.confirmedAgainst')).sort();
+    const val = (f, k) => (Object.prototype.hasOwnProperty.call(f, k) ? f[k] : null);
+    return keys.filter((k) => val(fb, k) !== val(fm, k) || val(fb, k) !== val(fs, k))
+      .map((k) => ({ path: k, section: sectionOf(k), base: val(fb, k), mine: val(fm, k), server: val(fs, k), overlapping: c.overlapping.includes(sectionOf(k)) }));
   }
   function resolveConflict(choice, { confirm } = {}) {
     const sess = sync(); const ctx = ctxFor(); if (!sess || !ctx) return { status: 'blocked', code: 'NO_CONTEXT' };
@@ -512,7 +523,7 @@ export function createValuationActions(deps) {
       const frozenKind = ed.mode === 'edit' ? classifyDate(ctx.valuationDate, t) : classifyDate(st.valuationDate, t);
       out.editor = {
         mode: ed.mode, form: ed.form, dirty: E.isDirty(ed.form, ed.baseline), dirtyPaths: E.diffForms(ed.form, ed.baseline), errors: built.errors, issues: built.issues, ready: built.ready, check: built.check,
-        frozen: frozenKind === 'today' ? null : frozenKind, conflict: ed.conflict ? { changedByMe: ed.conflict.changedByMe, changedOnServer: ed.conflict.changedOnServer, overlapping: ed.conflict.overlapping } : null,
+        frozen: frozenKind === 'today' ? null : frozenKind, conflict: ed.conflict ? { changedByMe: [...ed.conflict.changedByMe], changedOnServer: [...ed.conflict.changedOnServer], overlapping: [...ed.conflict.overlapping], rows: conflictRows(ed) } : null,
         serverChanged: ed.serverChanged, goneFromView: !!ed.goneFromView, blockedByActive: ed.blockedByActive,
         copyReview: (doc && ed.mode === 'edit' && st.copyReviews.get(doc.valuationId)) || null,
         coverage: {

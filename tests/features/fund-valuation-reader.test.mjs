@@ -290,7 +290,7 @@ await t('9ب. أحداث صندوق آخر أو بلا fundId لا تظهر', as
 
 /* 10. حدود القارئ */
 await t('10. القارئ لا يعرض أي واجهة كتابة، وبياناته المعادة نسخ مستقلة', async () => {
-  const m = mk(); assert.deepEqual(Object.keys(m.r).sort(), ['close', 'getView', 'open', 'reset', 'retry', 'selectDate', 'stats', 'sync', 'toggleLog', 'toggleShowAll', 'wanted']);
+  const m = mk(); assert.deepEqual(Object.keys(m.r).sort(), ['close', 'contextFor', 'getView', 'open', 'refresh', 'reset', 'retry', 'selectDate', 'stats', 'sync', 'toggleLog', 'toggleShowAll', 'wanted']);
   const p = await approvedPair({}); const v = await ready(m, 'F1', { heads: [p.head], valuations: [p.doc] });
   v.approved.doc.residualValue = 1; v.approved.doc.components.assetsValue = 1;
   assert.equal(m.r.getView().approved.doc.residualValue, 1000); assert.equal(m.r.getView().approved.doc.components.assetsValue, 900);

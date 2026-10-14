@@ -723,10 +723,11 @@ await t('78. ORDER from a read: only a CONFIRMED read that started AFTER the rep
   env.actions.setField('methodNote', 'mine'); await env.actions.save(); const n = env.server.calls.length;
   await env.server.externalEdit(id, { ...goodContent(), methodNote: 'later' });
   env.publish(); stillWaiting(env, 'updateDraft', n);                                                        // same epoch
-  env.view.epoch += 1; env.view.readConfirmed = false; env.publish(); stillWaiting(env, 'updateDraft', n);   // later read, not confirmed
-  env.view.epoch += 1; env.view.readConfirmed = true; env.view.status = 'loading'; env.actions.sync(); stillWaiting(env, 'updateDraft', n); // loading
-  env.view.status = 'ready'; env.view.epoch += 1; env.view.noRead = true; env.publish(); stillWaiting(env, 'updateDraft', n);            // no read marker at all
-  env.view.noRead = false; env.view.epoch += 1; env.view.readConfirmed = true; env.publish();                 // a confirmed read after the reply
+  env.publishFresh({ stale: true }); stillWaiting(env, 'updateDraft', n);                                    // later read, not confirmed
+  env.view.issued += 1; env.view.dataEpoch = env.view.issued; env.view.readConfirmed = true; env.view.status = 'loading'; env.actions.sync(); stillWaiting(env, 'updateDraft', n); // loading
+  env.view.status = 'ready'; env.view.noRead = true; env.publishFresh(); stillWaiting(env, 'updateDraft', n);                                 // no read marker at all
+  env.view.noRead = false; env.view.status = 'ready'; env.view.stale = false; env.view.issued += 1; env.view.dataEpoch = env.view.issued; env.view.readConfirmed = false; env.publish({ keepEpoch: true }); stillWaiting(env, 'updateDraft', n); // the view is confirmed but the read MARKER says it is not (the marker is checked on its own)
+  env.view.noRead = false; env.publishFresh();                                                              // a confirmed read after the reply
   assert.equal(env.actions.getState().awaiting, null); assert.equal(env.actions.getState().outcome.status, 'view_overtaken');
 });
 await t('79. the verdict needs the right target: a confirmed later read whose marker names another fund or another date does not decide', async () => {
@@ -755,23 +756,39 @@ await t('82. no proof of order without a marker AT RECEIPT: a reader that gave n
   const env = await withDraft(); const id = env.view.drafts.get('2026-10-11').valuationId; env.view.noRead = true;
   env.actions.setField('methodNote', 'mine'); await env.actions.save(); const n = env.server.calls.length;
   await env.server.externalEdit(id, { ...goodContent(), methodNote: 'later' });
-  env.view.noRead = false; env.view.epoch = 5; env.publish(); stillWaiting(env, 'updateDraft', n);
+  env.view.noRead = false; env.publishFresh(); stillWaiting(env, 'updateDraft', n);   // a marker that appears later cannot prove it started after the reply
 });
 await t('83. the read epoch is taken when the reply is RECEIVED (not zero): a snapshot of an epoch that already existed then is not "after"', async () => {
-  const env = await withDraft(); const id = env.view.drafts.get('2026-10-11').valuationId; env.view.epoch = 3;
+  const env = await withDraft(); const id = env.view.drafts.get('2026-10-11').valuationId; env.view.issued = 3;
   env.actions.setField('methodNote', 'mine'); await env.actions.save(); const n = env.server.calls.length;
   await env.server.externalEdit(id, { ...goodContent(), methodNote: 'later' });
-  env.publish(); stillWaiting(env, 'updateDraft', n);                // epoch 3 again: it existed when the reply came
-  env.view.epoch = 4; env.publish(); assert.equal(env.actions.getState().outcome.status, 'view_overtaken');
+  env.deliverRead(3); stillWaiting(env, 'updateDraft', n);           // read 3 had already STARTED when the reply came
+  env.publishFresh(); assert.equal(env.view.dataEpoch, 4); assert.equal(env.actions.getState().outcome.status, 'view_overtaken'); // read 4 started after
 });
 await t('84. a confirmed later read that cannot be judged does not decide: document missing from the view; a reply that names no artifact', async () => {
   const env = await withDraft(); const id = env.view.drafts.get('2026-10-11').valuationId;
   env.actions.setField('methodNote', 'mine'); await env.actions.save(); const n = env.server.calls.length;
-  env.view.epoch += 1; env.view.drafts.set('2026-10-11', { valuationId: id, __missing: true }); env.view.status = 'ready'; env.actions.sync(); stillWaiting(env, 'updateDraft', n);
+  env.view.issued += 1; env.view.dataEpoch = env.view.issued; env.view.drafts.set('2026-10-11', { valuationId: id, __missing: true }); env.view.status = 'ready'; env.actions.sync(); stillWaiting(env, 'updateDraft', n);
   const envW = await withDraft(); const pw = envW.actions.prepare('withdraw'); await envW.actions.confirm(pw.token); const nw = envW.server.calls.length;
-  envW.view.epoch += 1; envW.view.drafts.set('2026-10-11', { valuationId: envW.view.drafts.get('2026-10-11').valuationId, __missing: true }); envW.actions.sync(); stillWaiting(envW, 'withdraw', nw);
+  envW.view.issued += 1; envW.view.dataEpoch = envW.view.issued; envW.view.drafts.set('2026-10-11', { valuationId: envW.view.drafts.get('2026-10-11').valuationId, __missing: true }); envW.actions.sync(); stillWaiting(envW, 'withdraw', nw);
   const envC = env0(); envC.publish(); envC.actions.startCreate(); fill(envC.actions); envC.server.omitValuationId = true; await envC.actions.save(); const nc = envC.server.calls.length;
   envC.publishFresh(); stillWaiting(envC, 'createDraft', nc);
+});
+
+await t('85. ISSUING vs DATA: a read that STARTED before the reply and delivers after it never counts, even when the data shown before it carried a lower number; a read started after does', async () => {
+  const env = await withDraft(); const id = env.view.drafts.get('2026-10-11').valuationId;
+  env.view.issued = 5; env.view.dataEpoch = 2;                                   // five reads have started; the data on screen came from read 2 (old numbers are not "after")
+  env.actions.setField('methodNote', 'mine'); await env.actions.save(); const n = env.server.calls.length;
+  await env.server.externalEdit(id, { ...goodContent(), methodNote: 'later' });
+  env.deliverRead(5); stillWaiting(env, 'updateDraft', n);                       // read 5 started BEFORE the reply: higher than the shown data's number, still not proof
+  env.view.issued = 6; env.deliverRead(6);                                       // read 6 started after: proof
+  assert.equal(env.actions.getState().outcome.status, 'view_overtaken');
+});
+await t('86. a reader that reports only `epoch` (no `issued`) can never prove order: identity still ends the wait, nothing else', async () => {
+  const env = await withDraft(); const id = env.view.drafts.get('2026-10-11').valuationId; env.view.legacyRead = true; // a marker with `epoch` only
+  env.actions.setField('methodNote', 'mine'); await env.actions.save(); const n = env.server.calls.length;
+  await env.server.externalEdit(id, { ...goodContent(), methodNote: 'later' });
+  env.publishFresh(); stillWaiting(env, 'updateDraft', n);
 });
 
 console.log(`\n${passed} passed, ${failed} failed.`);

@@ -17,9 +17,10 @@ import { canRead, createGenerationGuard, createSessionTracker, deepClone, isReal
 
 export const SOURCES = Object.freeze(['heads', 'valuations', 'events']);
 export const EVENTS_DISPLAY_LIMIT = 50;
+const ACTIVE_STATES = Object.freeze(['draft', 'returned', 'submitted', 'reviewed']);
 const DENIED_CODES = new Set(['permission-denied', 'firestore/permission-denied']);
 
-function emptySource() { return { docs: [], confirmedOnce: false, fromCache: null, stale: false, error: null }; }
+function emptySource() { return { docs: [], confirmedOnce: false, fromCache: null, stale: false, error: null, stamp: null, snapN: 0 }; }
 function emptyData() { return { heads: emptySource(), valuations: emptySource(), events: emptySource() }; }
 
 /** رأس: التاريخ من الحقل إن صح وإلا من معرّف الوثيقة fundId__YYYY-MM-DD. */
@@ -32,7 +33,7 @@ function headDateOf(h) {
 }
 const latestFirst = (a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : (a.stamp < b.stamp ? 1 : a.stamp > b.stamp ? -1 : (a.id < b.id ? 1 : -1)));
 
-export function createFundValuationReader({ subscribe, getSession, verify = verifyHeadConsistency, onChange = () => {}, eventsLimit = EVENTS_DISPLAY_LIMIT } = {}) {
+export function createFundValuationReader({ subscribe, getSession, verify = verifyHeadConsistency, onChange = () => {}, eventsLimit = EVENTS_DISPLAY_LIMIT, fetchOnce } = {}) {
   if (typeof subscribe !== 'function' || typeof getSession !== 'function') throw new Error('reader: subscribe and getSession are required');
   const guard = createGenerationGuard();
   let wantedFund = null;
@@ -45,6 +46,13 @@ export function createFundValuationReader({ subscribe, getSession, verify = veri
   let verif = new Map();             // token -> { state: 'pending' | 'ok' | 'fail', reason }
   let session = { resolved: false, readable: false };
   let notifyQueued = false;
+  /* ---- explicit reads (B2-2b/b0). Two different numbers, never mixed:
+     readSeq  = reads STARTED (monotonic for the whole life of the reader: never reset, never reused). It is the high-water mark a caller records
+                when it receives a reply; only a read numbered ABOVE it started after the reply.
+     stamp    = the number of the read that PRODUCED the docs on screen (heads / valuations); null when the docs came from a listener. A listener
+                snapshot replaces the docs and so wipes the stamp: listener data proves nothing about order. */
+  let readSeq = 0;
+  let lastRead = null;               // { n, ok, reason, code? } the last COMPLETED read (applied or not)
   const stats = { subscribed: 0, unsubscribed: 0 };
 
   const tracker = createSessionTracker({ guard, onReset: () => { teardown(); } });
@@ -63,7 +71,7 @@ export function createFundValuationReader({ subscribe, getSession, verify = veri
     active = null;
     guard.bump();
     for (const u of unsubs) { try { u(); } catch (e) { /* ignore */ } }
-    data = emptyData(); userDate = null; showAll = false; logOpen = false; verif = new Map();
+    data = emptyData(); userDate = null; showAll = false; logOpen = false; verif = new Map(); lastRead = null;
     if (had) notify();
     return had;
   }
@@ -82,8 +90,8 @@ export function createFundValuationReader({ subscribe, getSession, verify = veri
   function start(fundId) {
     const id = ++seq;
     const gen = guard.bump();
-    active = { id, fundId, gen, unsubs: [], denied: false };
-    data = emptyData(); verif = new Map(); userDate = null; showAll = false; logOpen = false;
+    active = { inFlight: 0, id, fundId, gen, unsubs: [], denied: false };
+    data = emptyData(); verif = new Map(); userDate = null; showAll = false; logOpen = false; lastRead = null;
     for (const source of SOURCES) {
       const live = () => !!active && active.id === id && active.gen === gen && guard.isCurrent(gen) && !active.denied;
       const onNext = (snap) => { if (live()) handleSnapshot(source, snap); };
@@ -112,6 +120,7 @@ export function createFundValuationReader({ subscribe, getSession, verify = veri
       const raw = snap && Array.isArray(snap.docs) ? snap.docs : [];
       d.docs = raw.filter((x) => x && x.id != null).map((x) => ({ id: String(x.id), data: deepClone(x.data || {}) }));
       d.fromCache = false; d.confirmedOnce = true; d.stale = false; d.error = null;
+      d.stamp = null; d.snapN += 1;    // listener data: no order proof, and a read that was in flight across it is superseded
     }
     afterChange();
   }
@@ -213,6 +222,74 @@ export function createFundValuationReader({ subscribe, getSession, verify = veri
     Promise.resolve().then(() => verify(headCopy, docCopy)).then(apply, () => apply({ ok: false, reason: 'HEAD_UNVERIFIABLE' }));
   }
 
+  /* ---------- explicit server reads ---------- */
+  const mapDocs = (raw) => (Array.isArray(raw) ? raw : []).filter((x) => x && x.id != null).map((x) => ({ id: String(x.id), data: deepClone(x.data || {}) }));
+  /** Structural consistency of two reads that are NOT one atomic snapshot: every head that names an active draft must find that draft (same fund/date,
+      active state) and every active draft must be named by the head of its date. A mismatch means the two gets straddled a write: nothing is applied. */
+  function pairProblem(headDocs, valDocs, fundId) {
+    const heads = new Map();
+    for (const h of headDocs) { const date = headDateOf(h); if (date && (h.data.fundId === undefined || h.data.fundId === fundId)) heads.set(date, h.data); }
+    const vals = new Map(valDocs.map((v) => [v.id, v.data]));
+    for (const [date, h] of heads) {
+      if (typeof h.activeDraftId === 'string' && h.activeDraftId) {
+        const v = vals.get(h.activeDraftId);
+        if (!v || v.fundId !== fundId || v.valuationDate !== date || !ACTIVE_STATES.includes(v.state)) return 'HEAD_DRAFT_MISSING';
+      }
+      if (typeof h.headId === 'string' && h.headId && !vals.has(h.headId)) return 'HEAD_DOC_MISSING';
+    }
+    for (const [id, v] of vals) {
+      if (v.fundId !== fundId || !ACTIVE_STATES.includes(v.state)) continue;
+      const h = heads.get(v.valuationDate);
+      if (!h || h.activeDraftId !== id) return 'ACTIVE_DOC_WITHOUT_POINTER';
+    }
+    return null;
+  }
+  /** Starts ONE new server read of heads and valuations. The number is taken NOW (even if the fetch cannot start or fails later) and is never
+      merged with a read in flight. ONLY THE LATEST ISSUED read may apply: when a newer read has been issued, an older result is dropped.
+      Each of the two gets is watched on its own, so a permission-denied is never hidden behind another failure and clears everything the moment it
+      arrives (if the session is still the one that issued the read). A failed, cached or structurally inconsistent result keeps what is on screen
+      but marks it stale: it is not a confirmation. A completed read that is current, the latest issued, unmixed with listener data and consistent
+      replaces the docs and gives them its number. */
+  function refresh() {
+    const a = active;
+    if (!a || a.denied || !session.readable || typeof fetchOnce !== 'function') return Promise.resolve({ status: 'unavailable', issued: readSeq });
+    const n = ++readSeq; const id = a.id; const gen = a.gen; const fundId = a.fundId;
+    const snap0 = { heads: data.heads.snapN, valuations: data.valuations.snapN };
+    const live = () => !!active && active.id === id && active.gen === gen && guard.isCurrent(gen) && !active.denied;
+    a.inFlight += 1;   // per CONTEXT: a read of an old session / fund never counts against the current one
+    /** what is shown stays, but it is no longer a valid confirmation */
+    const unconfirm = () => { for (const s of ['heads', 'valuations']) if (data[s].confirmedOnce) data[s].stale = true; };   // events are not part of an explicit read
+    let deniedHere = false;
+    const watch = (source) => {
+      let p;
+      try { p = Promise.resolve(fetchOnce(source, fundId)); } catch (e) { p = Promise.reject(e); }
+      return p.then((v) => ({ ok: true, v }), (err) => {
+        const code = err && typeof err.code === 'string' ? err.code : null;
+        if (code && DENIED_CODES.has(code) && live()) { deniedHere = true; stopListenersKeepNothing(); lastRead = { n, ok: false, reason: 'PERMISSION_DENIED' }; notify(); }   // refused is not "offline": nothing stays on screen, at once
+        else if (live() && n === readSeq) { unconfirm(); lastRead = { n, ok: false, reason: 'READ_FAILED', code }; notify(); }   // ANY failing part of the CURRENT, latest read drops the confirmation now: no waiting for the other get
+        return { ok: false, err, code };
+      });
+    };
+    const done = (result, record) => { a.inFlight -= 1; if (record && live()) { lastRead = { n, ...record }; notify(); } return { issued: n, ...result }; };
+    return Promise.all([watch('heads'), watch('valuations')]).then(([h, v]) => {
+      if (deniedHere) { a.inFlight -= 1; return { issued: n, status: 'denied', reason: 'PERMISSION_DENIED' }; }
+      if (!live()) return done({ status: 'dropped', reason: 'CONTEXT_CHANGED' });
+      if (n < readSeq) return done({ status: 'dropped', reason: 'SUPERSEDED_BY_NEWER_ISSUE' }, { ok: false, reason: 'SUPERSEDED_BY_NEWER_ISSUE' });
+      if (!h.ok || !v.ok) { const bad = h.ok ? v : h; return done({ status: 'failed', reason: 'READ_FAILED', code: bad.code }, { ok: false, reason: 'READ_FAILED', code: bad.code }); }   // offline / transient: what is shown is untouched, gains no stamp
+      if (!h.v || !v.v || h.v.fromCache || v.v.fromCache) { unconfirm(); return done({ status: 'not_confirmed', reason: 'FROM_CACHE' }, { ok: false, reason: 'FROM_CACHE' }); }
+      if (data.heads.snapN !== snap0.heads || data.valuations.snapN !== snap0.valuations) return done({ status: 'dropped', reason: 'SUPERSEDED_BY_LISTENER' }, { ok: false, reason: 'SUPERSEDED_BY_LISTENER' });
+      const hd = mapDocs(h.v.docs); const vd = mapDocs(v.v.docs);
+      const problem = pairProblem(hd, vd, fundId);
+      if (problem) { unconfirm(); return done({ status: 'inconsistent', reason: problem }, { ok: false, reason: problem }); }
+      for (const [src, docs] of [['heads', hd], ['valuations', vd]]) {
+        const d = data[src]; d.docs = docs; d.fromCache = false; d.confirmedOnce = true; d.stale = false; d.error = null; d.stamp = n;
+      }
+      lastRead = { n, ok: true, reason: null };
+      a.inFlight -= 1; afterChange();
+      return { issued: n, status: 'applied' };
+    });
+  }
+
   function afterChange() { refreshVerification(); notify(); }
 
   /* ---------- أفعال المستخدم (قراءة فقط) ---------- */
@@ -235,9 +312,20 @@ export function createFundValuationReader({ subscribe, getSession, verify = veri
     return m.heads.length === 0 && m.vals.length === 0 ? 'empty' : 'ready';
   }
 
-  function getView() {
+  /** The read marker. `epoch` is non-null only when BOTH heads and valuations on screen came from the same explicit read; `confirmed` also needs both
+      sources confirmed, fresh and error-free. `issued` is the high-water mark of reads started. */
+  function readMarker() {
+    const hs = data.heads.stamp; const vs = data.valuations.stamp;
+    const epoch = hs !== null && hs === vs ? hs : null;
+    const confirmed = epoch !== null && ['heads', 'valuations'].every((s) => data[s].confirmedOnce && data[s].fromCache === false && !data[s].stale && !data[s].error) && !!active && !active.denied;
+    return { issued: readSeq, epoch, confirmed, fundId: active ? active.fundId : null, inFlight: active ? active.inFlight : 0, lastResult: lastRead ? { ...lastRead } : null };
+  }
+
+  function getView() { return buildView(null); }
+
+  function buildView(forcedDate) {
     const status = statusOf();
-    const view = { status, stale: false, fundId: active ? active.fundId : null, sources: {}, errors: [], dates: [], selectedDate: null, selection: 'none', approved: { kind: 'none' }, draft: null, events: { total: 0, shown: 0, showAll, open: logOpen, rows: [] }, excluded: 0 };
+    const view = { status, stale: false, read: readMarker(), fundId: active ? active.fundId : null, sources: {}, errors: [], dates: [], selectedDate: null, selection: 'none', approved: { kind: 'none' }, draft: null, events: { total: 0, shown: 0, showAll, open: logOpen, rows: [] }, excluded: 0 };
     if (!active || status === 'unresolved' || status === 'forbidden' || status === 'idle' || status === 'denied') return view;
     for (const s of SOURCES) {
       const d = data[s];
@@ -246,7 +334,8 @@ export function createFundValuationReader({ subscribe, getSession, verify = veri
       if (d.stale) view.stale = true;
     }
     if (status === 'loading' || status === 'error') return view;
-    const m = computeModel();
+    const m0 = computeModel();
+    const m = forcedDate ? { ...m0, selected: forcedDate, selection: 'pinned' } : m0;
     view.dates = m.dates.slice(); view.selectedDate = m.selected; view.selection = m.selection; view.excluded = m.excluded;
     if (m.selected) {
       const k = approvedKeyOf(m);
@@ -282,8 +371,15 @@ export function createFundValuationReader({ subscribe, getSession, verify = veri
     return view;
   }
 
+  /** The context an editor needs for ONE date, which may differ from the date the panel shows. Null when there is nothing to base it on. */
+  function contextFor(date) {
+    if (typeof date !== 'string' || !isRealIsoDay(date) || !active) return null;
+    const v = buildView(date);
+    return { fundId: v.fundId, valuationDate: date, status: v.status, stale: v.stale, draft: v.draft, latestValuation: v.latestValuation || null, read: { ...v.read, valuationDate: date } };
+  }
+
   return {
-    open, close, reset, sync, retry, selectDate, toggleLog, toggleShowAll, getView,
+    open, close, reset, sync, retry, selectDate, toggleLog, toggleShowAll, getView, refresh, contextFor,
     /** تشخيص للاختبار: اشتراكات مفتوحة، وعدد الوثائق المحتفَظ بها في الذاكرة (يجب أن يكون 0 بعد المسح). */
     stats: () => ({ subscribed: stats.subscribed, unsubscribed: stats.unsubscribed, live: stats.subscribed - stats.unsubscribed, heldDocs: SOURCES.reduce((n, s) => n + data[s].docs.length, 0), heldVerifications: verif.size }),
     wanted: () => wantedFund,

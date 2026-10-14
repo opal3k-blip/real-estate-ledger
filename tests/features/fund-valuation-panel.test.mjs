@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { createFundValuationReader } from '../../src/features/fund-valuation-reader.js';
-import { renderPanel, registerFundValuationPanel, makeFirestoreSubscribe, makeSession, esc } from '../../src/features/fund-valuation-panel.js';
+import { renderPanel, registerFundValuationPanel, makeFirestoreSubscribe, makeFirestoreFetchOnce, makeSession, esc } from '../../src/features/fund-valuation-panel.js';
 import { loadCore } from '../domain/core-vm-harness.mjs';
 import { makeFakeSubscribe, sessionBox, approvedPair, draftDoc, headOnlyDraft, event, tick, SESSION_FM } from '../helpers/fund-valuation-fakes.mjs';
 
@@ -169,6 +169,15 @@ await t('9. محوّل Firestore: where(fundId==X) فقط، includeMetadataChang
   assert.ok(calls.filter((c) => c[0] === 'onSnapshot').every((c) => c[1] === '{"includeMetadataChanges":true}'));
   assert.equal(emitted[0].fromCache, true); assert.deepEqual(emitted[0].docs, [{ id: 'd1', data: { a: 1 } }]); assert.equal(emitted[1].fromCache, false);
 });
+await t('9ت. قراءة الخادم الصريحة: get({source:server}) بفلتر fundId فقط، بلا مستمع ولا كتابة، تمرّر fromCache، وترفض عند فشل الخادم (لا تجيب من الذاكرة)', async () => {
+  const calls = [];
+  const mk = (snap, fail) => ({ DB: { collection(name) { calls.push(['collection', name]); return { where(...a) { calls.push(['where', ...a]); return { get(o) { calls.push(['get', JSON.stringify(o)]); return fail ? Promise.reject(Object.assign(new Error('offline'), { code: 'unavailable' })) : Promise.resolve(snap); }, onSnapshot() { throw new Error('no listener'); } }; }, add() { throw new Error('no write'); }, doc() { throw new Error('no write'); } }; } } });
+  const ok = await makeFirestoreFetchOnce(mk({ docs: [{ id: 'd1', data: () => ({ a: 1 }) }], metadata: { fromCache: false } }))('valuations', 'F7');
+  assert.deepEqual(ok, { docs: [{ id: 'd1', data: { a: 1 } }], fromCache: false });
+  assert.deepEqual(calls, [['collection', 'fundValuations'], ['where', 'fundId', '==', 'F7'], ['get', '{"source":"server"}']]);
+  const cached = await makeFirestoreFetchOnce(mk({ docs: [], metadata: { fromCache: true } }))('heads', 'F7'); assert.equal(cached.fromCache, true);
+  await assert.rejects(makeFirestoreFetchOnce(mk(null, true))('heads', 'F7'), (e) => e.code === 'unavailable');
+});
 await t('9ب. الجلسة: لا دور محسوم قبل تأكيد الخادم لـteam_roles، والأدمن بالبريد محسوم، وبلا DB/دخول/accessDenied ⇒ غير محسوم', async () => {
   const base = (over) => ({ DB: {}, accessDenied: false, ADMIN_EMAILS: ['boss@x.com'], currentUser: { uid: 'u', email: 'Fm@X.com' }, STORE: { team_roles: [{ id: 'fm@x.com', data: { role: 'fund_manager' } }] }, isIfCollectionServerConfirmed: () => false, ...over });
   assert.equal(makeSession(base())().roleResolved, false);
@@ -263,7 +272,8 @@ await t('11. اللوحة والقارئ: بلا callables ولا مخزن طل�
     assert.ok(!/httpsCallable|\.functions\(|runTransaction|localStorage|sessionStorage|indexedDB|\.doc\(|\.add\(|\.delete\(\)|netXirr|NET_XIRR/i.test(src), `${f}: واجهة محظورة`);
   }
   const panel = fs.readFileSync(new URL('../../src/features/fund-valuation-panel.js', import.meta.url), 'utf8');
-  assert.equal((panel.match(/\.collection\(/g) || []).length, 1, 'استخدام وحيد لـcollection ضمن محوّل القراءة');
+  assert.equal((panel.match(/\.collection\(/g) || []).length, 2, 'استخدام collection ضمن محوّلَي القراءة فقط (مستمع + قراءة خادم صريحة) — تعديل B2-2b/b0 على حارس B2-1 (كان 1)');
+  assert.equal((panel.match(/\.get\(/g) || []).length, 1, 'استدعاء get وحيد: قراءة الخادم الصريحة'); assert.ok(/\.get\(\{ source: 'server' \}\)/.test(panel));
   assert.ok(!/\.(set|update)\(\s*\{/.test(panel));
 });
 

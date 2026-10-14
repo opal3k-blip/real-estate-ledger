@@ -177,7 +177,7 @@ export function makeEnv({ session = FM, now = '2026-10-11T10:00:00Z', auto = fal
   const server = makeServer({ clock });
   const box = { s: { ...session } };
   const guard = createGenerationGuard();
-  const view = { status: 'empty', stale: false, drafts: new Map(), latest: null, selectedDate: null, refreshCalls: 0, noContext: false, epoch: 0, readConfirmed: true, noRead: false, readTarget: null };
+  const view = { status: 'empty', stale: false, drafts: new Map(), latest: null, selectedDate: null, refreshCalls: 0, noContext: false, issued: 0, dataEpoch: null, readConfirmed: true, noRead: false, readTarget: null };
   const sel = () => view.selectedDate || riyadhDay(clock.now);
   let n = 0;
   const runner = createRequestRunner({
@@ -187,32 +187,37 @@ export function makeEnv({ session = FM, now = '2026-10-11T10:00:00Z', auto = fal
   const timersLog = []; let tid = 0; const live = new Map();
   const setTimer = timers ? (fn, ms) => { const id = ++tid; live.set(id, { fn, ms }); timersLog.push({ id, ms }); return id; } : setTimeout;
   const clearTimer = timers ? (id) => { live.delete(id); } : clearTimeout;
+  const hooks = {};                       // a test may replace the context source / the refresh request (e.g. with a real reader)
   const getContext = (date) => {
+    if (hooks.getContext) return hooks.getContext(date);
     if (view.noContext) return null;
     const d = date === undefined ? sel() : date;
     const draftId = server.slotId(FUND, d);
     // the VIEW's copy of the draft: whatever was last published for that date
     const pub = view.drafts.get(d) || null;
     const ctx = { fundId: FUND, valuationDate: d, status: view.status, stale: view.stale, draft: pub ? (pub.__missing ? { id: pub.valuationId, missing: true, doc: null } : { id: pub.valuationId, missing: false, doc: clone(pub) }) : null, latestValuation: view.latest, linkProposal };
-    // the reader's read marker: which read produced this snapshot (epoch rises with every read that STARTS) and whether it is confirmed
-    if (!view.noRead) ctx.read = { epoch: view.epoch, confirmed: view.readConfirmed && view.status !== 'loading', fundId: FUND, valuationDate: d, ...(view.readTarget || {}) };
+    // the reader's read marker: `issued` = reads STARTED so far; `epoch` = number of the read that produced the shown data (null = listener data); `confirmed`
+    if (!view.noRead) ctx.read = { ...(view.legacyRead ? {} : { issued: view.issued }), epoch: view.dataEpoch, confirmed: view.readConfirmed && view.status !== 'loading', fundId: FUND, valuationDate: d, ...(view.readTarget || {}) };
     void draftId; return ctx;
   };
   const actions = createValuationActions({
     getContext, getSession: () => box.s, runner, guard, now: () => clock.now, setTimer, clearTimer, awaitDelayedMs, awaitStalledMs,
     callPreview: async ({ valuationId }) => server.handle(box.s.email, 'getValuationPreview', { valuationId }),
-    refreshView: () => { view.refreshCalls += 1; },
+    refreshView: () => { view.refreshCalls += 1; if (hooks.refreshView) return hooks.refreshView(); },
   });
   /** deliver the server's current state to the view (the reader's snapshot) */
-  const publish = ({ stale = false } = {}) => {
+  const publish = ({ stale = false, keepEpoch = false } = {}) => {
+    if (!keepEpoch) view.dataEpoch = null;                                  // a listener snapshot proves no order
     view.drafts = new Map();
     for (const doc of server.vals.values()) { if (server.slotId(doc.fundId, doc.valuationDate) === doc.valuationId) view.drafts.set(doc.valuationDate, clone(doc)); }
     view.status = view.drafts.size || view.latest ? 'ready' : 'empty'; view.stale = stale; actions.sync();
   };
-  /** a NEW read started after everything that happened so far (epoch + 1) and delivered the server's current state */
-  const publishFresh = ({ stale = false } = {}) => { view.epoch += 1; view.readConfirmed = !stale; publish({ stale }); };
+  /** a NEW read STARTED after everything that happened so far (issued + 1) and delivered the server's current state */
+  const publishFresh = ({ stale = false } = {}) => { view.issued += 1; view.dataEpoch = view.issued; view.readConfirmed = !stale; publish({ stale, keepEpoch: true }); };
+  /** the result of read number n arrives now (n may have started long ago); `issued` does not move */
+  const deliverRead = (n, { stale = false } = {}) => { view.dataEpoch = n; view.readConfirmed = !stale; publish({ stale, keepEpoch: true }); };
   const fire = (ms) => { for (const [id, t] of [...live]) if (t.ms <= ms) { live.delete(id); t.fn(); } };
   const setSession = (s) => { box.s = s ? { ...s } : null; };
   if (auto) { /* tests that want automatic delivery call publish() themselves after each step */ }
-  return { clock, server, box, guard, view, runner, actions, storage, locks, publish, publishFresh, fire, live, timersLog, setSession, getContext };
+  return { clock, server, box, guard, view, runner, actions, storage, locks, publish, publishFresh, deliverRead, hooks, fire, live, timersLog, setSession, getContext };
 }

@@ -14,6 +14,8 @@
 import { MESSAGES, describeError } from './fund-valuation-model.js';
 import { createFundValuationReader } from './fund-valuation-reader.js';
 import { getUserRole } from './roles-permissions.js';
+import { createEditorWiring } from './fund-valuation-editor-wiring.js';
+import { editorAvailable, makeEditorProdDeps } from './fund-valuation-editor-prod.js';
 
 const ESC_MAP = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;', '`': '&#96;' };
 export function esc(v) { return String(v == null ? '' : v).replace(/[&<>"'`]/g, (c) => ESC_MAP[c]); }
@@ -226,6 +228,13 @@ export function makeFirestoreSubscribe(core) {
       onError);
 }
 
+/** قراءة صريحة من الخادم (get بـsource:'server'، بلا مستمع): تفشل عند انقطاع الاتصال بدل أن تُجيب من الذاكرة؛ تُستعمل فقط لإثبات الترتيب (reader.refresh). قراءة فقط، بالفلتر نفسه (fundId). */
+export function makeFirestoreFetchOnce(core) {
+  return (source, fundId) => core.DB.collection(COLLECTION[source]).where('fundId', '==', fundId)
+    .get({ source: 'server' })
+    .then((snap) => ({ docs: snap.docs.map((d) => ({ id: d.id, data: d.data() })), fromCache: !!(snap.metadata && snap.metadata.fromCache) }));
+}
+
 /** الجلسة: لا دور محسوم قبل تأكيد الخادم لـteam_roles (أو أن البريد أدمن مثبّت). */
 export function makeSession(core) {
   return () => {
@@ -239,25 +248,47 @@ export function makeSession(core) {
 }
 
 export function registerFundValuationPanel(core, deps = {}) {
+  const editorRef = { current: null };
   const reader = deps.reader || createFundValuationReader({
     subscribe: deps.subscribe || makeFirestoreSubscribe(core),
+    fetchOnce: deps.fetchOnce || makeFirestoreFetchOnce(core),
     getSession: deps.getSession || makeSession(core),
     verify: deps.verify,
-    onChange: () => core.render(),
+    onChange: () => { if (editorRef.current) editorRef.current.onReaderChange(); core.render(); },   // a refusal from the server hides the editor at once, then the page renders
   });
+  // R1-B2 / B2-2b-b1: the editor (inputs, actions) sits under the read-only panel. It is off when a test injects its own reader without editor deps.
+  const editorOn = deps.editor === false ? false : !!deps.editorDeps || (!deps.reader && !deps.subscribe && editorAvailable());
+  let editor = null;
+  if (editorOn) {
+    const ed = { ...makeEditorProdDeps(core), ...(deps.editorDeps || {}) };
+    editor = createEditorWiring({
+      reader, T: core.T, requestRender: () => core.render(), getSession: deps.getSession || makeSession(core),
+      call: ed.call, storage: ed.storage, locks: ed.locks, getFundAssetIds: ed.getFundAssetIds, doc: ed.doc, win: ed.win, genId: ed.genId, now: ed.now, setTimer: ed.setTimer, clearTimer: ed.clearTimer,
+    });
+    editorRef.current = editor;
+    editor.attachDom();
+    // a composition in an editor field holds the render (when core.js offers the gate); everything else (session, permission, leaving the view) is never held
+    if (typeof core.registerRenderGate === 'function') {
+      core.registerRenderGate(() => editor.holdsRender());
+      const gdoc = (deps.editorDeps && deps.editorDeps.doc) || (typeof document !== 'undefined' ? document : null);
+      if (gdoc) for (const evn of ['compositionend', 'keyup']) gdoc.addEventListener(evn, () => setTimeout(() => { if (typeof core.flushDeferredRender === 'function') core.flushDeferredRender(); }, 0), true);
+    }
+  }
   let shownThisPass = false;
   core.registerFundDetailSection((fundId) => {
     reader.open(fundId);
     shownThisPass = true;
-    return renderPanel(reader.getView(), { T: core.T });
+    return renderPanel(reader.getView(), { T: core.T }) + (editor ? editor.renderSlot() : '');
   });
   // نهاية كل رسم: إن لم يُرسم القسم في هذه الجولة (أُغلق الصندوق/غادر المستخدم العرض/شاشة دخول…) تُوقَف المستمعات.
   core.registerRenderEnd(() => {
     if (shownThisPass) reader.sync(); else reader.close();
+    if (editor && editor.keeper) { if (shownThisPass) editor.keeper.afterRender(); else editor.keeper.clear(); }   // leaving the view forgets focus; nothing is re-seated into a page she left
     shownThisPass = false;
   });
-  core.registerSessionTeardown(() => { reader.reset(); shownThisPass = false; });
+  core.registerSessionTeardown(() => { if (editor) editor.teardown(); reader.reset(); shownThisPass = false; });
   core.registerActionHandler((action, el) => {
+    if (editor && editor.actionHandler(action, el)) return true;
     switch (action) {
       case 'fvp-select-date': reader.selectDate(el && el.dataset ? el.dataset.date : undefined); return true;
       case 'fvp-toggle-log': reader.toggleLog(); return true;
@@ -266,5 +297,6 @@ export function registerFundValuationPanel(core, deps = {}) {
       default: return false;
     }
   });
+  if (editor) reader.editor = editor;
   return reader;
 }
