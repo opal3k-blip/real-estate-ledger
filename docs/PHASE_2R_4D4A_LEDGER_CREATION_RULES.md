@@ -1,0 +1,18 @@
+# Phase 2R-4D4-A — lock down untrusted ledger record creation
+
+Baseline: 22dcc48f7ce53c98baee9a0b3a5d082a0c51f7c6. Committed as d664ed4c5e3c498c6391ded3fe578507526f0d2d, pushed to origin/p0-shared-domain-engine-extraction (22dcc48..d664ed4).
+
+## Scope
+Three creation-time gaps in commitments/capitalCalls/distributions/transactions are closed. First, `reversalOfId` on a `create` for capitalCalls and distributions is now blocked outright (only server-side `reverseTransaction`, using the Admin SDK, may produce a reversal record); `ledgerAmountOk` still enforces sign, but the reversal shape itself can no longer be forged through a client create. Second, an in-kind `capitalCalls` create carrying `linkedCommitmentId` must now point at a real commitment that matches fundId, investorId, `contributionType == 'in_kind'` and `commitmentAmount`, and must itself carry `status == 'paid'`; a normal (non-linked) create still requires `status == 'pending'`. Third, `transactions` create must match a real underlying record: `type` must be `assetLink`, or `relatedId` must resolve to an existing commitments/capitalCalls/distributions document whose fundId and amount agree with the transaction being written. Optional/unvalidated fields are read with `.get(field, null)` throughout, not direct dot-access, to avoid hard evaluation errors on documents missing that field.
+
+No change to `postCapitalCall`, `transitionLedgerRecord`, `reverseTransaction`, or any other callable. No schema or economic changes, no production data touched.
+
+## Verification
+`tests/rules/rules.test.mjs` extended: `CC-GATE-INKIND-REAL-OK` replaces the prior `CC-GATE-INKIND-OK`, which had asserted success for a **fabricated** `linkedCommitmentId` — that gap is now covered by explicit failing cases (fake id, wrong fund, wrong contribution type, amount mismatch) alongside the matching-real-commitment success case. Added `CC-GATE-REVERSAL-PENDING` and `DST-GATE-REVERSAL-DECLARED` (reversal-shaped create denied). Added a `transactions` block: fake `relatedId`, wrong fund, wrong amount all fail; matching commitment/distribution records succeed. The generic `LEDGER_COLLECTIONS` loop's `transactions` fixture was fixed to reference a real seeded commitment (previously a bare `{name:'test'}`, which triggered the `.type` evaluation-error bug during development, before the `.get(field, null)` fix).
+
+Full suite run against the real Firestore emulator on the user's machine: all tests passed, exit code 0 (`ALL PASSED (current-rules expectations; real Firestore emulator)`). This is real emulator execution, not a syntax check or fixture-only run.
+
+## Remaining boundaries
+`transactions` create is still a direct client write gated by content-matching, not a server-derived record — a fund_manager/admin can still choose what to log (within the matching constraint) rather than the system deriving it. `capitalCalls`/`distributions` can still be created client-side in `pending`/`declared` status; this patch validates shape and linkage, it does not move creation authority to a Cloud Function. The in-kind flow still auto-creates a `paid` capital call on commitment save, and `linkAssetToFund` still sums `paid` calls as deployable cash — the land-value-as-cash concern flagged in the 2R-4D3 doc is unchanged and is explicitly deferred to 4D4-B, which requires a user policy decision before implementation. Fund lifecycle and asset-link integrity (unlink/delete safety) remain open for 4D4-C. Passing this suite certifies rules-level behavior only; it is not full server-only certification, integration testing, or concurrency testing.
+
+No Monday integration files, functions/index.js, local loader changes, or source model files are changed.
