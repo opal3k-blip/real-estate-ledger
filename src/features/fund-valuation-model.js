@@ -49,7 +49,7 @@ export const PAYLOAD_SPEC = Object.freeze({
 export const REQUEST_ID_RE = /^[A-Za-z0-9_-]{8,64}$/;
 export const ID_RE = /^[A-Za-z0-9_-]{1,128}$/;
 const HASH_RE = /^[0-9a-f]{64}$/;
-const MAX_REASON = 1000;
+export const MAX_REASON = 1000;
 
 /** Independent deep copy (structuredClone, JSON fallback). Used so a payload can never share nested objects with the caller. */
 export function deepClone(v) {
@@ -297,6 +297,10 @@ export const MESSAGES = Object.freeze({
   PAYLOAD_MISSING: ['حقل مطلوب ناقص', 'A required field is missing'],
   ACTION_UNKNOWN: ['إجراء غير معروف', 'Unknown action'],
   NO_TARGET: ['لا يوجد هدف لهذا الإجراء', 'No target for this action'],
+  HEAD_NOT_VERIFIED: ['لم يكتمل التحقق من الرأس الساري بعد؛ لا يبدأ الاعتماد الآن', 'The effective head has not been verified yet; approval cannot start now'],
+  HEAD_INCONSISTENT: ['الرأس الساري غير متسق؛ لا يبدأ الاعتماد', 'The effective head is inconsistent; approval cannot start'],
+  HEAD_STATE_UNKNOWN: ['حالة الرأس الساري غير معروفة في هذا العرض؛ لا يبدأ الاعتماد', 'The state of the effective head is unknown in this view; approval cannot start'],
+  REASON_NOT_ACCEPTED: ['هذا الإجراء لا يقبل سببًا؛ لن يُحفظ ما كتبتَه', 'This action does not accept a reason; what you typed would not be saved'],
 });
 const CODE_FALLBACK = {
   'permission-denied': ['ليست لديك صلاحية', 'Permission denied'], unauthenticated: ['يلزم تسجيل الدخول', 'Sign-in required'],

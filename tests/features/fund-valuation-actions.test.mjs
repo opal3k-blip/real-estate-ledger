@@ -325,7 +325,7 @@ await t('33. CONTROL 2: a stored preview becomes outdated when the stored versio
   assert.equal((await env.actions.checkNow()).status, 'error'); assert.equal(env.actions.getState().preview.status, 'error');
 });
 await t('34. a preview reply of "stale" feeds the submit gate (re-submit of a submitted draft is only offered when stale)', async () => {
-  const env = await withDraft(); const p = env.actions.prepare('submit'); await env.actions.confirm(p.token); env.publish();
+  const env = await withDraft(); const p = env.actions.prepare('submit'); await env.actions.confirm(p.token); env.publishFresh();
   assert.equal(env.actions.canStart('submit').reason, 'ALREADY_SUBMITTED');
 });
 
@@ -455,14 +455,15 @@ await t('50. a listener that throws never breaks the module; dispose clears time
 });
 
 /* ----------------------------------------------------------------- scope limits */
-await t('51. only the four approved actions are ever requested (no review / return / reject / approve / suspend / reinstate / rate)', async () => {
+await t('51. only the approved actions are ever requested (B2-3a scope: createDraft, updateDraft, submit, withdraw + review, returnDraft, reject, approve; never suspend / reinstate / rate)', async () => {
   const env = await withDraft(); const seen = new Set();
   const orig = env.runner.begin; env.runner.begin = (a) => { seen.add(a.action); return orig(a); };
   env.actions.setField('methodNote', 'q'); await env.actions.save(); env.publish();
   const p = env.actions.prepare('withdraw'); await env.actions.confirm(p.token);
   assert.ok([...seen].every((x) => A.ACTIONS_STARTED_HERE.includes(x)), [...seen].join());
-  assert.deepEqual([...A.ACTIONS_STARTED_HERE], ['createDraft', 'updateDraft', 'submit', 'withdraw']);
-  for (const c of env.server.calls) assert.ok(['createValuationDraft', 'updateValuationDraft', 'submitValuation', 'withdrawValuation', 'getValuationPreview'].includes(c.callable), c.callable);
+  assert.deepEqual([...A.ACTIONS_STARTED_HERE], ['createDraft', 'updateDraft', 'submit', 'withdraw', 'review', 'returnDraft', 'reject', 'approve']);   // B2-2 pinned the first four; B2-3a adds the reviewer's four (approved 2026-10-14)
+  for (const x of ['suspend', 'reinstate', 'preview', 'rate']) assert.ok(!A.ACTIONS_STARTED_HERE.includes(x), x);
+  for (const c of env.server.calls) assert.ok(['createValuationDraft', 'updateValuationDraft', 'submitValuation', 'withdrawValuation', 'getValuationPreview'].includes(c.callable), c.callable);   // this scenario only exercises the B2-2 actions
 });
 await t('52. static limits: the new modules import no Firebase / DOM / storage / XIRR / MOIC / equity code and name no browser globals', () => {
   for (const f of ['fund-valuation-editor.js', 'fund-valuation-actions.js']) {
@@ -504,13 +505,14 @@ await t('56. a mutating request is never started while the view is a different f
   env.view.selectedDate = null; assert.equal(env.actions.getState().editor.form.methodNote, 'today');
 });
 
-await t('58. CONTROL 4 (submit): an old snapshot does not release the block after a successful submit; the snapshot that shows the new state does', async () => {
+await t('58. CONTROL 4 (submit): an old snapshot does not release the block after a successful submit; a listener snapshot of the new state carries no order, a read started after the reply does (reviewer 2026-10-14)', async () => {
   const env = await withDraft(); const old = JSON.parse(JSON.stringify(env.view.drafts.get('2026-10-11')));
   const p = env.actions.prepare('submit'); await env.actions.confirm(p.token);
   assert.equal(aw(env).action, 'submit');
   env.view.drafts.set('2026-10-11', old); env.actions.sync(); assert.equal(aw(env).action, 'submit', 'still waiting: the view still shows a draft');
   assert.equal(env.actions.canStart('withdraw').reason, 'AWAITING_VIEW');
-  env.publish(); assert.equal(env.actions.getState().awaiting, null);
+  env.publish(); assert.ok(env.actions.getState().awaiting, 'listener data: no order');
+  env.publishFresh(); assert.equal(env.actions.getState().awaiting, null);
 });
 await t('59. CONTROL 4 (create): a view that names the new draft but cannot deliver its document does not release the block; the one with the document does', async () => {
   const env = env0(); env.publish(); env.actions.startCreate(); fill(env.actions); await env.actions.save();

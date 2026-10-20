@@ -26,6 +26,7 @@ export function createFocusKeeper({ doc, win, getRoot, onLost, now } = {}) {
     const c = { key: keyOf(el), tag: el.tagName, type: (el.getAttribute('type') || '').toLowerCase() };
     if (el.type === 'checkbox' || el.type === 'radio') c.checked = el.checked; else c.value = el.value;
     try { if (canSelect(el) && el.selectionStart != null) { c.s = el.selectionStart; c.e = el.selectionEnd; c.dir = el.selectionDirection; } } catch (e) { /* number inputs have no selection */ }
+    if (canSelect(el)) { c.st = el.scrollTop; c.sl = el.scrollLeft; c.follow = c.s != null && c.s === c.e && c.s === el.value.length && el.scrollTop + el.clientHeight >= el.scrollHeight - 48; }   // follow = typing at the end of the text with the end (nearly) in view: the browser scrolls the new line into view only AFTER the input event, so a position read earlier is a line short   // the field's OWN scroll (a multi-line textarea): a rebuilt node starts at the top, which hides the line being typed
     const sec = el.closest('[' + SECTION_ATTR + ']'); sectionKey = sec ? sec.getAttribute(SECTION_ATTR) : null;
     cur = c;
   }
@@ -117,6 +118,7 @@ export function createFocusKeeper({ doc, win, getRoot, onLost, now } = {}) {
       else if (c.value !== undefined && el.value !== c.value) { el.value = c.value; stats.valueRepaired += 1; }
       try { el.focus({ preventScroll: true }); } catch (e) { el.focus(); }
       try { if (c.s != null && canSelect(el)) el.setSelectionRange(c.s, c.e, c.dir || 'none'); } catch (e) { /* ignore */ }
+      if (c.st != null && canSelect(el)) { try { el.scrollTop = c.follow ? el.scrollHeight : c.st; el.scrollLeft = c.sl || 0; } catch (e) { /* ignore */ } }   // after the caret, so the person's own view wins
       stats.restored += 1;
     } finally { restoring = false; }
     return { status: 'restored', key: cur.key };

@@ -23,17 +23,26 @@
       VIEW_OVERTAKEN needs (b) and a state that does not show the effect. Without evidence the wait stays and the reader is asked to re-read.
    5. Input typed while a request is in flight or while the view catches up is never replaced: it stays as unsaved edits over the version
       that was SENT (the baseline becomes the sent form when the request succeeds).
-   6. The server is the authority. Submit and withdraw carry no fingerprint on the server (contract §6.1); the guard here
-      (prepare/confirm + snapshot comparison) is a courtesy and does not prevent a race on the server. */
+   6. The server is the authority. Submit, withdraw, RETURN and REJECT carry no fingerprint on the server (contract §6.1; accepted for return/reject
+      on 2026-10-14); the guard here (prepare/confirm + snapshot comparison) is a courtesy and does not prevent a race on the server. Review and approve
+      ARE bound by the server to expectedContentHash.
+   7. (B2-3a) A request is FIXED when it is saved for sending: its payload (reason included) and requestId come from the confirmation that was prepared, never
+      from anything typed afterwards; a retry resends the stored entry verbatim (runner). A new reason is a new prepare, which replaces the old confirmation
+      and cannot be sent while an earlier request of the scope is unresolved. The new actions use the same awaiting guarantees (issued / epoch / identity). */
 import {
-  availableActions, riyadhDay, classifyDate, snapshotOf, diffSnapshots, createGenerationGuard, createSessionTracker, describeError, canRead,
+  availableActions, riyadhDay, classifyDate, snapshotOf, diffSnapshots, createGenerationGuard, createSessionTracker, describeError, canRead, MAX_REASON,
 } from './fund-valuation-model.js';
 import { scopeKey } from './fund-valuation-requests.js';
 import * as E from './fund-valuation-editor.js';
 
 export const AWAIT_DELAYED_MS = 8000;   // "the view is late": ask the reader to re-fetch from the server
 export const AWAIT_STALLED_MS = 20000;  // "still not reflected": if the view is confirmed and still different, it was overtaken
-const ACTIONS_STARTED_HERE = Object.freeze(['createDraft', 'updateDraft', 'submit', 'withdraw']);
+const ACTIONS_STARTED_HERE = Object.freeze(['createDraft', 'updateDraft', 'submit', 'withdraw', 'review', 'returnDraft', 'reject', 'approve']);
+/* B2-3a: the reviewer's actions. Suspend / reinstate / comment / eligibility stay in B2-4 and are refused here (ACTION_UNKNOWN). */
+const REVIEWER_ACTIONS = Object.freeze(['review', 'returnDraft', 'reject', 'approve']);
+const PREPARABLE = Object.freeze(['submit', 'withdraw', ...REVIEWER_ACTIONS]);
+const STATE_AFTER = Object.freeze({ submit: 'submitted', withdraw: 'withdrawn', review: 'reviewed', returnDraft: 'returned', reject: 'rejected', approve: 'approved' });
+const HASH_RE = /^[0-9a-f]{64}$/;
 
 export function msUntilNextRiyadhDay(nowMs) {
   const DAY = 86400000; const local = nowMs + 3 * 3600000; // Asia/Riyadh is fixed UTC+3, no DST
@@ -90,6 +99,24 @@ export function createValuationActions(deps) {
   const draftDoc = (ctx) => (ctx && ctx.draft && !ctx.draft.missing && ctx.draft.doc ? ctx.draft.doc : null);
   const viewConfirmed = (ctx) => !ctx.stale && (ctx.status === 'ready' || ctx.status === 'empty');
 
+  /** What the reader reports about the effective head of the viewed (fund, date). Fail closed: an old reader that reports nothing is UNKNOWN, not "no head". */
+  function headFacts(ctx) {
+    if (!ctx || !Object.prototype.hasOwnProperty.call(ctx, 'approved')) return { ok: false, reason: 'HEAD_STATE_UNKNOWN' };
+    const a = ctx.approved;
+    if (a === null) return { ok: true, headId: null, version: 0, suspended: false, changedBy: null };
+    /* the real reader reports a date with NO approved head as { kind: 'none' } (never null): that is "no head" once the view is confirmed, and unknown while it is not */
+    if (a && a.kind === 'none') return viewConfirmed(ctx) ? { ok: true, headId: null, version: 0, suspended: false, changedBy: null } : { ok: false, reason: 'HEAD_STATE_UNKNOWN' };
+    if (!a || typeof a !== 'object') return { ok: false, reason: 'HEAD_STATE_UNKNOWN' };
+    const by = lc(a.eligibility && a.eligibility.changedBy);
+    if (a.kind === 'effective') return { ok: true, headId: a.headId ?? null, version: a.version ?? null, suspended: false, changedBy: by || null };
+    if (a.kind === 'suspended') return { ok: true, headId: a.headId ?? null, version: a.version ?? null, suspended: true, changedBy: by || null };
+    if (a.kind === 'verifying') return { ok: false, reason: 'HEAD_NOT_VERIFIED' };
+    if (a.kind === 'inconsistent') return { ok: false, reason: 'HEAD_INCONSISTENT' };
+    return { ok: false, reason: 'HEAD_STATE_UNKNOWN' };
+  }
+  const headForSnapshot = (ctx) => { const h = headFacts(ctx); return h.ok ? { headId: h.headId, eligibility: h.headId ? { state: h.suspended ? 'SUSPENDED' : 'ELIGIBLE' } : null } : { headId: null, eligibility: null }; };
+  const headKeyOf = (ctx) => { const h = headFacts(ctx); return JSON.stringify(h.ok ? [h.headId, h.version, h.suspended, h.changedBy] : ['unknown', h.reason]); };
+
   /* ---------------- gating: STARTING a new action ---------------- */
   const no = (reason) => ({ allowed: false, reason });
   function gate(action, ctx, sess, st) {
@@ -104,6 +131,7 @@ export function createValuationActions(deps) {
     const preview = st && st.preview && st.preview.status === 'done' ? st.preview.reply : null;
     const av = availableActions({ role: sess.role, email: sess.email, today: today(), valuation: doc || undefined, head: { activeDraftId: ctx.draft ? ctx.draft.id : null }, createDate: ctx.valuationDate, stale: !!(preview && preview.stale === true) })[action];
     if (!av || !av.allowed) return no(av ? av.reason : 'ACTION_UNKNOWN');
+    if (action === 'approve') { const h = headFacts(ctx); if (!h.ok) return no(h.reason); }
     if (action === 'updateDraft' || action === 'submit' || action === 'withdraw') {
       if (!doc) return no('NO_TARGET');
     }
@@ -143,6 +171,7 @@ export function createValuationActions(deps) {
             ed0.baseline = aw.sentForm || E.formFromContent(doc, { unconfirmCoverage: false });
           }
           if (aw.action === 'withdraw' || (aw.action === 'submit' && !doc)) st.editor = null;
+          if ((aw.action === 'reject' || aw.action === 'approve') && st.editor && st.editor.mode === 'edit' && st.editor.startedFrom.valuationId === aw.valuationId) st.editor = null;
           st.outcome = { action: aw.action, status: 'reflected', code: null };
         } else {
           st.outcome = { action: aw.action, status: 'view_overtaken', code: 'VIEW_OVERTAKEN' };
@@ -183,13 +212,18 @@ export function createValuationActions(deps) {
     const doc = draftDoc(ctx); const slotId = ctx.draft ? ctx.draft.id : null;
     const same = !!doc && doc.valuationId === aw.valuationId;
     const hash = doc ? (doc.contentHash ?? null) : null;
-    const ours = aw.result.contentHash ?? null; const expected = aw.result.state || (aw.action === 'submit' ? 'submitted' : aw.action === 'withdraw' ? 'withdrawn' : null);
+    const ours = aw.result.contentHash ?? null; const expected = aw.result.state || STATE_AFTER[aw.action] || null;
     // (a) identity: the artifact the reply names
     if (same) {
       if (aw.action === 'createDraft') return 'reflected';
       if (aw.action === 'updateDraft' && ours !== null && hash === ours) return 'reflected';
-      if ((aw.action === 'submit' || aw.action === 'withdraw') && expected && doc.state === expected) return 'reflected';
+      if (aw.action === 'withdraw' && expected && doc.state === expected) return 'reflected'; // terminal state: it cannot recur
+      // submit / review / return: a state NAME repeats across cycles (submitted -> reviewed -> returned -> submitted ...) and a mark of ours on a later revision may belong
+      // to ANOTHER request of the same user, so neither is an identity of THIS request. The reply names no effect id or revision for them: only an ordered read decides (below).
     }
+    // (a) identity of a release: the head names the valuation we approved / the latest valuation shown is the one we rejected
+    if (aw.action === 'approve' && ctx.approved && ctx.approved.headId === aw.valuationId) return 'reflected';
+    if (aw.action === 'reject' && ctx.latestValuation && ctx.latestValuation.id === aw.valuationId && ctx.latestValuation.doc && ctx.latestValuation.doc.state === 'rejected') return 'reflected';
     // (b) order, from a revision the reply itself carries
     if (same && Number.isInteger(aw.result.rev) && Number.isInteger(doc.rev) && doc.rev > aw.result.rev) return 'overtaken'; // the view is provably past the reply and not showing it
     // (b) order, from a confirmed read that began after the reply
@@ -197,8 +231,11 @@ export function createValuationActions(deps) {
     switch (aw.action) {
       case 'createDraft': return 'overtaken';                                    // after the reply the draft exists; it is not (or no longer) the occupant
       case 'updateDraft': return ours !== null || !!aw.prev ? 'overtaken' : null;  // not our hash, read after the reply: a later version (or none)
-      case 'submit': return 'overtaken';
+      case 'submit': return same && expected && doc.state === expected ? 'reflected' : 'overtaken'; // an ORDERED read shows our state; any other state is a later one
       case 'withdraw': return !doc && slotId === null ? 'reflected' : 'overtaken'; // empty slot, read after the reply: the draft is gone
+      case 'reject': return !doc && slotId === null ? 'reflected' : 'overtaken';   // the slot was released; absence counts only under order
+      case 'review': case 'returnDraft': return same && expected && doc.state === expected ? 'reflected' : 'overtaken';   // an ORDERED read shows our state; any other state is a later one
+      case 'approve': return 'overtaken';                                                                              // the head naming us was identity above
       default: return null;
     }
   }
@@ -396,8 +433,34 @@ export function createValuationActions(deps) {
     if (!guard.isCurrent(gen) || states.get(key) !== st) return { status: 'background' };
     return applyResult(key, st, 'createDraft', res, { prev: null, valuationId: null, opensEditor: true });
   }
-  function prepare(action) {
-    if (action !== 'submit' && action !== 'withdraw') return { status: 'blocked', code: 'ACTION_UNKNOWN' };
+  /** Validates the free-text part of a reviewer action. Returns { reason, acknowledgeSuspended } or { blocked: code }. The text is COPIED here (strings are immutable);
+      what is returned is what the confirmation shows and what is sent. */
+  function reviewerInput(action, opts, sess, ctx) {
+    const o = opts && typeof opts === 'object' ? opts : {};
+    const raw = o.reason;
+    if (raw !== undefined && raw !== null && typeof raw !== 'string') return { blocked: 'REASON_REQUIRED' };
+    const text = typeof raw === 'string' ? raw : '';
+    if (text.length > MAX_REASON) return { blocked: 'REASON_REQUIRED' };           // the server refuses > 1000 BEFORE trimming
+    const trimmed = text.trim();
+    if (action === 'returnDraft' || action === 'reject') return trimmed ? { reason: trimmed, acknowledgeSuspended: false } : { blocked: 'REASON_REQUIRED' };
+    if (action !== 'approve') return trimmed ? { blocked: 'REASON_NOT_ACCEPTED' } : { reason: undefined, acknowledgeSuspended: false };
+    const h = headFacts(ctx);
+    if (h.ok && h.suspended) {
+      if (o.acknowledgeSuspended !== true || !trimmed) return { blocked: 'SUSPENDED_ACK_REQUIRED' };
+      if (h.changedBy && h.changedBy === sess.email) return { blocked: 'SUSPENDER_CANNOT_RESTORE' };
+      return { reason: trimmed, acknowledgeSuspended: true };
+    }
+    return { reason: trimmed || undefined, acknowledgeSuspended: false };           // a head that is not suspended: the acknowledgement is never sent
+  }
+  function previewFor(st, doc) {
+    if (!st.preview) return null;
+    if (st.preview.status === 'done' && doc && st.preview.token.valuationId === doc.valuationId && st.preview.token.storedHash === (doc.contentHash ?? null)) {
+      const r = st.preview.reply; return { status: 'done', stale: r.stale, scopeChanged: r.scopeChanged, dateOk: r.dateOk, candidate: r.candidate ? { status: r.candidate.status, reasonCodes: [...r.candidate.reasonCodes] } : null };
+    }
+    return { status: st.preview.status === 'done' ? 'outdated' : st.preview.status };
+  }
+  function prepare(action, opts) {
+    if (!PREPARABLE.includes(action)) return { status: 'blocked', code: 'ACTION_UNKNOWN' };
     const c = currentScope(); if (!c) return { status: 'blocked', code: 'NO_CONTEXT' };
     const { sess, ctx, st } = c; const doc = draftDoc(ctx);
     const g = gate(action, ctx, sess, st); if (!g.allowed) return { status: 'blocked', code: g.reason };
@@ -407,13 +470,25 @@ export function createValuationActions(deps) {
       const review = copyReviewFor(st, doc) || null;
       if (!E.copyReviewComplete(review)) return { status: 'blocked', code: 'COPY_REVIEW_REQUIRED', review };
     }
-    const snapshot = snapshotOf({ valuation: doc, head: { headId: null }, today: today() });
+    const reviewer = REVIEWER_ACTIONS.includes(action);
+    let input = { reason: undefined, acknowledgeSuspended: false }; let expectedContentHash;
+    if (reviewer) {
+      input = reviewerInput(action, opts, sess, ctx); if (input.blocked) return { status: 'blocked', code: input.blocked };
+      if (action === 'review' || action === 'approve') { expectedContentHash = doc.contentHash; if (typeof expectedContentHash !== 'string' || !HASH_RE.test(expectedContentHash)) return { status: 'blocked', code: 'HASH_INVALID' }; }
+    } else if (opts && opts.reason !== undefined && opts.reason !== null) return { status: 'blocked', code: 'REASON_NOT_ACCEPTED' };
+    const snapshot = snapshotOf({ valuation: doc, head: reviewer ? headForSnapshot(ctx) : { headId: null }, today: today() });
     const token = `p${++tokenSeq}`;
-    st.prepared = { token, action, snapshot, gen: guard.current(), valuationId: doc.valuationId };
+    // everything the request will contain is fixed HERE; confirm() reads only this record
+    st.prepared = { token, action, snapshot, gen: guard.current(), valuationId: doc.valuationId, reason: input.reason, acknowledgeSuspended: input.acknowledgeSuspended, expectedContentHash, headKey: action === 'approve' ? headKeyOf(ctx) : null };
+    const h = reviewer ? headFacts(ctx) : null;
     return {
       status: 'ready', token,
-      summary: { action, valuationId: doc.valuationId, fundId: ctx.fundId, valuationDate: ctx.valuationDate, state: doc.state, contentHash: doc.contentHash ?? null, rev: doc.rev ?? null, validation: doc.validation || null, copiedFrom: doc.copiedFrom || null },
-      limits: { notBoundToContent: true }, // contract §6.1: the server does not bind submit/withdraw to a fingerprint
+      summary: {
+        action, valuationId: doc.valuationId, fundId: ctx.fundId, valuationDate: ctx.valuationDate, state: doc.state, contentHash: doc.contentHash ?? null, rev: doc.rev ?? null, validation: doc.validation || null, copiedFrom: doc.copiedFrom || null,
+        content: JSON.parse(JSON.stringify(contentOfDoc(doc))), reason: input.reason ?? null, acknowledgeSuspended: input.acknowledgeSuspended === true,
+        head: h && h.ok ? { headId: h.headId, version: h.version, suspended: h.suspended } : null, preview: reviewer ? previewFor(st, doc) : null,
+      },
+      limits: { notBoundToContent: !(action === 'review' || action === 'approve') }, // contract §6.1: the server binds only review / approve (updateDraft too) to a fingerprint
     };
   }
   async function confirm(token) {
@@ -423,14 +498,20 @@ export function createValuationActions(deps) {
     st.prepared = null;
     const doc = draftDoc(ctx);
     if (!doc || doc.valuationId !== p.valuationId) return { status: 'blocked', code: 'VIEW_CHANGED' };
-    const changed = diffSnapshots(p.snapshot, snapshotOf({ valuation: doc, head: { headId: null }, today: today() }));
+    const reviewer = REVIEWER_ACTIONS.includes(p.action);
+    const changed = diffSnapshots(p.snapshot, snapshotOf({ valuation: doc, head: reviewer ? headForSnapshot(ctx) : { headId: null }, today: today() }));
+    if (p.headKey !== null && headKeyOf(ctx) !== p.headKey && !changed.includes('headId')) changed.push('head');
     if (changed.length) return { status: 'blocked', code: 'VIEW_CHANGED', changed };
     const ed = st.editor; if (p.action === 'submit' && ed && E.isDirty(ed.form, ed.baseline)) return { status: 'blocked', code: 'UNSAVED_EDITS' };
     const g = gate(p.action, ctx, sess, st); if (!g.allowed) { st.outcome = { action: p.action, status: 'blocked', code: g.reason }; notify(); return { status: 'blocked', code: g.reason }; }
+    const fields = { valuationId: doc.valuationId };
+    if (p.expectedContentHash !== undefined) fields.expectedContentHash = p.expectedContentHash;
+    if (p.reason !== undefined) fields.reason = p.reason;
+    if (p.acknowledgeSuspended === true) fields.acknowledgeSuspended = true;
     const gen = guard.current();
-    const res = await runner.begin({ action: p.action, fields: { valuationId: doc.valuationId }, scope: { fundId: ctx.fundId, valuationDate: ctx.valuationDate } });
+    const res = await runner.begin({ action: p.action, fields, scope: { fundId: ctx.fundId, valuationDate: ctx.valuationDate } });
     if (!guard.isCurrent(gen) || states.get(key) !== st) return { status: 'background' };
-    return applyResult(key, st, p.action, res, { prev: { rev: doc.rev ?? null, contentHash: doc.contentHash ?? null, state: doc.state ?? null }, valuationId: doc.valuationId });
+    return applyResult(key, st, p.action, res, { prev: { rev: doc.rev ?? null, contentHash: doc.contentHash ?? null, state: doc.state ?? null }, valuationId: doc.valuationId, reason: p.reason, by: sess.email });
   }
 
   /* ---------------- "check now": the STORED version, bound to session + valuation + hash + sequence ---------------- */
@@ -452,6 +533,9 @@ export function createValuationActions(deps) {
     if (!docNow || docNow.valuationId !== token.valuationId) { st.preview = { status: 'outdated', token }; notify(); return { status: 'dropped' }; }
     if (failure) { st.preview = { status: 'error', token, error: failure }; notify(); return { status: 'error', error: failure }; }
     const r = reply || {};
+    // (a view that itself moved while the request was out is "outdated", below)
+    // the reply must be ABOUT the stored version the user is looking at: another valuation, another fingerprint or none is not a statement about this content
+    if ((docNow.contentHash ?? null) === token.storedHash && (r.valuationId !== token.valuationId || (r.contentHash ?? null) !== token.storedHash || token.storedHash === null)) { st.preview = { status: 'mismatch', token, mismatch: { shown: token.storedHash, replied: r.contentHash ?? null, valuationId: r.valuationId ?? null } }; notify(); return { status: 'mismatch' }; }
     st.preview = { status: 'done', token, reply: { valuationId: r.valuationId ?? null, state: r.state ?? null, contentHash: r.contentHash ?? null, today: r.today ?? null, dateOk: r.dateOk ?? null, stale: r.stale ?? null, scopeChanged: r.scopeChanged ?? null, currentHeadId: r.currentHeadId ?? null, candidate: r.candidate ? { status: r.candidate.status ?? null, reasonCodes: Array.isArray(r.candidate.reasonCodes) ? [...r.candidate.reasonCodes] : [], issues: r.candidate.issues ?? null } : null } };
     if ((docNow.contentHash ?? null) !== token.storedHash) st.preview.status = 'outdated'; // the stored version moved while the request was out
     notify(); return { status: st.preview.status };
@@ -491,7 +575,7 @@ export function createValuationActions(deps) {
   function getState() {
     const sess = sync(); const ctx = ctxFor();
     const t = today();
-    const out = { today: t, session: sess ? { email: sess.email, role: sess.role } : null, scope: null, available: {}, banners: [], pending: [], editor: null, awaiting: null, preview: null, outcome: null, limits: { submitAndWithdrawNotBoundToContent: true }, dayKind: null, unsentElsewhere: [] };
+    const out = { today: t, session: sess ? { email: sess.email, role: sess.role } : null, scope: null, available: {}, banners: [], pending: [], editor: null, awaiting: null, preview: null, outcome: null, limits: { submitAndWithdrawNotBoundToContent: true, returnAndRejectNotBoundToContent: true }, dayKind: null, unsentElsewhere: [], review: null };
     if (!sess || !ctx) return out;
     const key = keyOf(sess, ctx); const st = states.get(key) || { editor: null, awaiting: null, preview: null, outcome: null, copyReviews: new Map() };
     const doc = draftDoc(ctx);
@@ -503,6 +587,7 @@ export function createValuationActions(deps) {
     out.available = {
       createDraft: createCtx ? gate('createDraft', createCtx, sess, states.get(keyOf(sess, createCtx))) : no('NO_CONTEXT'),
       updateDraft: gate('updateDraft', ctx, sess, st), submit: gate('submit', ctx, sess, st), withdraw: gate('withdraw', ctx, sess, st),
+      review: gate('review', ctx, sess, st), returnDraft: gate('returnDraft', ctx, sess, st), reject: gate('reject', ctx, sess, st), approve: gate('approve', ctx, sess, st),
     };
     if (out.available.submit.allowed) {
       const ed = st.editor; const review = (doc && st.copyReviews.get(doc.valuationId)) || null;
@@ -535,9 +620,14 @@ export function createValuationActions(deps) {
         },
       };
     }
+    if (doc) { // what the reviewer's form shows BEFORE anything is prepared (read only; the request is built from the prepared record, never from this)
+      const h = headFacts(ctx);
+      out.review = { valuationId: doc.valuationId, state: doc.state ?? null, contentHash: doc.contentHash ?? null, rev: doc.rev ?? null, validation: doc.validation || null, content: JSON.parse(JSON.stringify(contentOfDoc(doc))),
+        head: h.ok ? { ok: true, headId: h.headId, version: h.version, suspended: h.suspended, changedBy: h.changedBy } : { ok: false, reason: h.reason } };
+    }
     if (st.preview) {
       const p = st.preview; const dirtyNow = !!(ed && E.isDirty(ed.form, ed.baseline));
-      out.preview = { status: p.status, checks: 'STORED_VERSION', storedContentHash: p.token.storedHash, unsavedEditsNotChecked: dirtyNow, dirtyWhenRequested: p.token.dirtyAtRequest, reply: p.status === 'done' ? p.reply : null, error: p.error || null };
+      out.preview = { status: p.status, checks: 'STORED_VERSION', storedContentHash: p.token.storedHash, unsavedEditsNotChecked: dirtyNow, dirtyWhenRequested: p.token.dirtyAtRequest, reply: p.status === 'done' ? p.reply : null, mismatch: p.status === 'mismatch' ? { ...p.mismatch } : null, error: p.error || null };
     }
     return out;
   }

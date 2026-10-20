@@ -375,7 +375,7 @@ export function createFundValuationReader({ subscribe, getSession, verify = veri
   function contextFor(date) {
     if (typeof date !== 'string' || !isRealIsoDay(date) || !active) return null;
     const v = buildView(date);
-    return { fundId: v.fundId, valuationDate: date, status: v.status, stale: v.stale, draft: v.draft, latestValuation: v.latestValuation || null, read: { ...v.read, valuationDate: date } };
+    return { fundId: v.fundId, valuationDate: date, status: v.status, stale: v.stale, draft: v.draft, approved: v.approved || null, latestValuation: v.latestValuation || null, read: { ...v.read, valuationDate: date } };
   }
 
   return {

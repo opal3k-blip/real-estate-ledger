@@ -31,7 +31,12 @@ const LOCAL = {
   NUMBER_INVALID: ['رقم غير صالح', 'Invalid number'], AMOUNT_EMPTY: ['المبلغ مطلوب', 'Amount required'], ITEM_DESCRIPTION_EMPTY: ['الوصف مطلوب', 'Description required'],
   CANNOT_CLEAR_STORED_FIELD: ['لا يمكن مسح قيمة محفوظة', 'A stored value cannot be cleared'],
   IN_FLIGHT: ['قراءة من الخادم جارية', 'A server read is in progress'],
+  NOT_PREPARED: ['انتهى التجهيز — أعد المحاولة', 'The preparation expired — try again'],
 };
+const REVIEWER_ACTS = ['review', 'returnDraft', 'reject', 'approve'];
+const REVIEWER_ROLES = ['senior_ic', 'admin'];
+const ACT_LABEL = { review: ['مراجعة', 'Review'], returnDraft: ['إرجاع', 'Return'], reject: ['رفض', 'Reject'], approve: ['اعتماد', 'Approve'] };
+const ACT_NEEDS_REASON = { review: false, returnDraft: true, reject: true, approve: false };
 function reasonOf(code, lang) {
   const i = lang === 'en' ? 1 : 0;
   if (code && Object.prototype.hasOwnProperty.call(LOCAL, code)) return LOCAL[code][i];
@@ -156,7 +161,8 @@ function renderPending(model, T, lang) {
   const rows = list.map((e) => {
     let d = e.scope; try { d = JSON.parse(e.scope).slice(1).join(' / '); } catch (x) { /* raw */ }
     const risk = model.ui.discarding === e.scope;
-    return `<li data-fve-pending="${esc(e.scope)}"><b>${esc(e.action)}</b> <code>${esc(d)}</code> — ${esc(e.status)}${e.lastOutcome && e.lastOutcome.code ? ` <code>${esc(e.lastOutcome.code)}</code>` : ''}`
+    const pl = e.payload && typeof e.payload === 'object' ? e.payload : null;   // the ORIGINAL payload: a retry sends exactly this, whatever is typed now
+    return `<li data-fve-pending="${esc(e.scope)}"><b>${esc(e.action)}</b> <code>${esc(d)}</code> — ${esc(e.status)}${pl && pl.reason ? ` <span class="note" data-fve="pending-reason" dir="auto">${T('السبب المرسل', 'Sent reason')}: ${esc(clip(pl.reason, 200))}</span>` : ''}${pl && pl.expectedContentHash ? ` <code dir="ltr" data-fve="pending-hash">${esc(String(pl.expectedContentHash).slice(0, 12))}…</code>` : ''}${e.lastOutcome && e.lastOutcome.code ? ` <code>${esc(e.lastOutcome.code)}</code>` : ''}`
       + ` ${btn('fve-retry-pending', T('أعد المحاولة بنفس المعرّف', 'Retry with the same id'), { attrs: `data-scope="${esc(e.scope)}"` })}`
       + (risk ? ` <label class="note"><input type="checkbox" data-fve-ack="risk"> ${T('أُقرّ بأن الطلب قد يكون نُفّذ على الخادم', 'I acknowledge the request may have been executed on the server')}</label> ${btn('fve-discard-confirm', T('تجاهل نهائيًا', 'Discard for good'), { attrs: `data-scope="${esc(e.scope)}"` })} ${btn('fve-discard-cancel', T('تراجع', 'Back'))}`
         : ` ${btn('fve-discard-pending', T('تجاهل…', 'Discard…'), { attrs: `data-scope="${esc(e.scope)}"` })}`)
@@ -186,11 +192,100 @@ function renderDay(st, ed, model, T) {
 
 function renderPrepared(model, T, lang) {
   const p = model.ui.prepared; if (!p) return '';
+  if (REVIEWER_ACTS.includes(p.action)) return '';   // the reviewer section shows its own confirmation card
   const s = p.summary || {};
   return block('prepared', `${p.action === 'submit' ? T('تأكيد الإرسال', 'Confirm submit') : T('تأكيد السحب', 'Confirm withdraw')}`,
     `<div class="kv"><div class="k">${T('المعرّف', 'Id')}</div><div class="v"><code>${esc(s.valuationId)}</code></div><div class="k">${T('التاريخ', 'Date')}</div><div class="v">${esc(s.valuationDate)}</div><div class="k">${T('الحالة', 'State')}</div><div class="v">${esc(s.state)}</div></div>`
     + `<p class="note">${T('تنبيه: الإرسال والسحب لا يحملان بصمة المحتوى على الخادم؛ هذا الفحص مجاملة ولا يمنع سباقًا على الخادم.', 'Note: submit and withdraw carry no content fingerprint on the server; this check is a courtesy and does not prevent a race on the server.')}</p>`
     + `${btn('fve-confirm-act', p.action === 'submit' ? T('أرسل', 'Submit') : T('اسحب', 'Withdraw'), { primary: true, attrs: `data-token="${esc(p.token)}"` })} ${btn('fve-cancel-prepare', T('إلغاء', 'Cancel'))}`, 'data-fve="prepared"');
+}
+
+/* ---------------- reviewer section (B2-3b): review / return / reject / approve ----------------
+   Everything shown on the confirmation card comes from the PREPARED record (summary), never from the live view or the form: what is shown is what will be sent. */
+/** Everything below is read from the PREPARED copy of the stored content (the one the fingerprint belongs to), never from the live view; every text goes through esc().
+    A value is shown as text whatever its shape (an object is listed key by key, never "[object Object]"). */
+const textOf = (v) => {
+  if (v === null || v === undefined) return '—';
+  if (typeof v === 'string') return v === '' ? '—' : v;
+  if (typeof v === 'number' || typeof v === 'boolean') return String(v);
+  try { return JSON.stringify(v); } catch (e) { return '—'; }
+};
+const kvRow = (label, valueHtml) => `<div class="k" style="min-width:0;">${label}</div><div class="v" style="min-width:0; overflow-wrap:anywhere; word-break:break-word; text-align:start; direction:inherit; font-weight:400;">${valueHtml}</div>`;
+const bdi = (v) => `<span dir="auto">${esc(textOf(v))}</span>`;
+function contentRows(c, T) {
+  if (!c || typeof c !== 'object') return '';
+  const comp = c.components && typeof c.components === 'object' ? c.components : {};
+  const NAMES = { assetsValue: T('قيمة الأصول', 'Assets value'), cashRetained: T('النقد المحتجز', 'Cash retained'), otherAssets: T('أصول أخرى', 'Other assets'), liabilities: T('الالتزامات', 'Liabilities'), distributionsPayable: T('توزيعات مستحقة غير مدفوعة', 'Distributions payable') };
+  const scalar = Object.keys(comp).filter((k) => k !== 'otherAssetsItems');
+  const items = Array.isArray(comp.otherAssetsItems) ? comp.otherAssetsItems : [];
+  const itemsHtml = items.length ? `<ul data-fve="rv-items" style="margin:0; padding-inline-start:18px;">${items.map((it, i) => `<li data-fve="rv-item"><span dir="auto">${esc(textOf(it && it.description))}</span> — <b dir="ltr">${esc(textOf(it && it.amount))}</b></li>`).join('')}</ul>` : '—';
+  const cov = c.coverage && typeof c.coverage === 'object' ? c.coverage : {}; const uh = cov.unlinkedHoldings && typeof cov.unlinkedHoldings === 'object' ? cov.unlinkedHoldings : {};
+  const linked = Array.isArray(cov.linkedAssets) ? cov.linkedAssets : [];
+  const uhItems = Array.isArray(uh.items) ? uh.items : [];
+  const no = c.nonOverlap && typeof c.nonOverlap === 'object' ? c.nonOverlap : {};
+  const NO_NAMES = { cashNotInAssets: T('النقد المحتجز غير داخل في قيمة الأصول', 'Cash retained is not inside the assets value'), otherAssetsNotInAssets: T('الأصول الأخرى غير داخلة في قيمة الأصول', 'Other assets are not inside the assets value'), assetsStatedGrossOfLiabilities: T('قيمة الأصول مذكورة إجمالية قبل الالتزامات', 'Assets value is stated gross of liabilities') };
+  const note = textOf(c.methodNote);
+  const noteHtml = note.length > 300 ? `<details data-fve="rv-note-full"><summary>${esc(note.slice(0, 120))}… <b>${T('(اقرأ الملاحظة كاملة)', '(read the full note)')}</b></summary><div dir="auto" style="white-space:pre-wrap; overflow-wrap:anywhere;">${esc(note)}</div></details>` : `<div dir="auto" style="white-space:pre-wrap; overflow-wrap:anywhere;" data-fve="rv-note">${esc(note)}</div>`;
+  return `<div class="kv" data-fve="rv-content" style="display:grid; grid-template-columns:minmax(110px,max-content) minmax(0,1fr); gap:4px 12px; align-items:start;">`
+    + kvRow(T('القيمة المتبقية', 'Residual value'), `<b dir="ltr" data-fve="rv-residual">${esc(textOf(c.residualValue))}</b> ${esc(textOf(c.currency))}`)
+    + kvRow(T('الأساس', 'Basis'), `<span dir="ltr" data-fve="rv-basis">${esc(textOf(c.basis))}</span>`)
+    + kvRow(T('المكوّنات', 'Components'), `<span data-fve="rv-components">${scalar.length ? scalar.map((k) => `${esc(NAMES[k] || k)}=<b dir="ltr">${esc(textOf(comp[k]))}</b>`).join(' · ') : '—'}</span>`)
+    + kvRow(T('بنود «أصول أخرى»', '“Other assets” items'), itemsHtml)
+    + kvRow(T('الطريقة', 'Method'), bdi(c.method)) + kvRow(T('ملاحظة الطريقة', 'Method note'), noteHtml)
+    + kvRow(T('المصدر', 'Source'), `<span dir="auto" data-fve="rv-source">${esc(textOf(c.source && c.source.ref))} · ${esc(textOf(c.source && c.source.provider))}</span>`)
+    + kvRow(T('إقرارات عدم التداخل', 'Non-overlap declarations'), `<ul data-fve="rv-nonoverlap" style="margin:0; padding-inline-start:18px;">${Object.keys(no).length ? Object.keys(no).map((k) => `<li>${no[k] === true ? '✔' : '✖'} ${esc(NO_NAMES[k] || k)} <code>${esc(textOf(no[k]))}</code></li>`).join('') : '<li>—</li>'}</ul>`)
+    + kvRow(T('الأصول المرتبطة المغطّاة', 'Covered linked assets'), `<code dir="ltr" data-fve="rv-linked">${linked.length ? linked.map((x) => esc(textOf(x))).join(', ') : '—'}</code>`)
+    + kvRow(T('أصول غير مرتبطة', 'Unlinked holdings'), `<span data-fve="rv-unlinked"><b>${esc(textOf(uh.declared))}</b>${uhItems.length ? `<ul style="margin:0; padding-inline-start:18px;">${uhItems.map((it) => `<li><span dir="auto">${esc(textOf(it && it.description))}</span> — <b dir="ltr">${esc(textOf(it && it.amount))}</b></li>`).join('')}</ul>` : ''}</span>`)
+    + '</div>';
+}
+function renderReviewNotice(model, T, lang) {
+  const n = model.ui && model.ui.notice; if (!n || !(String(n.action).startsWith('fve-rv') || (n.action === 'fve-confirm-act' && n.rv))) return '';
+  return `<p class="note fve-banner" style="color:var(--bad);" data-fve="rv-notice" data-status="${esc(n.status)}">ℹ️ ${esc(n.status)} ${n.code ? why(n.code, lang) : ''}</p>`;
+}
+function renderReviewPrepared(model, T, lang) {
+  const p = model.ui.prepared; const s = p.summary || {}; const act = p.action; const [ar, en] = ACT_LABEL[act];
+  const pv = s.preview; let pvHtml = '';
+  if (pv) {
+    if (pv.status === 'done') pvHtml = `<p class="note" data-fve="rv-preview" data-status="done">🔎 ${T('فحص النسخة المخزّنة (مطابق لما يظهر)', 'Check of the stored version (matches what is shown)')}: ${pv.candidate ? esc(pv.candidate.status) + ' ' + (pv.candidate.reasonCodes || []).map((c) => `<code>${esc(c)}</code>`).join(' ') : '—'}</p>`;
+    else if (pv.status === 'mismatch') pvHtml = `<p class="note" style="color:var(--bad);" data-fve="rv-preview" data-status="mismatch">⚠️ ${T('ردّ الفحص يخص نسخة أخرى غير المعروضة: لا يُعدّ فحصًا لهذا المحتوى ولا نتيجة له هنا. الخادم يتحقق من البصمة عند التنفيذ.', 'The check reply is about another version than the one shown: it is not a check of this content and no result is shown. The server verifies the fingerprint when it executes.')}</p>`;
+    else if (pv.status === 'outdated') pvHtml = `<p class="note" data-fve="rv-preview" data-status="outdated">⚠️ ${T('الفحص قديم بعد تغيّر النسخة.', 'The check is outdated after the version changed.')}</p>`;
+    else pvHtml = `<p class="note" data-fve="rv-preview" data-status="${esc(pv.status)}">🔎 ${esc(pv.status)}</p>`;
+  } else pvHtml = `<p class="note" data-fve="rv-preview" data-status="none">${T('لم يُجرَ فحص للنسخة المخزّنة (اختياري).', 'No check of the stored version was made (optional).')}</p>`;
+  const bound = !(p.limits && p.limits.notBoundToContent);
+  const head = s.head ? `<div class="k">${T('الرأس الساري', 'Effective head')}</div><div class="v" style="min-width:0; overflow-wrap:anywhere; word-break:break-word; text-align:start; direction:inherit; font-weight:400;"><code>${esc(s.head.headId || '—')}</code> v${esc(s.head.version)} ${s.head.suspended ? `<b style="color:var(--bad);">${T('معلّق', 'suspended')}</b>` : ''}</div>` : '';
+  const ackRow = act === 'approve' ? `<div class="k">${T('إقرار اعتماد بديل لنسخة معلّقة', 'Acknowledgement (replacing a suspended version)')}</div><div class="v" data-fve="rv-ack">${s.acknowledgeSuspended ? '✔ ' + T('نعم — سيُرسل', 'yes — will be sent') : T('لا يُرسل', 'not sent')}</div>` : '';
+  const reasonRow = (act === 'review') ? '' : `<div class="k">${T('السبب (كما سيُرسل)', 'Reason (as it will be sent)')}</div><div class="v" style="min-width:0; overflow-wrap:anywhere; word-break:break-word; text-align:start; direction:inherit; font-weight:400; white-space:pre-wrap;" dir="auto" data-fve="rv-reason">${s.reason ? esc(s.reason) : '—'}</div>`;
+  return block('prepared', `${T(`تأكيد: ${ar}`, `Confirm: ${en}`)}`,
+    `<div class="kv" style="display:grid; grid-template-columns:minmax(110px,max-content) minmax(0,1fr); gap:4px 12px; align-items:start;"><div class="k">${T('المعرّف', 'Id')}</div><div class="v" style="min-width:0; overflow-wrap:anywhere; word-break:break-word; text-align:start; direction:inherit; font-weight:400;"><code>${esc(s.valuationId)}</code></div><div class="k">${T('التاريخ', 'Date')}</div><div class="v" style="min-width:0; overflow-wrap:anywhere; word-break:break-word; text-align:start; direction:inherit; font-weight:400;">${esc(s.valuationDate)}</div>`
+    + `<div class="k">${T('الحالة', 'State')}</div><div class="v" style="min-width:0; overflow-wrap:anywhere; word-break:break-word; text-align:start; direction:inherit; font-weight:400;">${esc(s.state)} · rev ${esc(s.rev)}</div>`
+    + `<div class="k">${T('البصمة', 'Fingerprint')}</div><div class="v" style="min-width:0; overflow-wrap:anywhere; word-break:break-word; text-align:start; direction:inherit; font-weight:400;" dir="ltr" data-fve="rv-hash"><code>${esc(s.contentHash)}</code> ${bound ? `<span class="note">${T('(يُرسل مع الطلب ويقيّد التنفيذ)', '(sent with the request; the server binds to it)')}</span>` : ''}</div>`
+    + head + reasonRow + ackRow + '</div>' + contentRows(s.content, T) + pvHtml
+    + (bound ? '' : `<p class="note" data-fve="rv-unbound">${T('تنبيه: هذا الإجراء لا يحمل بصمة المحتوى على الخادم؛ هذا الفحص مجاملة ولا يمنع سباقًا على الخادم.', 'Note: this action carries no content fingerprint on the server; this check is a courtesy and does not prevent a race on the server.')}</p>`)
+    + `${btn('fve-confirm-act', T(ar, en), { primary: true, attrs: `data-token="${esc(p.token)}"` })} ${btn('fve-rv-edit', T('عدّل', 'Edit'))} ${btn('fve-rv-cancel', T('إلغاء', 'Cancel'))}`, 'data-fve="prepared" data-kind="review"');
+}
+function renderReviewer(st, model, T, lang) {
+  if (!st.session || !REVIEWER_ROLES.includes(st.session.role) || !model.reader || !model.reader.hasDraft) return '';
+  const rv = model.ui.rv; const rvInfo = st.review;
+  const av = (a) => (st.available && st.available[a]) || { allowed: false, reason: 'NO_CONTEXT' };
+  let body = `<div class="fve-actions" style="display:flex; flex-wrap:wrap; gap:6px; margin:8px 0;">`
+    + REVIEWER_ACTS.map((a) => btn('fve-rv-open', T(`${ACT_LABEL[a][0]}…`, `${ACT_LABEL[a][1]}…`), { allowed: av(a).allowed, why: reasonOf(av(a).reason, lang), attrs: `data-act="${a}"` })).join('') + '</div>';
+  if (rvInfo) body += `<p class="note" data-fve="rv-target">${T('التقييم الظاهر', 'Shown valuation')}: <code>${esc(rvInfo.valuationId)}</code> · ${esc(rvInfo.state)} · rev ${esc(rvInfo.rev)} · <code dir="ltr">${esc(rvInfo.contentHash)}</code></p>`;
+  body += renderReviewNotice(model, T, lang);
+  if (rv && model.ui.prepared && REVIEWER_ACTS.includes(model.ui.prepared.action)) body += renderReviewPrepared(model, T, lang);
+  else if (rv) {
+    const act = rv.act; const [ar, en] = ACT_LABEL[act]; const head = rvInfo && rvInfo.head;
+    const suspended = act === 'approve' && head && head.ok && head.suspended;
+    const reasonShown = act !== 'review';
+    const required = ACT_NEEDS_REASON[act] || suspended;
+    body += `<section data-fvp-section="reviewer" tabindex="-1" data-fve="rv-form" data-act="${esc(act)}">`
+      + `<p class="step-sub" style="margin:4px 0;">${T(`${ar}: عن التقييم`, `${en}: valuation`)} <code>${esc(rvInfo && rvInfo.valuationId)}</code></p>`
+      + (act === 'approve' && head && !head.ok ? `<p class="note" style="color:var(--bad);" data-fve="rv-head-unknown">⚠️ ${esc(reasonOf(head.reason, lang))} <code>${esc(head.reason)}</code></p>` : '')
+      + (suspended ? `<p class="note" style="color:var(--bad);" data-fve="rv-suspended">⚠️ ${T('النسخة السارية معلّقة: الاعتماد البديل يتطلب إقرارًا وسببًا.', 'The effective version is suspended: approving a replacement needs an acknowledgement and a reason.')} <code>${esc(head.headId)}</code> v${esc(head.version)}</p>` : '')
+      + (reasonShown ? `<div class="field"><label><span>${T('السبب', 'Reason')} ${required ? T('(إلزامي، حتى 1000 حرف)', '(required, up to 1000 characters)') : T('(اختياري)', '(optional)')}</span><textarea data-fve-rv="reason" ${FIELD}="rv.reason" rows="3" maxlength="1000" autocomplete="off" style="width:100%;" aria-label="${esc(T('السبب', 'Reason'))}">${esc(rv.reason)}</textarea></label></div>` : `<p class="note">${T('المراجعة لا تحمل سببًا.', 'A review carries no reason.')}</p>`)
+      + (suspended ? `<label style="display:block;"><input type="checkbox" data-fve-rv="ack" ${FIELD}="rv.ack" ${rv.ack ? 'checked' : ''}> ${T('أُقرّ باعتماد بديل لنسخة معلّقة', 'I acknowledge approving a replacement of a suspended version')}</label>` : '')
+      + `<div>${btn('fve-rv-prepare', T('جهّز التأكيد', 'Prepare confirmation'), { primary: true })} ${btn('fve-rv-cancel', T('إلغاء', 'Cancel'))}</div></section>`;
+  }
+  return block('reviewer', `🧑‍⚖️ ${T('إجراءات المراجعة', 'Review actions')}`, body, 'data-fve="reviewer"');
 }
 
 function renderPreview(st, T) {
@@ -200,6 +295,12 @@ function renderPreview(st, T) {
   const head = `<p class="note">${T('فحص النسخة المخزّنة', 'Check of the stored version')} <code>${esc(p.storedContentHash)}</code></p>`;
   if (p.status === 'error') return block('preview', '🔎', head + `<p class="note">⛔ ${esc(p.error && p.error.message)}</p>` + warn, 'data-fve="preview"');
   if (p.status === 'outdated') return block('preview', '🔎', head + `<p class="note">⚠️ ${T('تغيّرت النسخة المخزّنة بعد الفحص — النتيجة قديمة.', 'The stored version changed after the check — the result is outdated.')}</p>` + warn, 'data-fve="preview"');
+  if (p.status === 'mismatch') {
+    const m = p.mismatch || {};
+    return block('preview', '🔎', head + `<p class="note" style="color:var(--bad);" data-fve="preview-mismatch">⚠️ ${T('ردّ الفحص يخص نسخة أخرى غير المعروضة: لا يُعدّ فحصًا لهذا المحتوى ولا نتيجة له هنا. الخادم يتحقق من البصمة عند التنفيذ.', 'The check reply is about another version than the one shown: it is not a check of this content and no result is shown. The server verifies the fingerprint when it executes.')}</p>`
+      + `<div class="kv"><div class="k">${T('البصمة المعروضة', 'Shown fingerprint')}</div><div class="v" dir="ltr"><code>${esc(textOf(m.shown))}</code></div><div class="k">${T('بصمة الرد', 'Reply fingerprint')}</div><div class="v" dir="ltr"><code>${esc(textOf(m.replied))}</code></div></div>` + warn, 'data-fve="preview" data-status="mismatch"');
+  }
+  if (p.status !== 'done' || !p.reply) return block('preview', '🔎', head + `<p class="note" data-fve="preview-other" data-status="${esc(p.status)}">${esc(p.status)}</p>` + warn, 'data-fve="preview"');   // no result fields for a state that has no result
   const r = p.reply || {}; const cand = r.candidate;
   return block('preview', '🔎', head + `<div class="kv"><div class="k">${T('اليوم عند الخادم', 'Server today')}</div><div class="v">${esc(r.today)}</div><div class="k">${T('التاريخ سليم', 'Date ok')}</div><div class="v">${esc(r.dateOk)}</div><div class="k">${T('قديمة (أساس الرأس)', 'Stale (head base)')}</div><div class="v">${esc(r.stale)}</div><div class="k">${T('تغيّر النطاق', 'Scope changed')}</div><div class="v">${esc(r.scopeChanged)}</div>`
     + (cand ? `<div class="k">${T('نتيجة المرشّح', 'Candidate')}</div><div class="v">${esc(cand.status)} ${(cand.reasonCodes || []).map((c) => `<code>${esc(c)}</code>`).join(' ')}</div>` : '') + '</div>' + warn, 'data-fve="preview"');
@@ -258,7 +359,7 @@ export function renderEditor(model, ctx = {}) {
     ? `<p class="note" data-fve="pinned">📌 ${T(`المحرّر مثبَّت على تاريخ ${model.pinnedDate} ولا يتبع التاريخ المعروض أعلاه (${model.reader.selectedDate}).`, `The editor is pinned to ${model.pinnedDate} and does not follow the date shown above (${model.reader.selectedDate}).`)}</p>` : '';
   const readBar = `<p class="note" data-fve="readbar">${model.reader && model.reader.read && model.reader.read.confirmed ? '🟢' : '🟡'} ${T('قراءة الخادم', 'Server read')}: ${model.reader && model.reader.read && model.reader.read.confirmed ? T('مؤكَّدة', 'confirmed') : T('غير مؤكَّدة', 'not confirmed')}${model.reader && model.reader.read && model.reader.read.inFlight > 0 ? ` · ⏳ ${T('جارية', 'in progress')}` : ''} ${btn('fve-refresh', T('تحقق من الخادم الآن', 'Check the server now'), { allowed: !!(model.refresh && model.refresh.allowed), why: reasonOf(model.refresh && model.refresh.reason, lang) })}</p>`;
   body += readBar + pinnedNote + renderStatusBanners(st, model.ui, model, T, lang) + renderPending(model, T, lang) + renderDay(st, ed, model, T);
-  if (!writer) body += `<p class="note" data-fve="read-only">🔒 ${T('دورك يقرأ التقييمات فقط؛ لا إجراءات كتابة.', 'Your role only reads valuations; no write actions.')}</p>`;
+  if (!writer) body += `<p class="note" data-fve="read-only">🔒 ${REVIEWER_ROLES.includes(st.session.role) ? T('دورك لا يكتب المسودات؛ إجراءات المراجعة متاحة أدناه بحسب حالة التقييم.', 'Your role does not write drafts; review actions are below, by valuation state.') : T('دورك يقرأ التقييمات فقط؛ لا إجراءات كتابة.', 'Your role only reads valuations; no write actions.')}</p>`;
   if (!ed) {
     const create = (st.available && st.available.createDraft) || { allowed: false, reason: 'NO_CONTEXT' };
     const copy = model.reader && model.reader.copySource;
@@ -267,7 +368,7 @@ export function renderEditor(model, ctx = {}) {
       + (model.reader && model.reader.hasDraft ? btn('fve-open-draft', T('افتح المسودة الجارية للتحرير', 'Open the current draft for editing'), { allowed: writer }) : '')
       + (copy && canServerCopy(copy.state) ? btn('fve-copy', T('انسخ كمسودة جديدة لليوم', 'Copy as a new draft for today'), { allowed: writer && create.allowed, why: reasonOf(create.reason, lang), attrs: `data-source-id="${esc(copy.id)}" data-source-state="${esc(copy.state)}"` }) : '')
       + (model.reader && model.reader.hasDraft ? btn('fve-check-now', T('افحص الآن (النسخة المخزّنة)', 'Check now (stored version)'), { allowed: model.checkAllowed, why: reasonOf(model.checkWhy, lang) }) : '')
-      + '</div>' + renderPrepared(model, T, lang) + renderPreview(st, T);
-  } else body += renderPrepared(model, T, lang) + renderPreview(st, T) + renderForm(st, ed, model, T, lang);
+      + '</div>' + renderPrepared(model, T, lang) + renderReviewer(st, model, T, lang) + renderPreview(st, T);
+  } else body += renderPrepared(model, T, lang) + renderReviewer(st, model, T, lang) + renderPreview(st, T) + renderForm(st, ed, model, T, lang);
   return `<div class="panel fve" data-fve="root" data-scope-date="${esc(scopeDate)}" style="margin-top:14px;"><div class="panel-head"><h3 style="font-size:14px;">✏️ ${T('محرّر تقييم القيمة المتبقية', 'Residual valuation editor')}${scopeDate ? ` <span class="note">${esc(scopeDate)}</span>` : ''}</h3></div>${body}</div>`;
 }

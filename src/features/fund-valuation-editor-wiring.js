@@ -35,7 +35,8 @@ export function createEditorWiring(deps) {
   let repliesSeen = 0; let repliesAtIssue = -1; let lastIssueAt = 0;
   const stats = { refreshIssued: 0, refreshCoalesced: 0, refreshBlockedManual: 0, inputIgnored: 0 };
 
-  function freshUi() { return { confirm: null, prepared: null, discarding: null, notice: null }; }
+  function freshUi() { return { confirm: null, prepared: null, discarding: null, notice: null, rv: null }; }
+  const RV_ACTS = ['review', 'returnDraft', 'reject', 'approve'];
   /** access = a signed-in user whose role is RESOLVED and may read, and a reader that has not been refused. Any other state is a LOSS: it is detected wherever the
       module is asked for the session (not only at a render), clears everything at once (no confirmation), and the module then sees no session until a render finds access. */
   const accessOk = (s) => !!(s && s.uid && s.email && s.roleResolved === true && canRead(s.role));
@@ -120,6 +121,7 @@ export function createEditorWiring(deps) {
   function model() {
     const s = sess();
     const state = actions.getState();
+    dropStaleRv(state);
     if (releaseIfIdle(state)) return model();
     const v = reader.getView(); const ctx = getContext();
     const hasDraft = !!(ctx && ctx.draft && !ctx.draft.missing);
@@ -130,6 +132,12 @@ export function createEditorWiring(deps) {
       reader: { read: v.read, selectedDate: v.selectedDate, hasDraft, copySource: lv ? { id: lv.id, state: lv.doc.state } : null },
       checkAllowed: hasDraft && prev, checkWhy: !hasDraft ? 'NO_TARGET' : (prev ? '' : 'ROLE_NOT_ALLOWED'),
     };
+  }
+  /** the reviewer form belongs to ONE scope and ONE valuation: when either changes it (and its prepared card) goes at once */
+  function dropStaleRv(state) {
+    const rv = ui.rv; if (!rv) return;
+    const same = state.scope && state.scope.key === rv.scopeKey && state.review && state.review.valuationId === rv.valuationId;
+    if (!same) { ui.rv = null; if (ui.prepared && RV_ACTS.includes(ui.prepared.action)) ui.prepared = null; }
   }
   function renderSlot() {
     inRender = true;
@@ -155,10 +163,21 @@ export function createEditorWiring(deps) {
     return actions.setField(path, value);
   }
 
+  /** a typed value of the reviewer form. The fields are LOCKED once a confirmation is prepared (what is shown there is what will be sent). */
+  function onRvInput(field, value, { connected = true } = {}) {
+    if (!connected || dead || !sess()) { stats.inputIgnored += 1; return { status: 'ignored' }; }
+    const rv = ui.rv; if (!rv || ui.prepared) { stats.inputIgnored += 1; return { status: 'ignored' }; }
+    if (field === 'reason' && typeof value === 'string') rv.reason = value; else if (field === 'ack') rv.ack = value === true; else return { status: 'ignored' };
+    return { status: 'ok' };
+  }
+
   /* ---------------- actions from buttons ---------------- */
   async function handleAction(action, data = {}) {
     if (dead || !sess()) return { status: 'blocked', code: 'NO_SESSION' };
-    const note = (r) => { ui.notice = r && r.status && r.status !== 'ok' ? { action, status: r.status, code: r.code || null } : null; return r; };
+    // A reply that comes back AFTER the session changed belongs to the old session: it must not touch the new one's form, notices or pins.
+    // `ui` is replaced wholesale by every clear, and the generation moves on every session change, so either one tells a late reply from a live one.
+    const ui0 = ui; const gen0 = guard.current(); const live = () => ui === ui0 && guard.isCurrent(gen0) && !dead;
+    const note = (r) => { if (live()) ui.notice = r && r.status && r.status !== 'ok' ? { action, status: r.status, code: r.code || null } : null; return r; };
     switch (action) {
       case 'fve-create': {
         if (actions.getState().editor) return note({ status: 'blocked', code: 'EDITOR_OPEN' });
@@ -172,6 +191,7 @@ export function createEditorWiring(deps) {
       case 'fve-copy': {
         const had = pins.get(fundNow()); pinHere(today());
         const r = await actions.copyFrom({ sourceId: data.sourceId, sourceState: data.sourceState });
+        if (!live()) return r;
         if (!actions.getState().editor && !actions.getState().awaiting) { if (had) pinHere(had); else pins.delete(fundNow()); }
         return note(r);
       }
@@ -185,7 +205,29 @@ export function createEditorWiring(deps) {
         const r = actions.prepare(data.act);
         ui.prepared = r.status === 'ready' ? { token: r.token, action: data.act, summary: r.summary } : null; return note(r);
       }
-      case 'fve-confirm-act': { const p = ui.prepared; ui.prepared = null; return note(await actions.confirm(data.token || (p && p.token))); }
+      case 'fve-rv-open': {
+        if (!RV_ACTS.includes(data.act)) return note({ status: 'blocked', code: 'ACTION_UNKNOWN' });
+        const st = actions.getState(); const g = st.available && st.available[data.act];
+        if (!g || !g.allowed || !st.review || !st.scope) return note({ status: 'blocked', code: (g && g.reason) || 'NO_CONTEXT' });
+        ui.prepared = null; ui.rv = { act: data.act, reason: '', ack: false, scopeKey: st.scope.key, valuationId: st.review.valuationId }; ui.notice = null; return { status: 'ok' };
+      }
+      case 'fve-rv-prepare': {
+        const rv = ui.rv; if (!rv) return note({ status: 'blocked', code: 'NOT_PREPARED' });
+        dropStaleRv(actions.getState()); if (!ui.rv) return note({ status: 'blocked', code: 'VIEW_CHANGED' });
+        const r = actions.prepare(rv.act, { reason: rv.reason, acknowledgeSuspended: rv.ack === true });
+        ui.prepared = r.status === 'ready' ? { token: r.token, action: rv.act, summary: r.summary, limits: r.limits } : null;
+        ui.notice = r.status === 'ready' ? null : { action, status: r.status, code: r.code || null }; return r;
+      }
+      case 'fve-rv-edit': ui.prepared = null; return { status: 'ok' };            // back to the fields; the prepared record is replaced by the next prepare
+      case 'fve-rv-cancel': ui.rv = null; ui.prepared = null; ui.notice = null; return { status: 'ok' };
+      case 'fve-confirm-act': {
+        const p = ui.prepared; ui.prepared = null; const rvAct = !!(p && RV_ACTS.includes(p.action));
+        const rvAt = ui.rv;
+        const r = await actions.confirm(data.token || (p && p.token));
+        if (!live()) return r;                                              // a late reply of an OLD session / form: the new form, its reason and its notices are not touched
+        if (rvAct) { if ((!r || r.status !== 'blocked') && ui.rv === rvAt) ui.rv = null; ui.notice = r && r.status === 'blocked' ? { action, status: r.status, code: r.code || null, rv: true } : null; return r; }   // the typed reason leaves the page once the request exists
+        return note(r);
+      }
       case 'fve-cancel-prepare': ui.prepared = null; return { status: 'ok' };
       case 'fve-check-now': return note(await actions.checkNow());
       case 'fve-resolve': {
@@ -255,6 +297,8 @@ export function createEditorWiring(deps) {
     const D = deps.doc; if (!D) return () => {};
     const onEvent = (ev) => {
       const el = ev.target; if (!el || !el.getAttribute) return;
+      const rvField = el.getAttribute('data-fve-rv');
+      if (rvField) { const ty = (el.getAttribute('type') || '').toLowerCase(); if (ty === 'checkbox' ? ev.type === 'change' : ev.type === 'input') onRvInput(rvField, ty === 'checkbox' ? el.checked : el.value, { connected: !!el.isConnected }); return; }
       const path = el.getAttribute('data-fve-path'); if (!path) return;
       const type = (el.getAttribute('type') || '').toLowerCase(); const isText = el.tagName === 'TEXTAREA' || (el.tagName === 'INPUT' && !['checkbox', 'radio'].includes(type));
       if (isText && ev.type !== 'input') return;                          // text: every keystroke arrives as `input`; `change` would only repeat it
@@ -286,6 +330,6 @@ export function createEditorWiring(deps) {
 
   function dispose() { disposed = true; try { stopDay(); } catch (e) { /* ignore */ } try { actions.dispose(); } catch (e) { /* ignore */ } if (keeper) { keeper.clear(); keeper.detach(); } pins.clear(); ui = freshUi(); }
 
-  return { renderSlot, teardown, onInput, handleAction, actionHandler, attachDom, getContext, holdsRender, refreshNow, refreshState, moveToNewDay, onReaderChange, dispose,
+  return { renderSlot, teardown, onInput, onRvInput, handleAction, actionHandler, attachDom, getContext, holdsRender, refreshNow, refreshState, moveToNewDay, onReaderChange, dispose,
     actions, runner, keeper, pins, stats: () => ({ ...stats, pins: pins.size, repliesSeen }), ui: () => ui, isDead: () => dead };
 }
