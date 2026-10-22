@@ -5,7 +5,7 @@
              pendingAll (كل الطلبات المعلّقة للمستخدم)، refresh { allowed, reason } }.
    الحقول تحمل data-fve-path (للمعالج) وdata-fvp-field (لحافظ التركيز). لا قيم افتراضية تُقدَّم كحقائق: التغطية لا تُعتمد آليًا، والمصدر موسوم.
    ========================================================================= */
-import { MESSAGES } from './fund-valuation-model.js';
+import { MESSAGES, ELIGIBILITY_EFFECT } from './fund-valuation-model.js';
 import { METHODS, COMPONENT_KEYS, NON_OVERLAP_KEYS, canServerCopy } from './fund-valuation-editor.js';
 
 const ESC_MAP = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;', '`': '&#96;' };
@@ -26,6 +26,7 @@ const LOCAL = {
   UNSENT_INPUT: ['لديك إدخال غير مرسل — لا يُستبدل بنسخة', 'You have unsent input — it is not replaced by a copy'],
   LINK_PROPOSAL_REQUIRED: ['لا اقتراح روابط للتأكيد', 'No proposed links to confirm'],
   NOT_PREPARED: ['انتهى التجهيز — أعد المحاولة', 'The preparation expired — try again'],
+  OTHER_CARD_PENDING: ['توجد بطاقة تأكيد معلّقة في قسم آخر — أكّدها أو عدّلها أو ألغها أولًا (الأسباب المكتوبة هنا محفوظة)', 'A confirmation card is pending in another section — confirm, edit or cancel it first (what you typed here is kept)'],
   VIEW_CHANGED: ['تغيّر العرض بعد التجهيز — راجع ثم أعد', 'The view changed after preparing — review and retry'],
   SAVE_FIRST: ['احفظ التغطية أولًا', 'Save the coverage first'], COVERAGE_NOT_CONFIRMED: ['أكّد التغطية أولًا', 'Confirm the coverage first'],
   NUMBER_INVALID: ['رقم غير صالح', 'Invalid number'], AMOUNT_EMPTY: ['المبلغ مطلوب', 'Amount required'], ITEM_DESCRIPTION_EMPTY: ['الوصف مطلوب', 'Description required'],
@@ -192,7 +193,7 @@ function renderDay(st, ed, model, T) {
 
 function renderPrepared(model, T, lang) {
   const p = model.ui.prepared; if (!p) return '';
-  if (REVIEWER_ACTS.includes(p.action)) return '';   // the reviewer section shows its own confirmation card
+  if (REVIEWER_ACTS.includes(p.action) || EL_ACTS.includes(p.action)) return '';   // the reviewer / eligibility sections show their own confirmation cards
   const s = p.summary || {};
   return block('prepared', `${p.action === 'submit' ? T('تأكيد الإرسال', 'Confirm submit') : T('تأكيد السحب', 'Confirm withdraw')}`,
     `<div class="kv"><div class="k">${T('المعرّف', 'Id')}</div><div class="v"><code>${esc(s.valuationId)}</code></div><div class="k">${T('التاريخ', 'Date')}</div><div class="v">${esc(s.valuationDate)}</div><div class="k">${T('الحالة', 'State')}</div><div class="v">${esc(s.state)}</div></div>`
@@ -288,6 +289,63 @@ function renderReviewer(st, model, T, lang) {
   return block('reviewer', `🧑‍⚖️ ${T('إجراءات المراجعة', 'Review actions')}`, body, 'data-fve="reviewer"');
 }
 
+/* ---------------- eligibility section (B2-4b): suspend / reinstate the EFFECTIVE HEAD (needs no draft) ----------------
+   The confirmation card is drawn ONLY from the prepared record (what is shown is what will be sent). The effect is eligibility only: no calculation and no rate is activated before R1-C.
+   The server limit is always visible: the request is bound to the head id (expectedHeadId), not to the eligibility state, so a race on the SAME head is not prevented by the server. */
+const EL_ACTS = ['suspend', 'reinstate'];
+const EL_LABEL = { suspend: ['تعليق الأهلية', 'Suspend eligibility'], reinstate: ['إعادة الأهلية', 'Reinstate eligibility'] };
+function elLimitNote(T) {
+  return `<p class="note" data-fve="el-limit">⚠️ ${T('حدّ الخادم: الطلب مربوط بمعرّف الرأس (expectedHeadId) فقط، لا بحالة الأهلية؛ فلا يمنع الخادم سباقًا في تغيير أهلية الرأس نفسه. إن غيّر شخص آخر الأهلية قبل وصول طلبك ولم يظهر لك بعد فقد يُنفَّذ طلبك على حالة لم تعرضها البطاقة.', 'Server limit: the request is bound to the head id (expectedHeadId) only, not to the eligibility state, so the server does not prevent a race that changes the eligibility of the SAME head. If someone else changes it before your request arrives and you have not seen it yet, your request may apply to a state the card did not show.')}</p>`;
+}
+function elEffectNote(act, T, lang) {
+  const eff = ELIGIBILITY_EFFECT[act]; return `<p class="note" data-fve="el-effect">ℹ️ ${esc(eff.text[lang === 'en' ? 1 : 0])}</p>`;
+}
+function renderEligibilityNotice(model, T, lang) {
+  const n = model.ui && model.ui.notice; if (!n || !(String(n.action).startsWith('fve-el') || (n.action === 'fve-confirm-act' && n.el))) return '';
+  return `<p class="note fve-banner" style="color:var(--bad);" data-fve="el-notice" data-status="${esc(n.status)}">ℹ️ ${esc(n.status)} ${n.code ? why(n.code, lang) : ''}</p>`;
+}
+function renderEligibilityPrepared(model, T, lang) {
+  const p = model.ui.prepared; const s = p.summary || {}; const act = p.action; const [ar, en] = EL_LABEL[act]; const h = s.head || {};
+  const row = (k, v, extra = '') => `<div class="k">${k}</div><div class="v" style="min-width:0; overflow-wrap:anywhere; word-break:break-word; text-align:start; direction:inherit; font-weight:400;" ${extra}>${v}</div>`;
+  return block('prepared', T(`تأكيد: ${ar}`, `Confirm: ${en}`),
+    `<div class="kv" style="display:grid; grid-template-columns:minmax(110px,max-content) minmax(0,1fr); gap:4px 12px; align-items:start;">`
+    + row(T('الصندوق / التاريخ', 'Fund / date'), `<code>${esc(s.fundId)}</code> · ${esc(s.valuationDate)}`)
+    + row(T('الرأس الساري', 'Effective head'), `<code dir="ltr" data-fve="el-card-head">${esc(h.headId)}</code> v${esc(h.version)} · rev ${esc(h.rev == null ? '—' : h.rev)}`)
+    + row(T('حالة الأهلية الآن', 'Eligibility now'), `<b>${esc(h.suspended ? T('معلّقة', 'suspended') : T('سارية', 'eligible'))}</b> · ${esc(h.changedBy || '—')} · ${esc(h.changedAt || '—')}`, 'data-fve="el-card-now"')
+    + row(T('الحالة بعد الطلب', 'Eligibility after'), `<b data-fve="el-card-target">${esc(s.targetEligibility === 'SUSPENDED' ? T('معلّقة', 'suspended') : T('سارية', 'eligible'))}</b>`)
+    + row(T('السبب (كما سيُرسل)', 'Reason (as it will be sent)'), `<span dir="auto" style="white-space:pre-wrap;" data-fve="el-card-reason">${esc(s.reason)}</span>`)
+    + '</div>' + (s.effect ? `<p class="note" data-fve="el-card-effect">ℹ️ ${esc(s.effect.text[lang === 'en' ? 1 : 0])}</p>` : '')
+    + (p.limits && p.limits.notBoundToEligibilityChange ? elLimitNote(T) : '')
+    + `${btn('fve-confirm-act', T(ar, en), { primary: true, attrs: `data-token="${esc(p.token)}"` })} ${btn('fve-el-edit', T('عدّل', 'Edit'))} ${btn('fve-el-cancel', T('إلغاء', 'Cancel'))}`, 'data-fve="prepared" data-kind="eligibility"');
+}
+function renderEligibility(st, model, T, lang) {
+  if (!st.session || !REVIEWER_ROLES.includes(st.session.role) || !st.eligibility) return '';
+  const e = st.eligibility; const el = model.ui.el;
+  const av = (a) => (st.available && st.available[a]) || { allowed: false, reason: 'NO_CONTEXT' };
+  let body = '';
+  if (!e.ok) body += `<p class="note" style="color:var(--bad);" data-fve="el-head-unknown">⚠️ ${why(e.reason, lang)}</p>`;
+  else if (!e.headId) body += `<p class="note" data-fve="el-no-head">${T('لا يوجد تقييم معتمد (رأس) لهذا التاريخ.', 'There is no approved valuation (head) for this date.')} <code>NO_HEAD</code></p>`;
+  else body += `<p class="note" data-fve="el-head">${T('الرأس الساري', 'Effective head')}: <code dir="ltr">${esc(e.headId)}</code> v${esc(e.version)} · rev ${esc(e.rev == null ? '—' : e.rev)} · <b data-fve="el-state">${esc(e.suspended ? T('معلّقة', 'suspended') : T('سارية', 'eligible'))}</b> · ${esc(e.changedBy || '—')} · ${esc(e.changedAt || '—')}</p>`;
+  body += `<div class="fve-actions" style="display:flex; flex-wrap:wrap; gap:6px; margin:8px 0;">`
+    + EL_ACTS.map((a) => btn('fve-el-open', `${T(EL_LABEL[a][0], EL_LABEL[a][1])}…`, { allowed: av(a).allowed, why: reasonOf(av(a).reason, lang), attrs: `data-act="${a}"` })).join('')
+    + '</div>';
+  /* why a button is disabled is also in plain text (a title alone is not read on touch screens) */
+  const off = EL_ACTS.filter((a) => !av(a).allowed);
+  if (off.length) body += `<ul class="note" data-fve="el-why" style="margin:4px 0; padding-inline-start:18px;">${off.map((a) => `<li data-act="${a}">${esc(T(EL_LABEL[a][0], EL_LABEL[a][1]))}: ${why(av(a).reason, lang)}</li>`).join('')}</ul>`;
+  body += renderEligibilityNotice(model, T, lang);
+  if (el && model.ui.prepared && EL_ACTS.includes(model.ui.prepared.action)) body += renderEligibilityPrepared(model, T, lang);
+  else if (el) {
+    const [ar, en] = EL_LABEL[el.act];
+    body += `<section data-fvp-section="eligibility" tabindex="-1" data-fve="el-form" data-act="${esc(el.act)}">`
+      + `<p class="step-sub" style="margin:4px 0;">${T(`${ar}: للرأس`, `${en}: head`)} <code dir="ltr">${esc(el.headId)}</code></p>`
+      + elEffectNote(el.act, T, lang)
+      + `<div class="field"><label><span>${T('السبب', 'Reason')} ${T('(إلزامي، حتى 1000 حرف)', '(required, up to 1000 characters)')}</span><textarea data-fve-el="reason" ${FIELD}="el.reason" rows="3" maxlength="1000" autocomplete="off" style="width:100%;" aria-label="${esc(T('السبب', 'Reason'))}">${esc(el.reason)}</textarea></label></div>`
+      + elLimitNote(T)
+      + `<div>${btn('fve-el-prepare', T('جهّز التأكيد', 'Prepare confirmation'), { primary: true })} ${btn('fve-el-cancel', T('إلغاء', 'Cancel'))}</div></section>`;
+  } else body += elLimitNote(T);
+  return block('eligibility', `⚖️ ${T('أهلية النسخة السارية (التعليق والإعادة)', 'Eligibility of the effective version (suspend / reinstate)')}`, body, 'data-fve="eligibility"');
+}
+
 function renderPreview(st, T) {
   const p = st.preview; if (!p) return '';
   if (p.status === 'loading') return block('preview', `🔎 ${T('فحص النسخة المخزّنة', 'Checking the stored version')}`, `<p class="note">⏳ ${T('جارٍ الفحص…', 'Checking…')}</p>`, 'data-fve="preview"');
@@ -368,7 +426,7 @@ export function renderEditor(model, ctx = {}) {
       + (model.reader && model.reader.hasDraft ? btn('fve-open-draft', T('افتح المسودة الجارية للتحرير', 'Open the current draft for editing'), { allowed: writer }) : '')
       + (copy && canServerCopy(copy.state) ? btn('fve-copy', T('انسخ كمسودة جديدة لليوم', 'Copy as a new draft for today'), { allowed: writer && create.allowed, why: reasonOf(create.reason, lang), attrs: `data-source-id="${esc(copy.id)}" data-source-state="${esc(copy.state)}"` }) : '')
       + (model.reader && model.reader.hasDraft ? btn('fve-check-now', T('افحص الآن (النسخة المخزّنة)', 'Check now (stored version)'), { allowed: model.checkAllowed, why: reasonOf(model.checkWhy, lang) }) : '')
-      + '</div>' + renderPrepared(model, T, lang) + renderReviewer(st, model, T, lang) + renderPreview(st, T);
-  } else body += renderPrepared(model, T, lang) + renderReviewer(st, model, T, lang) + renderPreview(st, T) + renderForm(st, ed, model, T, lang);
+      + '</div>' + renderPrepared(model, T, lang) + renderReviewer(st, model, T, lang) + renderEligibility(st, model, T, lang) + renderPreview(st, T);
+  } else body += renderPrepared(model, T, lang) + renderReviewer(st, model, T, lang) + renderEligibility(st, model, T, lang) + renderPreview(st, T) + renderForm(st, ed, model, T, lang);
   return `<div class="panel fve" data-fve="root" data-scope-date="${esc(scopeDate)}" style="margin-top:14px;"><div class="panel-head"><h3 style="font-size:14px;">✏️ ${T('محرّر تقييم القيمة المتبقية', 'Residual valuation editor')}${scopeDate ? ` <span class="note">${esc(scopeDate)}</span>` : ''}</h3></div>${body}</div>`;
 }

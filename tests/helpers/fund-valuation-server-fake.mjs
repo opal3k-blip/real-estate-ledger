@@ -81,8 +81,12 @@ export function makeServer({ clock }) {
   S.docOf = (id) => clone(S.vals.get(id));
   S.headOf = (f, d) => { const h = S.heads.get(slotKey(f, d)); return h ? clone(h) : null; };
   /** an approved head for (fund, date): suspended = { by } makes it SUSPENDED by that person */
-  S.seedHead = ({ fundId = FUND, valuationDate = today(), headId = 'H0', version = 1, suspended = null } = {}) => {
-    S.heads.set(slotKey(fundId, valuationDate), { headId, version, eligibility: suspended ? { state: 'SUSPENDED', changedBy: suspended.by } : { state: 'ELIGIBLE', changedBy: 'ic@example.com' } });
+  S.seedHead = ({ fundId = FUND, valuationDate = today(), headId = 'H0', version = 1, suspended = null, rev, changedAt, headDoc = null } = {}) => {
+    const elig = suspended ? { state: 'SUSPENDED', changedBy: suspended.by } : { state: 'ELIGIBLE', changedBy: 'ic@example.com' };
+    if (changedAt !== undefined) elig.changedAt = changedAt;
+    S.heads.set(slotKey(fundId, valuationDate), { headId, version, ...(rev !== undefined ? { rev } : {}), eligibility: elig });
+    /* B2-4a: the approved document the head names (its provenance decides who may reinstate). Only when asked for, so earlier scenarios are unchanged. */
+    if (headDoc) S.vals.set(headId, { valuationId: headId, fundId, valuationDate, state: 'approved', version, contributors: headDoc.contributors || ['fm@example.com'], enteredBy: (headDoc.contributors || ['fm@example.com'])[0], approvedBy: headDoc.approvedBy || 'ic@example.com', rev: 1 });
   };
   S.slotId = (f, d) => S.slot.get(slotKey(f, d)) || null;
   S.effectsOf = (action) => S.effects.filter((e) => e.action === action).length;
@@ -111,6 +115,7 @@ export function makeServer({ clock }) {
     for (const k of spec.required) if (payload[k] === undefined) throw fbErr('invalid-argument', k === 'reason' ? 'REASON_REQUIRED' : k === 'expectedContentHash' ? 'HASH_INVALID' : k === 'valuationId' ? 'ID_INVALID' : 'PAYLOAD_MISSING'); // the server's own codes for these three
     if (action === 'preview') return preview(email, payload);
     if (action === 'review' || action === 'approve') { if (typeof payload.expectedContentHash !== 'string' || !/^[0-9a-f]{64}$/.test(payload.expectedContentHash)) throw fbErr('invalid-argument', 'HASH_INVALID'); }
+    if (action === 'suspend' || action === 'reinstate') { if (typeof payload.reason !== 'string' || payload.reason.trim() === '' || payload.reason.length > 1000) throw fbErr('invalid-argument', 'REASON_REQUIRED'); }
     if (action === 'returnDraft' || action === 'reject' || (action === 'approve' && payload.reason !== undefined)) { if (typeof payload.reason !== 'string' || payload.reason.trim() === '' || payload.reason.length > 1000) throw fbErr('invalid-argument', 'REASON_REQUIRED'); }
     if (action === 'approve' && payload.acknowledgeSuspended !== undefined && typeof payload.acknowledgeSuspended !== 'boolean') throw fbErr('invalid-argument', 'ACK_INVALID');
     const sig = JSON.stringify([callable, normalized(action, payload)]);
@@ -125,6 +130,7 @@ export function makeServer({ clock }) {
     else if (action === 'returnDraft') result = doReturn(email, payload);
     else if (action === 'reject') result = doReject(email, payload);
     else if (action === 'approve') result = doApprove(email, payload);
+    else if (action === 'suspend' || action === 'reinstate') result = doEligibility(email, payload, action);
     else throw fbErr('permission-denied');
     S.replay.set(`${email}|${payload.requestId}`, { sig, result: clone(result) });
     if (S.omitValuationId && action === 'createDraft') { const k = `${email}|${payload.requestId}`; S.effects.push({ action, requestId: payload.requestId, valuationId: result.valuationId }); const out = clone(result); delete out.valuationId; S.replay.set(k, out); return out; } // a malformed reply: the artifact is not named
@@ -192,6 +198,7 @@ export function makeServer({ clock }) {
     const { requestId, ...rest } = p;
     if (action === 'approve') return { valuationId: rest.valuationId, expectedContentHash: rest.expectedContentHash, acknowledgeSuspended: rest.acknowledgeSuspended === true, reason: rest.reason === undefined ? null : String(rest.reason).trim() };
     if (action === 'returnDraft' || action === 'reject') return { valuationId: rest.valuationId, reason: String(rest.reason).trim() };
+    if (action === 'suspend' || action === 'reinstate') return { fundId: rest.fundId, valuationDate: rest.valuationDate, expectedHeadId: rest.expectedHeadId, reason: String(rest.reason).trim() };
     return rest;
   };
   const brief = (d) => ({ valuationId: d.valuationId, fundId: d.fundId, valuationDate: d.valuationDate, state: d.state });
@@ -240,6 +247,24 @@ export function makeServer({ clock }) {
     S.slot.delete(slotKey(d.fundId, d.valuationDate));
     return { ...brief(d), version, supersedes: head.headId, contentHash: d.contentHash, eligibility: 'ELIGIBLE' };
   }
+  /** B2-4a suspend / reinstate: the SAME order of checks as eligibilityChange in functions/fund-valuations.cjs (compared with it by the contract test) */
+  function doEligibility(email, p, kind) {
+    const key = slotKey(p.fundId, p.valuationDate); const head = S.heads.get(key);
+    if (!head || !head.headId) throw fbErr('failed-precondition', 'NO_HEAD');
+    if (head.headId !== p.expectedHeadId) throw fbErr('failed-precondition', 'STALE_HEAD');
+    const cur = head.eligibility && head.eligibility.state;
+    if (kind === 'suspend') { if (cur === 'SUSPENDED') throw fbErr('failed-precondition', 'ALREADY_SUSPENDED'); }
+    else {
+      if (cur !== 'SUSPENDED') throw fbErr('failed-precondition', 'NOT_SUSPENDED');
+      if (head.eligibility.changedBy === email) throw fbErr('permission-denied', 'SUSPENDER_CANNOT_RESTORE');
+      const hv = S.vals.get(head.headId); if (!hv) throw fbErr('not-found', 'VALUATION_NOT_FOUND');
+      if (isContrib(hv, email) || String(hv.approvedBy || '').toLowerCase() === email) throw fbErr('permission-denied', 'CONTRIBUTOR_CANNOT_REINSTATE');
+    }
+    const reason = String(p.reason).trim();
+    head.eligibility = kind === 'suspend' ? { state: 'SUSPENDED', changedBy: email, changedAt: clock.now.toISOString(), reasonCode: 'SUSPENDED', reason } : { state: 'ELIGIBLE', changedBy: email, changedAt: clock.now.toISOString(), reasonCode: 'REINSTATED', reason };
+    head.rev = (head.rev || 0) + 1;
+    return { fundId: p.fundId, valuationDate: p.valuationDate, headId: head.headId, eligibility: head.eligibility.state };
+  }
   S.handle = handle;
   return S;
 }
@@ -285,7 +310,7 @@ export function makeEnv({ session = FM, now = '2026-10-11T10:00:00Z', auto = fal
     view.drafts = new Map();
     for (const doc of server.vals.values()) { if (server.slotId(doc.fundId, doc.valuationDate) === doc.valuationId) view.drafts.set(doc.valuationDate, clone(doc)); }
     view.approvedByDate = new Map();
-    for (const [k, h] of server.heads) { const date = k.split('::')[1]; view.approvedByDate.set(date, { kind: h.eligibility.state === 'SUSPENDED' ? 'suspended' : 'effective', headId: h.headId, version: h.version, valuationDate: date, eligibility: clone(h.eligibility) }); }
+    for (const [k, h] of server.heads) { const date = k.split('::')[1]; const hd = server.vals.get(h.headId); view.approvedByDate.set(date, { kind: h.eligibility.state === 'SUSPENDED' ? 'suspended' : 'effective', headId: h.headId, version: h.version, headRev: Number.isInteger(h.rev) ? h.rev : null, valuationDate: date, eligibility: clone(h.eligibility), ...(h.eligibility.state === 'SUSPENDED' && hd ? { headValuation: { contributors: clone(hd.contributors), approvedBy: hd.approvedBy ?? null } } : {}) }); }
     view.status = view.drafts.size || view.latest || view.approvedByDate.size ? 'ready' : 'empty'; view.stale = stale; actions.sync();
   };
   /** a NEW read STARTED after everything that happened so far (issued + 1) and delivered the server's current state */

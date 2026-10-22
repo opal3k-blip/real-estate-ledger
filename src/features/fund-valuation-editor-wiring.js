@@ -35,8 +35,14 @@ export function createEditorWiring(deps) {
   let repliesSeen = 0; let repliesAtIssue = -1; let lastIssueAt = 0;
   const stats = { refreshIssued: 0, refreshCoalesced: 0, refreshBlockedManual: 0, inputIgnored: 0 };
 
-  function freshUi() { return { confirm: null, prepared: null, discarding: null, notice: null, rv: null }; }
+  /** ONE confirmation card at a time (the orchestrator keeps one prepared record per scope). The card has an OWNER section; a section never locks, clears or replaces a card it does not own. */
+  const ownerOf = (p) => (!p ? null : RV_ACTS.includes(p.action) ? 'rv' : EL_ACTS.includes(p.action) ? 'el' : 'draft');
+  const owns = (sec) => ownerOf(ui.prepared) === sec;
+  const dropOwn = (sec) => { if (owns(sec)) ui.prepared = null; if (ui.notice && ui.notice.code === 'OTHER_CARD_PENDING' && !ui.prepared) ui.notice = null; };   // the 'another card is pending' notice goes with that card
+  const otherCard = (sec) => { const o = ownerOf(ui.prepared); return o && o !== sec ? o : null; };
+  function freshUi() { return { confirm: null, prepared: null, discarding: null, notice: null, rv: null, el: null }; }
   const RV_ACTS = ['review', 'returnDraft', 'reject', 'approve'];
+  const EL_ACTS = ['suspend', 'reinstate'];   // B2-4b: the eligibility form belongs to the EFFECTIVE HEAD, never to a draft
   /** access = a signed-in user whose role is RESOLVED and may read, and a reader that has not been refused. Any other state is a LOSS: it is detected wherever the
       module is asked for the session (not only at a render), clears everything at once (no confirmation), and the module then sees no session until a render finds access. */
   const accessOk = (s) => !!(s && s.uid && s.email && s.roleResolved === true && canRead(s.role));
@@ -121,7 +127,7 @@ export function createEditorWiring(deps) {
   function model() {
     const s = sess();
     const state = actions.getState();
-    dropStaleRv(state);
+    dropStaleRv(state); dropStaleEl(state);
     if (releaseIfIdle(state)) return model();
     const v = reader.getView(); const ctx = getContext();
     const hasDraft = !!(ctx && ctx.draft && !ctx.draft.missing);
@@ -137,7 +143,22 @@ export function createEditorWiring(deps) {
   function dropStaleRv(state) {
     const rv = ui.rv; if (!rv) return;
     const same = state.scope && state.scope.key === rv.scopeKey && state.review && state.review.valuationId === rv.valuationId;
-    if (!same) { ui.rv = null; if (ui.prepared && RV_ACTS.includes(ui.prepared.action)) ui.prepared = null; }
+    if (!same) { ui.rv = null; dropOwn('rv'); }
+  }
+  /** The eligibility form belongs to ONE scope (user + fund + date) and ONE head. A change of either (another user, another date, another head) removes the form, its reason and its card AT ONCE.
+      A head that is only momentarily unreadable keeps the typed reason but never the card. A card whose head facts no longer equal the view's is dropped (it could not be confirmed anyway). */
+  function dropStaleEl(state) {
+    const el = ui.el; if (!el) return;
+    const e = state.eligibility;
+    const sameScope = !!(state.scope && state.scope.key === el.scopeKey);
+    const sameHead = !e || !e.ok || e.headId === el.headId;
+    if (!sameScope || !sameHead) { ui.el = null; dropOwn('el'); return; }
+    const p = ui.prepared;
+    if (p && EL_ACTS.includes(p.action)) {
+      const h = p.summary && p.summary.head;
+      const moved = !e || !e.ok || !h || h.headId !== e.headId || h.version !== e.version || (h.rev ?? null) !== (e.rev ?? null) || h.suspended !== e.suspended || h.changedBy !== e.changedBy || (h.changedAt ?? null) !== (e.changedAt ?? null);
+      if (moved) { ui.prepared = null; ui.notice = { action: 'fve-el-prepare', status: 'blocked', code: 'VIEW_CHANGED', el: true }; }
+    }
   }
   function renderSlot() {
     inRender = true;
@@ -166,9 +187,16 @@ export function createEditorWiring(deps) {
   /** a typed value of the reviewer form. The fields are LOCKED once a confirmation is prepared (what is shown there is what will be sent). */
   function onRvInput(field, value, { connected = true } = {}) {
     if (!connected || dead || !sess()) { stats.inputIgnored += 1; return { status: 'ignored' }; }
-    const rv = ui.rv; if (!rv || ui.prepared) { stats.inputIgnored += 1; return { status: 'ignored' }; }
+    const rv = ui.rv; if (!rv || owns('rv')) { stats.inputIgnored += 1; return { status: 'ignored' }; }
     if (field === 'reason' && typeof value === 'string') rv.reason = value; else if (field === 'ack') rv.ack = value === true; else return { status: 'ignored' };
     return { status: 'ok' };
+  }
+
+  /** a typed value of the eligibility form (the reason). Locked once a card is prepared. */
+  function onElInput(field, value, { connected = true } = {}) {
+    if (!connected || dead || !sess()) { stats.inputIgnored += 1; return { status: 'ignored' }; }
+    const el = ui.el; if (!el || owns('el') || field !== 'reason' || typeof value !== 'string') { stats.inputIgnored += 1; return { status: 'ignored' }; }
+    el.reason = value; return { status: 'ok' };
   }
 
   /* ---------------- actions from buttons ---------------- */
@@ -200,8 +228,9 @@ export function createEditorWiring(deps) {
       case 'fve-confirm-links': return note(actions.confirmLinks());
       case 'fve-clear-links': return note(actions.clearLinks());
       case 'fve-ack-copy': return note(actions.acknowledgeCopy(data.which));
-      case 'fve-save': ui.prepared = null; return note(await actions.save());
+      case 'fve-save': dropOwn('draft'); return note(await actions.save());
       case 'fve-prepare': {
+        if (otherCard('draft')) return note({ status: 'blocked', code: 'OTHER_CARD_PENDING' });
         const r = actions.prepare(data.act);
         ui.prepared = r.status === 'ready' ? { token: r.token, action: data.act, summary: r.summary } : null; return note(r);
       }
@@ -209,22 +238,40 @@ export function createEditorWiring(deps) {
         if (!RV_ACTS.includes(data.act)) return note({ status: 'blocked', code: 'ACTION_UNKNOWN' });
         const st = actions.getState(); const g = st.available && st.available[data.act];
         if (!g || !g.allowed || !st.review || !st.scope) return note({ status: 'blocked', code: (g && g.reason) || 'NO_CONTEXT' });
-        ui.prepared = null; ui.rv = { act: data.act, reason: '', ack: false, scopeKey: st.scope.key, valuationId: st.review.valuationId }; ui.notice = null; return { status: 'ok' };
+        dropOwn('rv'); ui.rv = { act: data.act, reason: '', ack: false, scopeKey: st.scope.key, valuationId: st.review.valuationId }; ui.notice = null; return { status: 'ok' };
       }
       case 'fve-rv-prepare': {
         const rv = ui.rv; if (!rv) return note({ status: 'blocked', code: 'NOT_PREPARED' });
         dropStaleRv(actions.getState()); if (!ui.rv) return note({ status: 'blocked', code: 'VIEW_CHANGED' });
+        if (otherCard('rv')) { ui.notice = { action, status: 'blocked', code: 'OTHER_CARD_PENDING', rv: true }; return { status: 'blocked', code: 'OTHER_CARD_PENDING' }; }
         const r = actions.prepare(rv.act, { reason: rv.reason, acknowledgeSuspended: rv.ack === true });
         ui.prepared = r.status === 'ready' ? { token: r.token, action: rv.act, summary: r.summary, limits: r.limits } : null;
         ui.notice = r.status === 'ready' ? null : { action, status: r.status, code: r.code || null }; return r;
       }
-      case 'fve-rv-edit': ui.prepared = null; return { status: 'ok' };            // back to the fields; the prepared record is replaced by the next prepare
-      case 'fve-rv-cancel': ui.rv = null; ui.prepared = null; ui.notice = null; return { status: 'ok' };
+      case 'fve-el-open': {
+        if (!EL_ACTS.includes(data.act)) return note({ status: 'blocked', code: 'ACTION_UNKNOWN' });
+        const st = actions.getState(); const g = st.available && st.available[data.act];
+        if (!g || !g.allowed || !st.scope || !st.eligibility || !st.eligibility.ok || !st.eligibility.headId) return note({ status: 'blocked', code: (g && g.reason) || 'NO_CONTEXT' });
+        dropOwn('el'); ui.el = { act: data.act, reason: '', scopeKey: st.scope.key, headId: st.eligibility.headId }; ui.notice = null; return { status: 'ok' };
+      }
+      case 'fve-el-prepare': {
+        const el = ui.el; if (!el) return note({ status: 'blocked', code: 'NOT_PREPARED' });
+        dropStaleEl(actions.getState()); if (!ui.el) return note({ status: 'blocked', code: 'VIEW_CHANGED' });
+        if (otherCard('el')) { ui.notice = { action, status: 'blocked', code: 'OTHER_CARD_PENDING', el: true }; return { status: 'blocked', code: 'OTHER_CARD_PENDING' }; }
+        const r = actions.prepare(el.act, { reason: el.reason });
+        ui.prepared = r.status === 'ready' ? { token: r.token, action: el.act, summary: r.summary, limits: r.limits } : null;
+        ui.notice = r.status === 'ready' ? null : { action, status: r.status, code: r.code || null, el: true }; return r;
+      }
+      case 'fve-el-edit': dropOwn('el'); return { status: 'ok' };
+      case 'fve-el-cancel': ui.el = null; dropOwn('el'); if (ui.notice && (ui.notice.el || String(ui.notice.action).startsWith('fve-el'))) ui.notice = null; return { status: 'ok' };
+      case 'fve-rv-edit': dropOwn('rv'); return { status: 'ok' };            // back to the fields; the prepared record is replaced by the next prepare
+      case 'fve-rv-cancel': ui.rv = null; dropOwn('rv'); if (ui.notice && (ui.notice.rv || String(ui.notice.action).startsWith('fve-rv'))) ui.notice = null; return { status: 'ok' };
       case 'fve-confirm-act': {
-        const p = ui.prepared; ui.prepared = null; const rvAct = !!(p && RV_ACTS.includes(p.action));
-        const rvAt = ui.rv;
+        const p = ui.prepared; ui.prepared = null; const rvAct = !!(p && RV_ACTS.includes(p.action)); const elAct = !!(p && EL_ACTS.includes(p.action));
+        const rvAt = ui.rv; const elAt = ui.el;
         const r = await actions.confirm(data.token || (p && p.token));
         if (!live()) return r;                                              // a late reply of an OLD session / form: the new form, its reason and its notices are not touched
+        if (elAct) { if ((!r || r.status !== 'blocked') && ui.el === elAt) ui.el = null; ui.notice = r && r.status === 'blocked' ? { action, status: r.status, code: r.code || null, el: true } : null; return r; }   // the typed reason leaves the page once the request exists
         if (rvAct) { if ((!r || r.status !== 'blocked') && ui.rv === rvAt) ui.rv = null; ui.notice = r && r.status === 'blocked' ? { action, status: r.status, code: r.code || null, rv: true } : null; return r; }   // the typed reason leaves the page once the request exists
         return note(r);
       }
@@ -297,6 +344,8 @@ export function createEditorWiring(deps) {
     const D = deps.doc; if (!D) return () => {};
     const onEvent = (ev) => {
       const el = ev.target; if (!el || !el.getAttribute) return;
+      const elField = el.getAttribute('data-fve-el');
+      if (elField) { if (ev.type === 'input') onElInput(elField, el.value, { connected: !!el.isConnected }); return; }
       const rvField = el.getAttribute('data-fve-rv');
       if (rvField) { const ty = (el.getAttribute('type') || '').toLowerCase(); if (ty === 'checkbox' ? ev.type === 'change' : ev.type === 'input') onRvInput(rvField, ty === 'checkbox' ? el.checked : el.value, { connected: !!el.isConnected }); return; }
       const path = el.getAttribute('data-fve-path'); if (!path) return;
@@ -330,6 +379,6 @@ export function createEditorWiring(deps) {
 
   function dispose() { disposed = true; try { stopDay(); } catch (e) { /* ignore */ } try { actions.dispose(); } catch (e) { /* ignore */ } if (keeper) { keeper.clear(); keeper.detach(); } pins.clear(); ui = freshUi(); }
 
-  return { renderSlot, teardown, onInput, onRvInput, handleAction, actionHandler, attachDom, getContext, holdsRender, refreshNow, refreshState, moveToNewDay, onReaderChange, dispose,
+  return { renderSlot, teardown, onInput, onRvInput, onElInput, handleAction, actionHandler, attachDom, getContext, holdsRender, refreshNow, refreshState, moveToNewDay, onReaderChange, dispose,
     actions, runner, keeper, pins, stats: () => ({ ...stats, pins: pins.size, repliesSeen }), ui: () => ui, isDead: () => dead };
 }

@@ -455,14 +455,14 @@ await t('50. a listener that throws never breaks the module; dispose clears time
 });
 
 /* ----------------------------------------------------------------- scope limits */
-await t('51. only the approved actions are ever requested (B2-3a scope: createDraft, updateDraft, submit, withdraw + review, returnDraft, reject, approve; never suspend / reinstate / rate)', async () => {
+await t('51. only the approved actions are ever requested (B2-4a scope: createDraft, updateDraft, submit, withdraw + review, returnDraft, reject, approve + suspend, reinstate; never rate)', async () => {
   const env = await withDraft(); const seen = new Set();
   const orig = env.runner.begin; env.runner.begin = (a) => { seen.add(a.action); return orig(a); };
   env.actions.setField('methodNote', 'q'); await env.actions.save(); env.publish();
   const p = env.actions.prepare('withdraw'); await env.actions.confirm(p.token);
   assert.ok([...seen].every((x) => A.ACTIONS_STARTED_HERE.includes(x)), [...seen].join());
-  assert.deepEqual([...A.ACTIONS_STARTED_HERE], ['createDraft', 'updateDraft', 'submit', 'withdraw', 'review', 'returnDraft', 'reject', 'approve']);   // B2-2 pinned the first four; B2-3a adds the reviewer's four (approved 2026-10-14)
-  for (const x of ['suspend', 'reinstate', 'preview', 'rate']) assert.ok(!A.ACTIONS_STARTED_HERE.includes(x), x);
+  assert.deepEqual([...A.ACTIONS_STARTED_HERE], ['createDraft', 'updateDraft', 'submit', 'withdraw', 'review', 'returnDraft', 'reject', 'approve', 'suspend', 'reinstate']);   // B2-2 pinned the first four; B2-3a adds the reviewer's four (2026-10-14); B2-4a adds the head's two (2026-10-21)
+  for (const x of ['preview', 'rate']) assert.ok(!A.ACTIONS_STARTED_HERE.includes(x), x);
   for (const c of env.server.calls) assert.ok(['createValuationDraft', 'updateValuationDraft', 'submitValuation', 'withdrawValuation', 'getValuationPreview'].includes(c.callable), c.callable);   // this scenario only exercises the B2-2 actions
 });
 await t('52. static limits: the new modules import no Firebase / DOM / storage / XIRR / MOIC / equity code and name no browser globals', () => {

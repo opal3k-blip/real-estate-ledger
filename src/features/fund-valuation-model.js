@@ -131,7 +131,7 @@ const no = (reason) => ({ allowed: false, reason });
     stale: the viewer knows the draft's base head/scope changed (allows re-submitting a submitted/reviewed draft). */
 export function availableActions(c) {
   const out = {};
-  const { role, email, today, valuation: v, head, headValuation, stale } = c || {};
+  const { role, email, today, valuation: v, head, headValuation, stale, requireHeadValuation } = c || {};
   for (const a of ACTIONS) out[a] = no('NO_TARGET');
   const roleGate = (a) => (roleCanDo(a, role) ? null : 'ROLE_NOT_ALLOWED');
 
@@ -165,6 +165,8 @@ export function availableActions(c) {
     r = roleGate('reinstate');
     if (!r && !susp) r = 'NOT_SUSPENDED';
     if (!r && head.eligibility && lc(head.eligibility.changedBy) === lc(email)) r = 'SUSPENDER_CANNOT_RESTORE';
+    /* B2-4a: with requireHeadValuation the absence of the head valuation's provenance BLOCKS reinstate (fail closed); without it the old hint behaviour stays */
+    if (!r && requireHeadValuation && !(headValuation && Array.isArray(headValuation.contributors) && typeof headValuation.approvedBy === 'string')) r = 'HEAD_DOC_NOT_LOADED';
     if (!r && headValuation && (isContributor(headValuation, email) || lc(headValuation.approvedBy) === lc(email))) r = 'CONTRIBUTOR_CANNOT_REINSTATE';
     out.reinstate = r ? no(r) : yes();
   } else {
@@ -297,10 +299,18 @@ export const MESSAGES = Object.freeze({
   PAYLOAD_MISSING: ['حقل مطلوب ناقص', 'A required field is missing'],
   ACTION_UNKNOWN: ['إجراء غير معروف', 'Unknown action'],
   NO_TARGET: ['لا يوجد هدف لهذا الإجراء', 'No target for this action'],
+  HEAD_DOC_NOT_LOADED: ['وثيقة النسخة السارية غير محمّلة أو ناقصة؛ لا تُعاد الأهلية الآن', 'The effective version\'s document is not loaded or is incomplete; eligibility cannot be reinstated now'],
   HEAD_NOT_VERIFIED: ['لم يكتمل التحقق من الرأس الساري بعد؛ لا يبدأ الاعتماد الآن', 'The effective head has not been verified yet; approval cannot start now'],
   HEAD_INCONSISTENT: ['الرأس الساري غير متسق؛ لا يبدأ الاعتماد', 'The effective head is inconsistent; approval cannot start'],
   HEAD_STATE_UNKNOWN: ['حالة الرأس الساري غير معروفة في هذا العرض؛ لا يبدأ الاعتماد', 'The state of the effective head is unknown in this view; approval cannot start'],
   REASON_NOT_ACCEPTED: ['هذا الإجراء لا يقبل سببًا؛ لن يُحفظ ما كتبتَه', 'This action does not accept a reason; what you typed would not be saved'],
+});
+/** B2-4a: what suspend / reinstate DO and DO NOT do. Eligibility of the effective head only; before R1-C no calculation and no rate is activated by either. */
+export const ELIGIBILITY_EFFECT = Object.freeze({
+  suspend: Object.freeze({ changesEligibilityOnly: true, activatesCalculations: false, activatesRates: false,
+    text: ['يغيّر هذا الإجراء أهلية التقييم السارية فقط (تصبح معلّقة). لا يُفعِّل أي حساب ولا أي معدّل قبل R1-C.', 'This changes only the valuation\'s eligibility (it becomes suspended). It activates no calculation and no rate before R1-C.'] }),
+  reinstate: Object.freeze({ changesEligibilityOnly: true, activatesCalculations: false, activatesRates: false,
+    text: ['يغيّر هذا الإجراء أهلية التقييم السارية فقط (تعود سارية). لا يُفعِّل أي حساب ولا أي معدّل قبل R1-C.', 'This changes only the valuation\'s eligibility (it becomes eligible again). It activates no calculation and no rate before R1-C.'] }),
 });
 const CODE_FALLBACK = {
   'permission-denied': ['ليست لديك صلاحية', 'Permission denied'], unauthenticated: ['يلزم تسجيل الدخول', 'Sign-in required'],

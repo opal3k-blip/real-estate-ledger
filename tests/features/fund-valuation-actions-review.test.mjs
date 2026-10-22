@@ -78,9 +78,9 @@ await t('G5 the approve gate reads the HEAD the reader reports: unknown / not ve
   const old = await envWith('reviewed', { session: IC2 }); old.view.approvedMode = 'unknown'; old.actions.sync();
   assert.equal(av(old).approve.reason, 'HEAD_STATE_UNKNOWN', 'a reader that does not report the head: fail closed');
 });
-await t('G6 B2-4 actions are not started here', async () => {
+await t('G6 only actions not yet in scope are refused as unknown (B2-4a: suspend / reinstate are in scope and covered by fund-valuation-eligibility-actions.test.mjs)', async () => {
   const env = await envWith('reviewed', { session: IC2 });
-  for (const a of ['suspend', 'reinstate', 'preview', 'createDraft']) assert.deepEqual(env.actions.prepare(a), { status: 'blocked', code: 'ACTION_UNKNOWN' }, a);
+  for (const a of ['preview', 'createDraft']) assert.deepEqual(env.actions.prepare(a), { status: 'blocked', code: 'ACTION_UNKNOWN' }, a);
 });
 
 /* ================= 2. the requests that are sent ================= */

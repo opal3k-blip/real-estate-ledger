@@ -30,17 +30,20 @@
       from anything typed afterwards; a retry resends the stored entry verbatim (runner). A new reason is a new prepare, which replaces the old confirmation
       and cannot be sent while an earlier request of the scope is unresolved. The new actions use the same awaiting guarantees (issued / epoch / identity). */
 import {
-  availableActions, riyadhDay, classifyDate, snapshotOf, diffSnapshots, createGenerationGuard, createSessionTracker, describeError, canRead, MAX_REASON,
+  availableActions, riyadhDay, classifyDate, snapshotOf, diffSnapshots, createGenerationGuard, createSessionTracker, describeError, canRead, MAX_REASON, ELIGIBILITY_EFFECT,
 } from './fund-valuation-model.js';
 import { scopeKey } from './fund-valuation-requests.js';
 import * as E from './fund-valuation-editor.js';
 
 export const AWAIT_DELAYED_MS = 8000;   // "the view is late": ask the reader to re-fetch from the server
 export const AWAIT_STALLED_MS = 20000;  // "still not reflected": if the view is confirmed and still different, it was overtaken
-const ACTIONS_STARTED_HERE = Object.freeze(['createDraft', 'updateDraft', 'submit', 'withdraw', 'review', 'returnDraft', 'reject', 'approve']);
-/* B2-3a: the reviewer's actions. Suspend / reinstate / comment / eligibility stay in B2-4 and are refused here (ACTION_UNKNOWN). */
+const ACTIONS_STARTED_HERE = Object.freeze(['createDraft', 'updateDraft', 'submit', 'withdraw', 'review', 'returnDraft', 'reject', 'approve', 'suspend', 'reinstate']);
+/* B2-4a: suspend / reinstate act on the EFFECTIVE HEAD, not on a draft: they need no draft, are not gated by DRAFT_DOC_MISSING and carry their own awaiting rule. */
+const HEAD_ACTIONS = Object.freeze(['suspend', 'reinstate']);
+const TARGET_ELIGIBILITY = Object.freeze({ suspend: 'SUSPENDED', reinstate: 'ELIGIBLE' });
+/* B2-3a: the reviewer's actions. Comment stays out (ACTION_UNKNOWN). */
 const REVIEWER_ACTIONS = Object.freeze(['review', 'returnDraft', 'reject', 'approve']);
-const PREPARABLE = Object.freeze(['submit', 'withdraw', ...REVIEWER_ACTIONS]);
+const PREPARABLE = Object.freeze(['submit', 'withdraw', ...REVIEWER_ACTIONS, ...HEAD_ACTIONS]);
 const STATE_AFTER = Object.freeze({ submit: 'submitted', withdraw: 'withdrawn', review: 'reviewed', returnDraft: 'returned', reject: 'rejected', approve: 'approved' });
 const HASH_RE = /^[0-9a-f]{64}$/;
 
@@ -49,7 +52,7 @@ export function msUntilNextRiyadhDay(nowMs) {
   return DAY - (((local % DAY) + DAY) % DAY);
 }
 const lc = (s) => (typeof s === 'string' ? s.toLowerCase() : '');
-const pickResult = (d) => (d && typeof d === 'object' ? { action: d.action ?? null, valuationId: d.valuationId ?? null, fundId: d.fundId ?? null, valuationDate: d.valuationDate ?? null, state: d.state ?? null, contentHash: d.contentHash ?? null, rev: Number.isInteger(d.rev) ? d.rev : null, replayed: d.replayed === true } : {});
+const pickResult = (d) => (d && typeof d === 'object' ? { action: d.action ?? null, valuationId: d.valuationId ?? null, fundId: d.fundId ?? null, valuationDate: d.valuationDate ?? null, state: d.state ?? null, contentHash: d.contentHash ?? null, rev: Number.isInteger(d.rev) ? d.rev : null, replayed: d.replayed === true, ...(d.headId !== undefined ? { headId: typeof d.headId === 'string' ? d.headId : null } : {}), ...(typeof d.eligibility === 'string' ? { eligibility: d.eligibility } : {}) } : {});
 const contentOfDoc = (doc) => { const c = {}; if (doc) for (const k of E.CONTENT_KEYS) if (doc[k] !== undefined) c[k] = doc[k]; return c; };
 const sectionOf = (path) => {
   const p = path.replace(/#len$/, '');
@@ -108,17 +111,30 @@ export function createValuationActions(deps) {
     if (a && a.kind === 'none') return viewConfirmed(ctx) ? { ok: true, headId: null, version: 0, suspended: false, changedBy: null } : { ok: false, reason: 'HEAD_STATE_UNKNOWN' };
     if (!a || typeof a !== 'object') return { ok: false, reason: 'HEAD_STATE_UNKNOWN' };
     const by = lc(a.eligibility && a.eligibility.changedBy);
-    if (a.kind === 'effective') return { ok: true, headId: a.headId ?? null, version: a.version ?? null, suspended: false, changedBy: by || null };
-    if (a.kind === 'suspended') return { ok: true, headId: a.headId ?? null, version: a.version ?? null, suspended: true, changedBy: by || null };
+    const at = a.eligibility && typeof a.eligibility.changedAt === 'string' ? a.eligibility.changedAt : null;
+    const rev = Number.isInteger(a.headRev) ? a.headRev : null;
+    const provenance = (x) => (x && Array.isArray(x.contributors) && typeof x.approvedBy === 'string' ? { contributors: x.contributors.map(lc), approvedBy: lc(x.approvedBy) } : null);
+    if (a.kind === 'effective') return { ok: true, headId: a.headId ?? null, version: a.version ?? null, rev, suspended: false, changedBy: by || null, changedAt: at, headValuation: provenance(a.doc) };
+    if (a.kind === 'suspended') return { ok: true, headId: a.headId ?? null, version: a.version ?? null, rev, suspended: true, changedBy: by || null, changedAt: at, headValuation: provenance(a.headValuation) };
     if (a.kind === 'verifying') return { ok: false, reason: 'HEAD_NOT_VERIFIED' };
     if (a.kind === 'inconsistent') return { ok: false, reason: 'HEAD_INCONSISTENT' };
     return { ok: false, reason: 'HEAD_STATE_UNKNOWN' };
   }
   const headForSnapshot = (ctx) => { const h = headFacts(ctx); return h.ok ? { headId: h.headId, eligibility: h.headId ? { state: h.suspended ? 'SUSPENDED' : 'ELIGIBLE' } : null } : { headId: null, eligibility: null }; };
-  const headKeyOf = (ctx) => { const h = headFacts(ctx); return JSON.stringify(h.ok ? [h.headId, h.version, h.suspended, h.changedBy] : ['unknown', h.reason]); };
+  /** The card's fingerprint of the head: id, version, head revision, eligibility state, who and WHEN. A repeated cycle on one head (suspend -> reinstate -> suspend) changes rev / changedAt even when id and state look the same again. */
+  const headKeyOf = (ctx) => { const h = headFacts(ctx); return JSON.stringify(h.ok ? [h.headId, h.version, h.rev ?? null, h.suspended, h.changedBy, h.changedAt ?? null] : ['unknown', h.reason]); };
 
   /* ---------------- gating: STARTING a new action ---------------- */
   const no = (reason) => ({ allowed: false, reason });
+  /** suspend / reinstate: decided from the effective head ONLY (never from a draft). No default permission: an unknown, unverified or inconsistent head, or (reinstate) a head
+      valuation that is not loaded, blocks. */
+  function headGate(action, ctx, sess) {
+    const h = headFacts(ctx); if (!h.ok) return no(h.reason);
+    const head = h.headId ? { headId: h.headId, eligibility: { state: h.suspended ? 'SUSPENDED' : 'ELIGIBLE', changedBy: h.changedBy } } : undefined;
+    const av = availableActions({ role: sess.role, email: sess.email, today: today(), head, headValuation: h.headValuation || undefined, requireHeadValuation: true })[action];
+    if (!av || !av.allowed) return no(av ? av.reason : 'ACTION_UNKNOWN');
+    return { allowed: true, reason: null };
+  }
   function gate(action, ctx, sess, st) {
     if (!sess) return no('NO_SESSION');
     if (!ctx) return no('NO_CONTEXT');
@@ -126,6 +142,7 @@ export function createValuationActions(deps) {
     if (st && st.awaiting) return no('AWAITING_VIEW');
     if (!viewConfirmed(ctx)) return no('VIEW_NOT_CONFIRMED');
     const mg = runner.mutationGate(); if (!mg.allowed) return no(mg.reasons[0]);
+    if (HEAD_ACTIONS.includes(action)) return headGate(action, ctx, sess);
     const doc = draftDoc(ctx);
     if (action !== 'createDraft' && ctx.draft && ctx.draft.missing) return no('DRAFT_DOC_MISSING');
     const preview = st && st.preview && st.preview.status === 'done' ? st.preview.reply : null;
@@ -161,8 +178,9 @@ export function createValuationActions(deps) {
       if (verdict) {
         clearAwaitTimers(aw); st.awaiting = null;
         if (verdict === 'reflected') {
-          const ed0 = st.editor;
-          if (aw.action === 'createDraft' && doc && doc.valuationId === aw.valuationId) {
+          const ed0 = aw.headAction ? null : st.editor;   // a head action says nothing about a draft: its editor is left exactly as it is
+          if (aw.headAction) { /* nothing else to apply */ }
+          else if (aw.action === 'createDraft' && doc && doc.valuationId === aw.valuationId) {
             if (ed0 && ed0.mode === 'create' && aw.sentForm) { // the typed form stays; everything typed after the send stays unsaved over the sent version
               ed0.mode = 'edit'; ed0.baseline = aw.sentForm; ed0.startedFrom = startedFromDoc(doc); ed0.conflict = null; ed0.serverChanged = null; ed0.blockedByActive = null; ed0.goneFromView = false;
             } else if (aw.opensEditor && !(ed0 && E.isDirty(ed0.form, ed0.baseline))) openEditorFromDoc(st, doc); // a server copy opens for review, unless she is typing something else
@@ -170,8 +188,8 @@ export function createValuationActions(deps) {
             ed0.startedFrom = startedFromDoc(doc); ed0.conflict = null; ed0.serverChanged = null;
             ed0.baseline = aw.sentForm || E.formFromContent(doc, { unconfirmCoverage: false });
           }
-          if (aw.action === 'withdraw' || (aw.action === 'submit' && !doc)) st.editor = null;
-          if ((aw.action === 'reject' || aw.action === 'approve') && st.editor && st.editor.mode === 'edit' && st.editor.startedFrom.valuationId === aw.valuationId) st.editor = null;
+          if (!aw.headAction && (aw.action === 'withdraw' || (aw.action === 'submit' && !doc))) st.editor = null;
+          if (!aw.headAction && (aw.action === 'reject' || aw.action === 'approve') && st.editor && st.editor.mode === 'edit' && st.editor.startedFrom.valuationId === aw.valuationId) st.editor = null;
           st.outcome = { action: aw.action, status: 'reflected', code: null };
         } else {
           st.outcome = { action: aw.action, status: 'view_overtaken', code: 'VIEW_OVERTAKEN' };
@@ -206,6 +224,7 @@ export function createValuationActions(deps) {
   /** 'reflected' = the view shows the effect of THIS request; 'overtaken' = a read ordered after the reply shows a state without it; null = no evidence.
       Called only with a confirmed view. Never decided by a difference alone. */
   function awaitVerdict(aw, ctx) {
+    if (aw.headAction) return headVerdict(aw, ctx);
     if (ctx.draft && ctx.draft.missing) return null;
     if (!aw.valuationId) return null;
     if (ctx.fundId !== aw.fundId || ctx.valuationDate !== aw.valuationDate) return null;
@@ -239,6 +258,16 @@ export function createValuationActions(deps) {
       default: return null;
     }
   }
+  /** suspend / reinstate. ONLY a confirmed server read that STARTED AFTER the reply ends the wait (a listener snapshot, a timer, a state name or a read that began before the reply never does),
+      and only when the head data in it is complete and consistent (verified head). 'reflected' = that read shows the targeted head in the requested state; it is NOT a claim that our request alone
+      produced it (changedBy is deliberately not used as identity: another person's later change of the same head to the same state looks identical). A different head or a different state in an
+      ordered read = 'overtaken'. An incomplete / unverified / unordered view = null: the block stays. */
+  function headVerdict(aw, ctx) {
+    if (!aw.headId || ctx.fundId !== aw.fundId || ctx.valuationDate !== aw.valuationDate) return null;
+    if (!readAfterResult(aw, ctx)) return null;
+    const h = headFacts(ctx); if (!h.ok) return null;
+    return h.headId === aw.headId && h.suspended === (aw.targetEligibility === 'SUSPENDED') ? 'reflected' : 'overtaken';
+  }
   function clearAwaitTimers(aw) { if (aw.t1) clearTimer(aw.t1); if (aw.t2) clearTimer(aw.t2); aw.t1 = aw.t2 = null; }
   /** Timers never release the block. 'delayed': ask the reader to re-fetch. 'stalled': say so. Only a snapshot ends the wait. */
   function startAwaiting(key, st, aw) {
@@ -265,11 +294,12 @@ export function createValuationActions(deps) {
     if (res.status === 'background') return { status: 'background' };
     if (res.status === 'success') {
       const result = pickResult(res.data);
-      const vid = result.valuationId || (meta && meta.valuationId) || null;
+      const headAction = HEAD_ACTIONS.includes(action);
+      const vid = headAction ? ((meta && meta.headId) || null) : (result.valuationId || (meta && meta.valuationId) || null);   // a head action targets the head id it was sent with, whatever the reply says
       const sentForm = meta ? meta.sentForm || (meta.entryId && st.sentForms.get(meta.entryId)) || null : null;
       const c0 = ctxFor(st.valuationDate); // reads STARTED so far at the moment the reply was RECEIVED: only data from a read numbered above it can prove order
       const issuedAtResult = c0 && c0.read && Number.isInteger(c0.read.issued) ? c0.read.issued : null;
-      startAwaiting(key, st, { action, valuationId: vid, result, prev: meta ? meta.prev || null : null, sentForm, opensEditor: !!(meta && meta.opensEditor), fundId: st.fundId, valuationDate: st.valuationDate, gen: guard.current(), issuedAtResult, startedAt: now().getTime() });
+      startAwaiting(key, st, { action, valuationId: vid, headAction, headId: headAction ? vid : null, targetEligibility: headAction ? TARGET_ELIGIBILITY[action] : null, result, prev: meta ? meta.prev || null : null, sentForm, opensEditor: !!(meta && meta.opensEditor), fundId: st.fundId, valuationDate: st.valuationDate, gen: guard.current(), issuedAtResult, startedAt: now().getTime() });
       if (sentForm && st.editor) st.editor.baseline = JSON.parse(JSON.stringify(sentForm)); // from now on "unsaved" means: typed AFTER what was sent
       st.outcome = { action, status: 'success_waiting_view', code: null, replayed: result.replayed };
       refreshScope(st, key); notify();
@@ -459,11 +489,25 @@ export function createValuationActions(deps) {
     }
     return { status: st.preview.status === 'done' ? 'outdated' : st.preview.status };
   }
+  /** suspend / reinstate: the card is about ONE head. The reason is required (1..MAX_REASON after trim), no acknowledgement exists, and nothing about a draft is read. */
+  function prepareHead(action, opts, c) {
+    const { sess, ctx, st } = c; const o = opts && typeof opts === 'object' ? opts : {};
+    if (o.acknowledgeSuspended !== undefined) return { status: 'blocked', code: 'REASON_NOT_ACCEPTED' };
+    const raw = o.reason;
+    if (typeof raw !== 'string' || raw.length > MAX_REASON || !raw.trim()) return { status: 'blocked', code: 'REASON_REQUIRED' };
+    const h = headFacts(ctx); if (!h.ok || !h.headId) return { status: 'blocked', code: h.ok ? 'NO_HEAD' : h.reason };
+    const reason = raw.trim(); const token = `p${++tokenSeq}`;
+    st.prepared = { token, action, head: true, gen: guard.current(), fundId: ctx.fundId, valuationDate: ctx.valuationDate, headId: h.headId, reason, headKey: headKeyOf(ctx) };
+    const info = { headId: h.headId, version: h.version, rev: h.rev ?? null, suspended: h.suspended, changedBy: h.changedBy, changedAt: h.changedAt ?? null };
+    return { status: 'ready', token, summary: { action, fundId: ctx.fundId, valuationDate: ctx.valuationDate, head: info, targetEligibility: TARGET_ELIGIBILITY[action], reason, effect: ELIGIBILITY_EFFECT[action] },
+      limits: { boundToHeadId: true, notBoundToEligibilityChange: true } };   // the server binds the request to expectedHeadId ONLY: another change of the eligibility of the SAME head after this card is not prevented by it (contract §6.1)
+  }
   function prepare(action, opts) {
     if (!PREPARABLE.includes(action)) return { status: 'blocked', code: 'ACTION_UNKNOWN' };
     const c = currentScope(); if (!c) return { status: 'blocked', code: 'NO_CONTEXT' };
     const { sess, ctx, st } = c; const doc = draftDoc(ctx);
     const g = gate(action, ctx, sess, st); if (!g.allowed) return { status: 'blocked', code: g.reason };
+    if (HEAD_ACTIONS.includes(action)) return prepareHead(action, opts, c);
     const ed = st.editor;
     if (action === 'submit') {
       if (ed && E.isDirty(ed.form, ed.baseline)) return { status: 'blocked', code: 'UNSAVED_EDITS' };
@@ -491,11 +535,21 @@ export function createValuationActions(deps) {
       limits: { notBoundToContent: !(action === 'review' || action === 'approve') }, // contract §6.1: the server binds only review / approve (updateDraft too) to a fingerprint
     };
   }
+  async function confirmHead(p, c) {
+    const { sess, key, ctx, st } = c;
+    if (ctx.fundId !== p.fundId || ctx.valuationDate !== p.valuationDate || headKeyOf(ctx) !== p.headKey) return { status: 'blocked', code: 'VIEW_CHANGED', changed: ['head'] };   // nothing is sent from a stale card
+    const g = gate(p.action, ctx, sess, st); if (!g.allowed) { st.outcome = { action: p.action, status: 'blocked', code: g.reason }; notify(); return { status: 'blocked', code: g.reason }; }
+    const gen = guard.current();
+    const res = await runner.begin({ action: p.action, fields: { fundId: p.fundId, valuationDate: p.valuationDate, expectedHeadId: p.headId, reason: p.reason }, scope: { fundId: p.fundId, valuationDate: p.valuationDate } });
+    if (!guard.isCurrent(gen) || states.get(key) !== st) return { status: 'background' };
+    return applyResult(key, st, p.action, res, { headId: p.headId, by: sess.email });
+  }
   async function confirm(token) {
     const c = currentScope(); if (!c) return { status: 'blocked', code: 'NO_CONTEXT' };
     const { sess, key, ctx, st } = c; const p = st.prepared;
     if (!p || p.token !== token || !guard.isCurrent(p.gen)) return { status: 'blocked', code: 'NOT_PREPARED' };
     st.prepared = null;
+    if (p.head) return confirmHead(p, c);
     const doc = draftDoc(ctx);
     if (!doc || doc.valuationId !== p.valuationId) return { status: 'blocked', code: 'VIEW_CHANGED' };
     const reviewer = REVIEWER_ACTIONS.includes(p.action);
@@ -554,7 +608,7 @@ export function createValuationActions(deps) {
     if (res.status === 'none') { notify(); return { status: 'none' }; }
     const payload = entry && entry.payload ? entry.payload : {};
     const prev = payload.expectedContentHash ? { contentHash: payload.expectedContentHash } : null; // the version the request was based on
-    return applyResult(key, st, entry ? entry.action : (res.data && res.data.action) || 'unknown', res, { prev, valuationId: payload.valuationId || null, entryId: entry ? entry.requestId : null, opensEditor: !!(payload.copyFromValuationId) });
+    return applyResult(key, st, entry ? entry.action : (res.data && res.data.action) || 'unknown', res, { prev, headId: payload.expectedHeadId || null, valuationId: payload.valuationId || null, entryId: entry ? entry.requestId : null, opensEditor: !!(payload.copyFromValuationId) });
   }
   async function discardPending(scope, { acknowledgeRisk } = {}) {
     sync();
@@ -588,7 +642,10 @@ export function createValuationActions(deps) {
       createDraft: createCtx ? gate('createDraft', createCtx, sess, states.get(keyOf(sess, createCtx))) : no('NO_CONTEXT'),
       updateDraft: gate('updateDraft', ctx, sess, st), submit: gate('submit', ctx, sess, st), withdraw: gate('withdraw', ctx, sess, st),
       review: gate('review', ctx, sess, st), returnDraft: gate('returnDraft', ctx, sess, st), reject: gate('reject', ctx, sess, st), approve: gate('approve', ctx, sess, st),
+      suspend: gate('suspend', ctx, sess, st), reinstate: gate('reinstate', ctx, sess, st),
     };
+    { const hf = headFacts(ctx);   // the head's eligibility facts for the eligibility form: independent of any draft
+      out.eligibility = hf.ok ? { ok: true, headId: hf.headId, version: hf.version, rev: hf.rev ?? null, suspended: hf.suspended, changedBy: hf.changedBy, changedAt: hf.changedAt ?? null, headValuationLoaded: !!hf.headValuation } : { ok: false, reason: hf.reason }; }
     if (out.available.submit.allowed) {
       const ed = st.editor; const review = (doc && st.copyReviews.get(doc.valuationId)) || null;
       if (ed && E.isDirty(ed.form, ed.baseline)) out.available.submit = no('UNSAVED_EDITS');

@@ -342,11 +342,11 @@ export function createFundValuationReader({ subscribe, getSession, verify = veri
       const head = k && k.head ? k.head.d : null;
       if (k && k.kind === 'checkable') {
         const r = verif.get(k.token);
-        const base = { headId: head.headId, version: head.version, valuationDate: m.selected };
+        const base = { headId: head.headId, version: head.version, headRev: Number.isInteger(head.rev) ? head.rev : null, valuationDate: m.selected };   // headRev: the head's own revision (bumped by every eligibility change); lets a card tell two suspend/reinstate cycles on one head apart
         const elig = head.eligibility && typeof head.eligibility === 'object' ? deepClone(head.eligibility) : null;
         if (!r || r.state === 'pending') view.approved = { kind: 'verifying', ...base };
         else if (r.state === 'fail') view.approved = { kind: 'inconsistent', reason: r.reason, ...base };
-        else if (elig && elig.state === 'SUSPENDED') view.approved = { kind: 'suspended', eligibility: elig, approvedBy: k.doc.d.approvedBy, approvedAt: k.doc.d.approvedAt, ...base };
+        else if (elig && elig.state === 'SUSPENDED') view.approved = { kind: 'suspended', eligibility: elig, approvedBy: k.doc.d.approvedBy, approvedAt: k.doc.d.approvedAt, headValuation: { contributors: Array.isArray(k.doc.d.contributors) ? k.doc.d.contributors.filter((x) => typeof x === 'string') : null, approvedBy: typeof k.doc.d.approvedBy === 'string' ? k.doc.d.approvedBy : null }, ...base };   // provenance only (no value): reinstate separation of duties needs it
         else if (elig && elig.state === 'ELIGIBLE') view.approved = { kind: 'effective', eligibility: elig, doc: deepClone(k.doc.d), ...base };
         else view.approved = { kind: 'eligibility-unknown', eligibility: elig, ...base };
       } else if (k && k.kind === 'no-doc') {
