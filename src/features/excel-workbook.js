@@ -180,6 +180,7 @@ export async function exportUnderwritingWorkbook(core, id){
   const rec = core.opportunities.find(o=>o.id===id);
   if(!rec) return;
   const d = core.withDefaults(rec.data), c = core.compute(d);
+  if(typeof core.metricGuard==='function' && core.metricGuard(d,c)){ alert(core.T('لا يمكن تصدير هذه الفرصة: مدخلاتها غير صالحة أو ناقصة. صحّحها أولًا.','This opportunity cannot be exported: its inputs are invalid or incomplete. Correct them first.')); return; }
   const reportDates = core.reportDateMeta(d);
   const scoreRes = computeInvestmentScore(core, d, c);
   const scoreResBand = scoreBand(scoreRes.composite);

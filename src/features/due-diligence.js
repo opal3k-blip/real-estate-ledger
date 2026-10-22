@@ -13,38 +13,16 @@
    يتجنّب هذه المشكلة تماماً، ويضمن أيضاً أن أي بند افتراضي جديد يُضاف لاحقاً في
    DEFAULT_DD_ITEMS يندمج تلقائياً في الفرص القديمة عبر withDefaults() (لأن
    dd.items قاموس/Object وليس مصفوفة — يُدمَج حقلاً حقلاً لا يُستبدَل بالكامل).
-   لا تعديل هنا على منطق core.js الداخلي — فقط عبر نقاط التوسّع المُصدَّرة.
+
+   Phase 2R-4B — Client Cutover: تعريفات البيانات الحتمية (DD_CATEGORIES،
+   DEFAULT_DD_ITEMS، defaultItemsDict، ddStats) أصبحت مُستورَدة من
+   src/domain/due-diligence/dd-engine.js (الجهة الرسمية الوحيدة لها، بعد
+   إثبات تطابقها Shadow-Mode في Phase 2R-4A — 17/17). هذا الملف يحتفظ فقط
+   بمنطق العرض/التسجيل (UI) وثوابت العرض المحلية (STATUSES/SEVERITIES) التي
+   لا علاقة لها بالحساب. لا تعديل على منطق core.js الداخلي — فقط عبر نقاط
+   التوسّع المُصدَّرة.
    ========================================================================= */
-
-const DD_CATEGORIES = [
-  { key:'legal',         ar:'قانونية',   en:'Legal' },
-  { key:'technical',     ar:'فنية',      en:'Technical' },
-  { key:'planning',      ar:'تخطيطية',   en:'Planning' },
-  { key:'valuation',     ar:'تقييم',     en:'Valuation' },
-  { key:'market',        ar:'سوق',       en:'Market' },
-  { key:'financial',     ar:'مالية',     en:'Financial' },
-  { key:'tax',           ar:'ضريبية',    en:'Tax' },
-  { key:'environmental', ar:'بيئية',     en:'Environmental' },
-  { key:'financing',     ar:'تمويلية',   en:'Financing' },
-  { key:'commercial',    ar:'تجارية',    en:'Commercial' },
-];
-const CAT_BY_KEY = Object.fromEntries(DD_CATEGORIES.map(c=>[c.key,c]));
-
-const DEFAULT_DD_ITEMS = [
-  { key:'legal_title',           category:'legal',         ar:'التحقق من سند الملكية',                              en:'Verify title deed' },
-  { key:'legal_liens',           category:'legal',         ar:'مراجعة القيود والرهون على الصك',                     en:'Review liens & encumbrances' },
-  { key:'technical_survey',      category:'technical',     ar:'تقرير المساحة والحدود',                              en:'Survey & boundary report' },
-  { key:'technical_soil',        category:'technical',     ar:'فحص التربة والأساسات',                               en:'Soil & foundation investigation' },
-  { key:'planning_zoning',       category:'planning',      ar:'التحقق من نظام البناء والاشتراطات',                  en:'Verify zoning & building code' },
-  { key:'planning_permit',       category:'planning',      ar:'رخصة البناء أو إمكانية الحصول عليها',                en:'Building permit / obtainability' },
-  { key:'valuation_report',      category:'valuation',     ar:'تقرير تقييم مستقل معتمد',                            en:'Independent accredited valuation report' },
-  { key:'market_study',          category:'market',        ar:'دراسة السوق والمقارنات',                             en:'Market study & comparables' },
-  { key:'financial_model',       category:'financial',     ar:'مراجعة النموذج المالي والافتراضات',                  en:'Financial model & assumptions review' },
-  { key:'tax_compliance',        category:'tax',           ar:'التحقق من الالتزامات الضريبية (تصرفات عقارية/قيمة مضافة)', en:'Verify tax obligations (RETT/VAT)' },
-  { key:'environmental_impact',  category:'environmental', ar:'تقييم الأثر البيئي إن لزم',                          en:'Environmental impact assessment (if required)' },
-  { key:'financing_termsheet',   category:'financing',     ar:'التحقق من شروط التمويل المبدئية (Term Sheet)',       en:'Verify preliminary financing term sheet' },
-  { key:'commercial_contracts',  category:'commercial',    ar:'مراجعة العقود التجارية / عقود الإيجار القائمة',      en:'Review commercial/existing lease contracts' },
-];
+import { DD_CATEGORIES, DEFAULT_DD_ITEMS, defaultItemsDict, ddStats } from '../domain/due-diligence/dd-engine.js';
 
 const STATUSES = [
   { key:'pending',     ar:'معلّق',        en:'Pending',     color:'#94a3b8' },
@@ -61,24 +39,6 @@ const SEVERITIES = [
   { key:'critical', ar:'حرجة',   en:'Critical', color:'#f87171' },
 ];
 const SEV_BY_KEY = Object.fromEntries(SEVERITIES.map(s=>[s.key,s]));
-
-function defaultItemsDict(){
-  const out = {};
-  DEFAULT_DD_ITEMS.forEach(it=>{ out[it.key] = { status:'pending', document:'', reviewer:'', date:'', finding:'', severity:'medium', requiredAction:'' }; });
-  return out;
-}
-
-function ddStats(items){
-  const keys = DEFAULT_DD_ITEMS.map(it=>it.key);
-  const total = keys.length;
-  let completed = 0, criticalPending = 0;
-  keys.forEach(k=>{
-    const it = items[k] || {};
-    if(it.status==='completed') completed++;
-    if(it.severity==='critical' && it.status!=='completed') criticalPending++;
-  });
-  return { total, completed, pct: total? completed/total : 0, criticalPending };
-}
 
 export { ddStats, defaultItemsDict, DD_CATEGORIES, DEFAULT_DD_ITEMS };
 

@@ -1,0 +1,31 @@
+import coreVmSource from '../helpers/core-vm-source.cjs';
+import path from 'path';
+import vm from 'vm';
+import { fileURLToPath } from 'url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+export const ROOT = path.join(__dirname, '..', '..');
+
+export function loadCore(extraExports = [], ctxExtra = {}){
+  const coreCode = coreVmSource.buildCoreVmSource({ extraExports });
+  const ctx = {
+    console, setTimeout, clearTimeout,
+    localStorage: { getItem(){ return null; }, setItem(){} },
+    document: {
+      documentElement:{ lang:'ar' },
+      querySelector(){ return null; }, addEventListener(){}, getElementById(){ return null; },
+      querySelectorAll(){ return []; }, body:{}, createElement(){ return {}; }
+    },
+    window: {}, Notification: undefined, navigator: {}, URL,
+    FileReader: function(){}, Intl, Math, JSON, Date, parseFloat, parseInt,
+    isFinite, Number, String, Array, Object, Boolean, RegExp, Error,
+  };
+  Object.assign(ctx, ctxExtra);
+  ctx.window = ctx;
+  vm.createContext(ctx);
+  vm.runInContext(coreCode, ctx, { timeout: 20000 });
+  if(!ctx.__C || typeof ctx.__C.compute !== 'function' || typeof ctx.__C.blankOpportunity !== 'function'){
+    throw new Error('Unable to load canonical src/core.js compute/blankOpportunity exports');
+  }
+  return ctx.__C;
+}

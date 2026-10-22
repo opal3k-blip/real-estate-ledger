@@ -62,19 +62,51 @@ function icApprovalStatus(d){
 
 /* رأس المال المخصَّص فعلياً بالفعل لأصول أخرى (غير هذه الفرصة) داخل نفس الصندوق —
    مجموع capitalAllocation.targetEquity لكل فرصة مربوطة حالياً في fund.data.assetIds. */
+// المساهمة العينية المُنفَّذة والمخصَّصة صراحةً لأصل بعينه — نظير earmarkedInKindForAssetTx في
+// functions/index.js، بنفس الحقول (fundId/inKindAssetId/status) ونفس منطق الجمع (نداء عكسي بنفس
+// inKindAssetId ومبلغ سالب يُصفِّر التغطية تلقائياً عبر الجمع الجبري، دون أي فلترة خاصة بالعكس).
+function earmarkedInKindForAsset(core, fundId, oppId){
+  return (core.STORE && core.STORE.capitalCalls || []).reduce((sum,cc)=>{
+    const d = cc.data||{};
+    if(d.fundId===fundId && d.inKindAssetId===oppId && d.status==='paid') return sum + core.n(d.amount);
+    return sum;
+  }, 0);
+}
+
+/* رأس المال المخصَّص فعلياً بالفعل لأصول أخرى (غير هذه الفرصة) داخل نفس الصندوق —
+   مجموع capitalAllocation.targetEquity لكل فرصة مربوطة حالياً في fund.data.assetIds. */
 function allocatedElsewhereInFund(core, fund, excludeOppId){
   const ids = (fund.data.assetIds||[]).filter(id=>id!==excludeOppId);
   return ids.reduce((sum,id)=>{
     const rec = core.opportunities.find(o=>o.id===id);
-    const amt = rec && rec.data.capitalAllocation ? core.n(rec.data.capitalAllocation.targetEquity) : 0;
-    return sum + amt;
+    const targetEquity = rec && rec.data.capitalAllocation ? core.n(rec.data.capitalAllocation.targetEquity) : 0;
+    // Phase 2R-4D4-C (land-first, two-asset correction — يطابق إصلاح allocatedElsewhereTx في
+    // functions/index.js): يُخصَم من مجمع النقد المشترك الجزء النقدي فقط من تخصيص هذا الأصل
+    // الآخر (التخصيص المستهدف ناقص تغطيته العينية المنفَّذة والمؤهَّلة، محصوراً بصفر) — تغطيته
+    // العينية/الأرض لم تستهلك نقداً قط ويجب ألا تُخصَم من النقد مرتين عند تقييم أصل مختلف.
+    const inKind = earmarkedInKindForAsset(core, fund.id, id);
+    return sum + Math.max(0, targetEquity - inKind);
   }, 0);
 }
 
 function deployableCashForFund(core, fund, excludeOppId){
+  // Phase 2R-4D4-C (land-first correction): كان هذا يستخدم summary.paidIn (يشمل نداءات
+  // رأس مال مرتبطة بمساهمة عينية/أرض عبر linkedCommitmentId) — يعني عملياً أن قيمة الأرض
+  // كانت تُحتسَب كنقد قابل للتخصيص لأصل *آخر* غير الذي أُنشئت له، وهو بالضبط ما يمنعه مبدأ
+  // "الأرض أولًا": مساهمة عينية لا تصبح نقداً عاماً قابلاً للإنفاق. الإصلاح: استخدام
+  // summary.cashPaidIn (نفس الاستبعاد المطبَّق فعلياً في src/core.js's fundLedgerSummary
+  // لحساب deployableCash على مستوى الصندوق، وفي functions/index.js's linkAssetToFund على
+  // مستوى الخادم) بدل summary.paidIn. هذا الملف كُتب (المرحلة الخامسة) قبل إدخال التمييز
+  // نقدي/عيني (المرحلة 2R-4D4-B) ولم يُحدَّث معه — الفجوة لم تكن مقصودة.
   const summary = core.fundLedgerSummary(fund.id);
   const allocated = allocatedElsewhereInFund(core, fund, excludeOppId);
-  return Math.max(0, core.n(summary.paidIn) - core.n(summary.distPaid) - allocated);
+  // Phase 2R-4D4-C (توافق الخادم/الواجهة): يطابق functions/index.js's linkAssetToFund تماماً —
+  // التغطية العينية المنفَّذة والمؤهَّلة الخاصة بهذا الأصل نفسه تُغطّي تخصيصه المستهدف دون أن
+  // تُعامَل كنقد عام أو تحتاجه. قبل هذا لم تكن بوابة الواجهة تطبّق هذا الاستثناء إطلاقاً (فقط
+  // الخادم كان يطبّقه) — ما يعني حجب رابط أصل مموَّل عينياً بالكامل في الواجهة رغم أن الخادم كان
+  // سيسمح به فعلاً.
+  const earmarkedForThisAsset = earmarkedInKindForAsset(core, fund.id, excludeOppId);
+  return Math.max(0, core.n(summary.cashPaidIn) - core.n(summary.distPaid) - allocated) + earmarkedForThisAsset;
 }
 
 export function registerCapitalAllocationEngine(core){

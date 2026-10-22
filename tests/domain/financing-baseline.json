@@ -1,0 +1,5024 @@
+{
+  "generatedAt": "2026-09-20T08:19:14.379Z",
+  "fixtureCount": 14,
+  "fixtures": {
+    "T01-base-development": {
+      "label": "Base development — single tranche, cash interest, no draw schedule",
+      "scenarioKey": "base",
+      "financingFocus": "بلا drawSchedule — دين أحادي، فائدة نقدية، سداد interest_only.",
+      "input": {
+        "id": null,
+        "meta": {
+          "name": "",
+          "city": "الرياض",
+          "neighborhood": "",
+          "tier": "متوسط",
+          "oppType": "development",
+          "useType": "__neutral__",
+          "analyst": "Opal",
+          "createdAt": null,
+          "updatedAt": null,
+          "createdBy": null,
+          "updatedBy": null
+        },
+        "land": {
+          "area": 5000,
+          "price": 2000,
+          "far": 2,
+          "bar": 0.5,
+          "floorsAllowed": 0,
+          "basements": 0,
+          "floorHeight": 3.6,
+          "setbacks": 0,
+          "bonusAreaPct": 0,
+          "basementCostPremiumPct": 0,
+          "basementDepthEscalationPct": 0,
+          "floorHeightPremiumPct": 0
+        },
+        "site": {
+          "soil": 1,
+          "water": 1,
+          "tower": 1,
+          "topo": 1,
+          "infra": 1
+        },
+        "strategy": {
+          "exitStrategy": "مختلط (Mixed Sell+Rent)",
+          "salePct": 1,
+          "offPlanSale": {
+            "enabled": false,
+            "preSalePctThreshold": 0,
+            "curve": "even",
+            "escrowLagYears": 0,
+            "priceEscalationAnnual": 0
+          },
+          "directSale": {
+            "bankFinancedPct": 0,
+            "collectionLagYears": 0
+          }
+        },
+        "income": {
+          "gla": null,
+          "rent": 0,
+          "occupancy": 0,
+          "opex": 0,
+          "wale": 0,
+          "tenantConc": 0,
+          "distFreq": "ربع سنوي (Quarterly)",
+          "assetClass": "عام",
+          "holdStrategy": "exit_sale",
+          "mixedUse": false,
+          "nnn": {
+            "tenantCreditTier": "وطني (National)",
+            "leaseTermRemaining": 0,
+            "pctRent": false,
+            "pctRentRate": 0,
+            "annualSales": 0,
+            "envReserveAnnual": 0
+          },
+          "hospitality": {
+            "adr": 0,
+            "keys": 0,
+            "gopMargin": 0
+          },
+          "logisticsSpec": {
+            "clearHeight": 0,
+            "dockDoors": 0
+          },
+          "dataCenterSpec": {
+            "powerDensityKw": 0,
+            "redundancyTier": "Tier III (N+1)"
+          },
+          "refinance": {
+            "intervalYears": 0,
+            "refiLtv": 0,
+            "refiCostPct": 0,
+            "analysisHorizon": 0
+          }
+        },
+        "development": {
+          "salePrice": 6000,
+          "buildCost": 3000,
+          "constructionYears": 2,
+          "operationYears": 0,
+          "exitCapRate": 0,
+          "efficiency": 0.85,
+          "contingency": 0.05,
+          "scopeType": "both",
+          "infraCostPerSqm": 0,
+          "costBreakdown": {
+            "structure": 0,
+            "mep": 0,
+            "finishes": 0,
+            "external": 0,
+            "fees": 0
+          }
+        },
+        "landbank": {
+          "appreciation": 0,
+          "holdingYears": 0,
+          "carryAnnual": 0,
+          "zoningNote": "",
+          "hbuNote": "",
+          "interimAnnualIncome": 0,
+          "whiteLandFeePct": 0.025,
+          "whiteLandFeeExempt": false
+        },
+        "zakat": {
+          "enabled": false,
+          "ratePct": 0.025
+        },
+        "vat": {
+          "enabled": false,
+          "ratePct": 0.15,
+          "constructionInputVatPct": 0.15,
+          "inputRecoveryPct": null,
+          "refundLagYears": 0,
+          "professionalFeesVatPct": 0.15
+        },
+        "subdivision": {
+          "phasedAbsorption": false,
+          "absorptionYears": 0,
+          "curve": "even",
+          "priceEscalationAnnual": 0
+        },
+        "subscription": {
+          "minInvestment": 0,
+          "subscriptionFee": 0,
+          "lockupYears": 0,
+          "distPolicy": "عند الإغلاق فقط (At Exit Only)",
+          "investorClass": "Class A - تجزئة (Retail)",
+          "hwm": true
+        },
+        "economics": {
+          "hurdle": 0,
+          "carry": 0,
+          "lpShare": 0,
+          "gpShare": 0,
+          "devShare": 0
+        },
+        "fees": {
+          "mgmt": 0,
+          "structuring": 0,
+          "arrangement": 0,
+          "acquisition": 0,
+          "disposition": 0,
+          "assetMgmt": 0,
+          "propMgmt": 0,
+          "regAuditCustodian": 0,
+          "cmaSetup": 0,
+          "dueDiligence": 0,
+          "valuation": 0,
+          "ejarFeePct": 0,
+          "insuranceAnnualPct": 0
+        },
+        "financing": {
+          "ltc": 0.6,
+          "saibor": 0.055,
+          "margin": 0.025,
+          "tenor": 0,
+          "structure": "single",
+          "seniorPct": 0,
+          "mezzMarginAdj": 0,
+          "amortType": "interest_only",
+          "graceYears": 0,
+          "amortYears": 0,
+          "interestDuringConstruction": "cash",
+          "shariahStructure": "تقليدي (فائدة تقليدية)",
+          "drawSchedulePct": []
+        },
+        "wacc": {
+          "rf": 0,
+          "mrp": 0,
+          "beta": 0,
+          "crp": 0,
+          "sp": 0,
+          "alpha": 0,
+          "marketCap": 0,
+          "growth": 0
+        },
+        "exitCosts": {
+          "broker": 0,
+          "legal": 0,
+          "rett": 0,
+          "exitFee": 0
+        },
+        "criteria": {
+          "irrMin": 0.15,
+          "dscrMin": 1.3,
+          "moicMin": 1.5,
+          "yocMin": 0.08,
+          "projIrrMin": 0.1,
+          "preLeasingMin": 0.3,
+          "preSaleMin": 0.3,
+          "preLeasingActual": 0,
+          "preSaleActual": 0
+        },
+        "scenarios": {
+          "optimistic": {
+            "rentMult": 1.08,
+            "salePriceMult": 1.08,
+            "costMult": 0.95,
+            "capRateDelta": -0.005,
+            "rateDelta": -0.0025
+          },
+          "pessimistic": {
+            "rentMult": 0.9,
+            "salePriceMult": 0.88,
+            "costMult": 1.1,
+            "capRateDelta": 0.01,
+            "rateDelta": 0.0075
+          }
+        },
+        "closing": {
+          "titleDeed": "completed",
+          "zoning": "in_progress",
+          "environmental": "not_started",
+          "conditions": [
+            {
+              "text": "تثبيت سعر الأرض عبر اتفاقية شراء موقعة",
+              "status": "pending"
+            },
+            {
+              "text": "توقيع عقود إيجار مسبقة ≥ 30% من GLA قبل بدء الإنشاء",
+              "status": "pending"
+            }
+          ],
+          "ddNotes": ""
+        },
+        "regulatory": {
+          "offeringType": "طرح خاص (Private Placement)",
+          "items": [
+            {
+              "text": "عدد المستثمرين ضمن الحد الأقصى المسموح للطرح الخاص حسب لائحة صناديق الاستثمار العقارية",
+              "status": "pending"
+            },
+            {
+              "text": "الحد الأدنى للاستثمار للمستثمر الواحد مستوفى حسب اللائحة",
+              "status": "pending"
+            },
+            {
+              "text": "مذكرة معلومات خاصة (Private Placement Memorandum) مُعدَّة ومُعتمَدة",
+              "status": "pending"
+            },
+            {
+              "text": "مدير الصندوق مرخّص من هيئة السوق المالية لإدارة صناديق استثمار عقارية",
+              "status": "pending"
+            },
+            {
+              "text": "أمين الحفظ (Custodian) مُعيَّن ومرخّص",
+              "status": "pending"
+            }
+          ]
+        },
+        "notes": ""
+      },
+      "financingFacts": {
+        "TPC": 50136115.60000001,
+        "debt": 30081669.360000003,
+        "seniorDebt": 30081669.360000003,
+        "mezzDebt": 0,
+        "equity": 20054446.240000006,
+        "contributedEquity": 22460979.788800005,
+        "interestRate": 0.08,
+        "Kd": 0.08,
+        "amortType": "interest_only",
+        "holdStrategy": "exit_sale",
+        "drawSchedule": null,
+        "balloonBalanceAtExit": 30081669.360000003,
+        "totalYears": 2,
+        "constructionYears": 2,
+        "equityCF": [
+          -20054446.240000006,
+          -2406533.5488000005,
+          18511797.091199998
+        ],
+        "pnlRows": [
+          {
+            "yr": 1,
+            "phase": "construction",
+            "isExitYear": false,
+            "interestExpense": 2406533.5488000005,
+            "principalPayment": 0,
+            "debtService": 2406533.5488000005,
+            "debtPayoffAtExit": 0
+          },
+          {
+            "yr": 2,
+            "phase": "construction",
+            "isExitYear": true,
+            "interestExpense": 2406533.5488000005,
+            "principalPayment": 0,
+            "debtService": 2406533.5488000005,
+            "debtPayoffAtExit": 30081669.360000003
+          }
+        ]
+      },
+      "derivedForDocumentation": {
+        "totalInterest": 4813067.097600001,
+        "pnlRows": [
+          {
+            "yr": 1,
+            "impliedCashInterest": 2406533.5488000005,
+            "impliedCapInterest": 0
+          },
+          {
+            "yr": 2,
+            "impliedCashInterest": 2406533.5488000005,
+            "impliedCapInterest": 0
+          }
+        ],
+        "equityCFNegativeYearCount": 2,
+        "equityCFNegativeYears": [
+          {
+            "i": 0,
+            "v": -20054446.240000006
+          },
+          {
+            "i": 1,
+            "v": -2406533.5488000005
+          }
+        ]
+      }
+    },
+    "T02-construction-heavy": {
+      "label": "Construction-heavy (4yr)",
+      "scenarioKey": "base",
+      "financingFocus": "مثل T01 لكن إنشاء أطول (4 سنوات) — تراكم فائدة أطول بلا drawSchedule.",
+      "input": {
+        "id": null,
+        "meta": {
+          "name": "",
+          "city": "الرياض",
+          "neighborhood": "",
+          "tier": "متوسط",
+          "oppType": "development",
+          "useType": "__neutral__",
+          "analyst": "Opal",
+          "createdAt": null,
+          "updatedAt": null,
+          "createdBy": null,
+          "updatedBy": null
+        },
+        "land": {
+          "area": 5000,
+          "price": 2000,
+          "far": 2,
+          "bar": 0.5,
+          "floorsAllowed": 0,
+          "basements": 0,
+          "floorHeight": 3.6,
+          "setbacks": 0,
+          "bonusAreaPct": 0,
+          "basementCostPremiumPct": 0,
+          "basementDepthEscalationPct": 0,
+          "floorHeightPremiumPct": 0
+        },
+        "site": {
+          "soil": 1,
+          "water": 1,
+          "tower": 1,
+          "topo": 1,
+          "infra": 1
+        },
+        "strategy": {
+          "exitStrategy": "مختلط (Mixed Sell+Rent)",
+          "salePct": 1,
+          "offPlanSale": {
+            "enabled": false,
+            "preSalePctThreshold": 0,
+            "curve": "even",
+            "escrowLagYears": 0,
+            "priceEscalationAnnual": 0
+          },
+          "directSale": {
+            "bankFinancedPct": 0,
+            "collectionLagYears": 0
+          }
+        },
+        "income": {
+          "gla": null,
+          "rent": 0,
+          "occupancy": 0,
+          "opex": 0,
+          "wale": 0,
+          "tenantConc": 0,
+          "distFreq": "ربع سنوي (Quarterly)",
+          "assetClass": "عام",
+          "holdStrategy": "exit_sale",
+          "mixedUse": false,
+          "nnn": {
+            "tenantCreditTier": "وطني (National)",
+            "leaseTermRemaining": 0,
+            "pctRent": false,
+            "pctRentRate": 0,
+            "annualSales": 0,
+            "envReserveAnnual": 0
+          },
+          "hospitality": {
+            "adr": 0,
+            "keys": 0,
+            "gopMargin": 0
+          },
+          "logisticsSpec": {
+            "clearHeight": 0,
+            "dockDoors": 0
+          },
+          "dataCenterSpec": {
+            "powerDensityKw": 0,
+            "redundancyTier": "Tier III (N+1)"
+          },
+          "refinance": {
+            "intervalYears": 0,
+            "refiLtv": 0,
+            "refiCostPct": 0,
+            "analysisHorizon": 0
+          }
+        },
+        "development": {
+          "salePrice": 6000,
+          "buildCost": 3000,
+          "constructionYears": 4,
+          "operationYears": 0,
+          "exitCapRate": 0,
+          "efficiency": 0.85,
+          "contingency": 0.05,
+          "scopeType": "both",
+          "infraCostPerSqm": 0,
+          "costBreakdown": {
+            "structure": 0,
+            "mep": 0,
+            "finishes": 0,
+            "external": 0,
+            "fees": 0
+          }
+        },
+        "landbank": {
+          "appreciation": 0,
+          "holdingYears": 0,
+          "carryAnnual": 0,
+          "zoningNote": "",
+          "hbuNote": "",
+          "interimAnnualIncome": 0,
+          "whiteLandFeePct": 0.025,
+          "whiteLandFeeExempt": false
+        },
+        "zakat": {
+          "enabled": false,
+          "ratePct": 0.025
+        },
+        "vat": {
+          "enabled": false,
+          "ratePct": 0.15,
+          "constructionInputVatPct": 0.15,
+          "inputRecoveryPct": null,
+          "refundLagYears": 0,
+          "professionalFeesVatPct": 0.15
+        },
+        "subdivision": {
+          "phasedAbsorption": false,
+          "absorptionYears": 0,
+          "curve": "even",
+          "priceEscalationAnnual": 0
+        },
+        "subscription": {
+          "minInvestment": 0,
+          "subscriptionFee": 0,
+          "lockupYears": 0,
+          "distPolicy": "عند الإغلاق فقط (At Exit Only)",
+          "investorClass": "Class A - تجزئة (Retail)",
+          "hwm": true
+        },
+        "economics": {
+          "hurdle": 0,
+          "carry": 0,
+          "lpShare": 0,
+          "gpShare": 0,
+          "devShare": 0
+        },
+        "fees": {
+          "mgmt": 0,
+          "structuring": 0,
+          "arrangement": 0,
+          "acquisition": 0,
+          "disposition": 0,
+          "assetMgmt": 0,
+          "propMgmt": 0,
+          "regAuditCustodian": 0,
+          "cmaSetup": 0,
+          "dueDiligence": 0,
+          "valuation": 0,
+          "ejarFeePct": 0,
+          "insuranceAnnualPct": 0
+        },
+        "financing": {
+          "ltc": 0.6,
+          "saibor": 0.055,
+          "margin": 0.025,
+          "tenor": 0,
+          "structure": "single",
+          "seniorPct": 0,
+          "mezzMarginAdj": 0,
+          "amortType": "interest_only",
+          "graceYears": 0,
+          "amortYears": 0,
+          "interestDuringConstruction": "cash",
+          "shariahStructure": "تقليدي (فائدة تقليدية)",
+          "drawSchedulePct": []
+        },
+        "wacc": {
+          "rf": 0,
+          "mrp": 0,
+          "beta": 0,
+          "crp": 0,
+          "sp": 0,
+          "alpha": 0,
+          "marketCap": 0,
+          "growth": 0
+        },
+        "exitCosts": {
+          "broker": 0,
+          "legal": 0,
+          "rett": 0,
+          "exitFee": 0
+        },
+        "criteria": {
+          "irrMin": 0.15,
+          "dscrMin": 1.3,
+          "moicMin": 1.5,
+          "yocMin": 0.08,
+          "projIrrMin": 0.1,
+          "preLeasingMin": 0.3,
+          "preSaleMin": 0.3,
+          "preLeasingActual": 0,
+          "preSaleActual": 0
+        },
+        "scenarios": {
+          "optimistic": {
+            "rentMult": 1.08,
+            "salePriceMult": 1.08,
+            "costMult": 0.95,
+            "capRateDelta": -0.005,
+            "rateDelta": -0.0025
+          },
+          "pessimistic": {
+            "rentMult": 0.9,
+            "salePriceMult": 0.88,
+            "costMult": 1.1,
+            "capRateDelta": 0.01,
+            "rateDelta": 0.0075
+          }
+        },
+        "closing": {
+          "titleDeed": "completed",
+          "zoning": "in_progress",
+          "environmental": "not_started",
+          "conditions": [
+            {
+              "text": "تثبيت سعر الأرض عبر اتفاقية شراء موقعة",
+              "status": "pending"
+            },
+            {
+              "text": "توقيع عقود إيجار مسبقة ≥ 30% من GLA قبل بدء الإنشاء",
+              "status": "pending"
+            }
+          ],
+          "ddNotes": ""
+        },
+        "regulatory": {
+          "offeringType": "طرح خاص (Private Placement)",
+          "items": [
+            {
+              "text": "عدد المستثمرين ضمن الحد الأقصى المسموح للطرح الخاص حسب لائحة صناديق الاستثمار العقارية",
+              "status": "pending"
+            },
+            {
+              "text": "الحد الأدنى للاستثمار للمستثمر الواحد مستوفى حسب اللائحة",
+              "status": "pending"
+            },
+            {
+              "text": "مذكرة معلومات خاصة (Private Placement Memorandum) مُعدَّة ومُعتمَدة",
+              "status": "pending"
+            },
+            {
+              "text": "مدير الصندوق مرخّص من هيئة السوق المالية لإدارة صناديق استثمار عقارية",
+              "status": "pending"
+            },
+            {
+              "text": "أمين الحفظ (Custodian) مُعيَّن ومرخّص",
+              "status": "pending"
+            }
+          ]
+        },
+        "notes": ""
+      },
+      "financingFacts": {
+        "TPC": 50136115.60000001,
+        "debt": 30081669.360000003,
+        "seniorDebt": 30081669.360000003,
+        "mezzDebt": 0,
+        "equity": 20054446.240000006,
+        "contributedEquity": 27274046.886400003,
+        "interestRate": 0.08,
+        "Kd": 0.08,
+        "amortType": "interest_only",
+        "holdStrategy": "exit_sale",
+        "drawSchedule": null,
+        "balloonBalanceAtExit": 30081669.360000003,
+        "totalYears": 4,
+        "constructionYears": 4,
+        "equityCF": [
+          -20054446.240000006,
+          -2406533.5488000005,
+          -2406533.5488000005,
+          -2406533.5488000005,
+          18511797.091199998
+        ],
+        "pnlRows": [
+          {
+            "yr": 1,
+            "phase": "construction",
+            "isExitYear": false,
+            "interestExpense": 2406533.5488000005,
+            "principalPayment": 0,
+            "debtService": 2406533.5488000005,
+            "debtPayoffAtExit": 0
+          },
+          {
+            "yr": 2,
+            "phase": "construction",
+            "isExitYear": false,
+            "interestExpense": 2406533.5488000005,
+            "principalPayment": 0,
+            "debtService": 2406533.5488000005,
+            "debtPayoffAtExit": 0
+          },
+          {
+            "yr": 3,
+            "phase": "construction",
+            "isExitYear": false,
+            "interestExpense": 2406533.5488000005,
+            "principalPayment": 0,
+            "debtService": 2406533.5488000005,
+            "debtPayoffAtExit": 0
+          },
+          {
+            "yr": 4,
+            "phase": "construction",
+            "isExitYear": true,
+            "interestExpense": 2406533.5488000005,
+            "principalPayment": 0,
+            "debtService": 2406533.5488000005,
+            "debtPayoffAtExit": 30081669.360000003
+          }
+        ]
+      },
+      "derivedForDocumentation": {
+        "totalInterest": 9626134.195200002,
+        "pnlRows": [
+          {
+            "yr": 1,
+            "impliedCashInterest": 2406533.5488000005,
+            "impliedCapInterest": 0
+          },
+          {
+            "yr": 2,
+            "impliedCashInterest": 2406533.5488000005,
+            "impliedCapInterest": 0
+          },
+          {
+            "yr": 3,
+            "impliedCashInterest": 2406533.5488000005,
+            "impliedCapInterest": 0
+          },
+          {
+            "yr": 4,
+            "impliedCashInterest": 2406533.5488000005,
+            "impliedCapInterest": 0
+          }
+        ],
+        "equityCFNegativeYearCount": 4,
+        "equityCFNegativeYears": [
+          {
+            "i": 0,
+            "v": -20054446.240000006
+          },
+          {
+            "i": 1,
+            "v": -2406533.5488000005
+          },
+          {
+            "i": 2,
+            "v": -2406533.5488000005
+          },
+          {
+            "i": 3,
+            "v": -2406533.5488000005
+          }
+        ]
+      }
+    },
+    "T05-debt-draw-schedule": {
+      "label": "Explicit 3-year draw schedule [20/30/50]",
+      "scenarioKey": "base",
+      "financingFocus": "جدول سحب صريح 3 سنوات — يختبر drawStart/drawEnd averaging.",
+      "input": {
+        "id": null,
+        "meta": {
+          "name": "",
+          "city": "الرياض",
+          "neighborhood": "",
+          "tier": "متوسط",
+          "oppType": "development",
+          "useType": "__neutral__",
+          "analyst": "Opal",
+          "createdAt": null,
+          "updatedAt": null,
+          "createdBy": null,
+          "updatedBy": null
+        },
+        "land": {
+          "area": 5000,
+          "price": 2000,
+          "far": 2,
+          "bar": 0.5,
+          "floorsAllowed": 0,
+          "basements": 0,
+          "floorHeight": 3.6,
+          "setbacks": 0,
+          "bonusAreaPct": 0,
+          "basementCostPremiumPct": 0,
+          "basementDepthEscalationPct": 0,
+          "floorHeightPremiumPct": 0
+        },
+        "site": {
+          "soil": 1,
+          "water": 1,
+          "tower": 1,
+          "topo": 1,
+          "infra": 1
+        },
+        "strategy": {
+          "exitStrategy": "مختلط (Mixed Sell+Rent)",
+          "salePct": 1,
+          "offPlanSale": {
+            "enabled": false,
+            "preSalePctThreshold": 0,
+            "curve": "even",
+            "escrowLagYears": 0,
+            "priceEscalationAnnual": 0
+          },
+          "directSale": {
+            "bankFinancedPct": 0,
+            "collectionLagYears": 0
+          }
+        },
+        "income": {
+          "gla": null,
+          "rent": 0,
+          "occupancy": 0,
+          "opex": 0,
+          "wale": 0,
+          "tenantConc": 0,
+          "distFreq": "ربع سنوي (Quarterly)",
+          "assetClass": "عام",
+          "holdStrategy": "exit_sale",
+          "mixedUse": false,
+          "nnn": {
+            "tenantCreditTier": "وطني (National)",
+            "leaseTermRemaining": 0,
+            "pctRent": false,
+            "pctRentRate": 0,
+            "annualSales": 0,
+            "envReserveAnnual": 0
+          },
+          "hospitality": {
+            "adr": 0,
+            "keys": 0,
+            "gopMargin": 0
+          },
+          "logisticsSpec": {
+            "clearHeight": 0,
+            "dockDoors": 0
+          },
+          "dataCenterSpec": {
+            "powerDensityKw": 0,
+            "redundancyTier": "Tier III (N+1)"
+          },
+          "refinance": {
+            "intervalYears": 0,
+            "refiLtv": 0,
+            "refiCostPct": 0,
+            "analysisHorizon": 0
+          }
+        },
+        "development": {
+          "salePrice": 6000,
+          "buildCost": 3000,
+          "constructionYears": 3,
+          "operationYears": 0,
+          "exitCapRate": 0,
+          "efficiency": 0.85,
+          "contingency": 0.05,
+          "scopeType": "both",
+          "infraCostPerSqm": 0,
+          "costBreakdown": {
+            "structure": 0,
+            "mep": 0,
+            "finishes": 0,
+            "external": 0,
+            "fees": 0
+          }
+        },
+        "landbank": {
+          "appreciation": 0,
+          "holdingYears": 0,
+          "carryAnnual": 0,
+          "zoningNote": "",
+          "hbuNote": "",
+          "interimAnnualIncome": 0,
+          "whiteLandFeePct": 0.025,
+          "whiteLandFeeExempt": false
+        },
+        "zakat": {
+          "enabled": false,
+          "ratePct": 0.025
+        },
+        "vat": {
+          "enabled": false,
+          "ratePct": 0.15,
+          "constructionInputVatPct": 0.15,
+          "inputRecoveryPct": null,
+          "refundLagYears": 0,
+          "professionalFeesVatPct": 0.15
+        },
+        "subdivision": {
+          "phasedAbsorption": false,
+          "absorptionYears": 0,
+          "curve": "even",
+          "priceEscalationAnnual": 0
+        },
+        "subscription": {
+          "minInvestment": 0,
+          "subscriptionFee": 0,
+          "lockupYears": 0,
+          "distPolicy": "عند الإغلاق فقط (At Exit Only)",
+          "investorClass": "Class A - تجزئة (Retail)",
+          "hwm": true
+        },
+        "economics": {
+          "hurdle": 0,
+          "carry": 0,
+          "lpShare": 0,
+          "gpShare": 0,
+          "devShare": 0
+        },
+        "fees": {
+          "mgmt": 0,
+          "structuring": 0,
+          "arrangement": 0,
+          "acquisition": 0,
+          "disposition": 0,
+          "assetMgmt": 0,
+          "propMgmt": 0,
+          "regAuditCustodian": 0,
+          "cmaSetup": 0,
+          "dueDiligence": 0,
+          "valuation": 0,
+          "ejarFeePct": 0,
+          "insuranceAnnualPct": 0
+        },
+        "financing": {
+          "ltc": 0.6,
+          "saibor": 0.055,
+          "margin": 0.025,
+          "tenor": 0,
+          "structure": "single",
+          "seniorPct": 0,
+          "mezzMarginAdj": 0,
+          "amortType": "interest_only",
+          "graceYears": 0,
+          "amortYears": 0,
+          "interestDuringConstruction": "cash",
+          "shariahStructure": "تقليدي (فائدة تقليدية)",
+          "drawSchedulePct": [
+            0.2,
+            0.3,
+            0.5
+          ]
+        },
+        "wacc": {
+          "rf": 0,
+          "mrp": 0,
+          "beta": 0,
+          "crp": 0,
+          "sp": 0,
+          "alpha": 0,
+          "marketCap": 0,
+          "growth": 0
+        },
+        "exitCosts": {
+          "broker": 0,
+          "legal": 0,
+          "rett": 0,
+          "exitFee": 0
+        },
+        "criteria": {
+          "irrMin": 0.15,
+          "dscrMin": 1.3,
+          "moicMin": 1.5,
+          "yocMin": 0.08,
+          "projIrrMin": 0.1,
+          "preLeasingMin": 0.3,
+          "preSaleMin": 0.3,
+          "preLeasingActual": 0,
+          "preSaleActual": 0
+        },
+        "scenarios": {
+          "optimistic": {
+            "rentMult": 1.08,
+            "salePriceMult": 1.08,
+            "costMult": 0.95,
+            "capRateDelta": -0.005,
+            "rateDelta": -0.0025
+          },
+          "pessimistic": {
+            "rentMult": 0.9,
+            "salePriceMult": 0.88,
+            "costMult": 1.1,
+            "capRateDelta": 0.01,
+            "rateDelta": 0.0075
+          }
+        },
+        "closing": {
+          "titleDeed": "completed",
+          "zoning": "in_progress",
+          "environmental": "not_started",
+          "conditions": [
+            {
+              "text": "تثبيت سعر الأرض عبر اتفاقية شراء موقعة",
+              "status": "pending"
+            },
+            {
+              "text": "توقيع عقود إيجار مسبقة ≥ 30% من GLA قبل بدء الإنشاء",
+              "status": "pending"
+            }
+          ],
+          "ddNotes": ""
+        },
+        "regulatory": {
+          "offeringType": "طرح خاص (Private Placement)",
+          "items": [
+            {
+              "text": "عدد المستثمرين ضمن الحد الأقصى المسموح للطرح الخاص حسب لائحة صناديق الاستثمار العقارية",
+              "status": "pending"
+            },
+            {
+              "text": "الحد الأدنى للاستثمار للمستثمر الواحد مستوفى حسب اللائحة",
+              "status": "pending"
+            },
+            {
+              "text": "مذكرة معلومات خاصة (Private Placement Memorandum) مُعدَّة ومُعتمَدة",
+              "status": "pending"
+            },
+            {
+              "text": "مدير الصندوق مرخّص من هيئة السوق المالية لإدارة صناديق استثمار عقارية",
+              "status": "pending"
+            },
+            {
+              "text": "أمين الحفظ (Custodian) مُعيَّن ومرخّص",
+              "status": "pending"
+            }
+          ]
+        },
+        "notes": ""
+      },
+      "financingFacts": {
+        "TPC": 50136115.60000001,
+        "debt": 30081669.360000003,
+        "seniorDebt": 30081669.360000003,
+        "mezzDebt": 0,
+        "equity": 20054446.240000006,
+        "contributedEquity": 21137386.336960007,
+        "interestRate": 0.08,
+        "Kd": 0.08,
+        "amortType": "interest_only",
+        "holdStrategy": "exit_sale",
+        "drawSchedule": [
+          0.2,
+          0.3,
+          0.5
+        ],
+        "balloonBalanceAtExit": 30081669.360000003,
+        "totalYears": 3,
+        "constructionYears": 3,
+        "equityCF": [
+          -20054446.240000006,
+          -240653.35488000006,
+          -842286.7420800001,
+          19113430.478399996
+        ],
+        "pnlRows": [
+          {
+            "yr": 1,
+            "phase": "construction",
+            "isExitYear": false,
+            "interestExpense": 240653.35488000006,
+            "principalPayment": 0,
+            "debtService": 240653.35488000006,
+            "debtPayoffAtExit": 0
+          },
+          {
+            "yr": 2,
+            "phase": "construction",
+            "isExitYear": false,
+            "interestExpense": 842286.7420800001,
+            "principalPayment": 0,
+            "debtService": 842286.7420800001,
+            "debtPayoffAtExit": 0
+          },
+          {
+            "yr": 3,
+            "phase": "construction",
+            "isExitYear": true,
+            "interestExpense": 1804900.1616000002,
+            "principalPayment": 0,
+            "debtService": 1804900.1616000002,
+            "debtPayoffAtExit": 30081669.360000003
+          }
+        ]
+      },
+      "derivedForDocumentation": {
+        "totalInterest": 2887840.2585600005,
+        "pnlRows": [
+          {
+            "yr": 1,
+            "impliedCashInterest": 240653.35488000006,
+            "impliedCapInterest": 0
+          },
+          {
+            "yr": 2,
+            "impliedCashInterest": 842286.7420800001,
+            "impliedCapInterest": 0
+          },
+          {
+            "yr": 3,
+            "impliedCashInterest": 1804900.1616000002,
+            "impliedCapInterest": 0
+          }
+        ],
+        "equityCFNegativeYearCount": 3,
+        "equityCFNegativeYears": [
+          {
+            "i": 0,
+            "v": -20054446.240000006
+          },
+          {
+            "i": 1,
+            "v": -240653.35488000006
+          },
+          {
+            "i": 2,
+            "v": -842286.7420800001
+          }
+        ]
+      }
+    },
+    "T06-capitalized-interest": {
+      "label": "Capitalized construction interest",
+      "scenarioKey": "base",
+      "financingFocus": "فائدة إنشاء مُرسمَلة.",
+      "input": {
+        "id": null,
+        "meta": {
+          "name": "",
+          "city": "الرياض",
+          "neighborhood": "",
+          "tier": "متوسط",
+          "oppType": "development",
+          "useType": "__neutral__",
+          "analyst": "Opal",
+          "createdAt": null,
+          "updatedAt": null,
+          "createdBy": null,
+          "updatedBy": null
+        },
+        "land": {
+          "area": 5000,
+          "price": 2000,
+          "far": 2,
+          "bar": 0.5,
+          "floorsAllowed": 0,
+          "basements": 0,
+          "floorHeight": 3.6,
+          "setbacks": 0,
+          "bonusAreaPct": 0,
+          "basementCostPremiumPct": 0,
+          "basementDepthEscalationPct": 0,
+          "floorHeightPremiumPct": 0
+        },
+        "site": {
+          "soil": 1,
+          "water": 1,
+          "tower": 1,
+          "topo": 1,
+          "infra": 1
+        },
+        "strategy": {
+          "exitStrategy": "مختلط (Mixed Sell+Rent)",
+          "salePct": 1,
+          "offPlanSale": {
+            "enabled": false,
+            "preSalePctThreshold": 0,
+            "curve": "even",
+            "escrowLagYears": 0,
+            "priceEscalationAnnual": 0
+          },
+          "directSale": {
+            "bankFinancedPct": 0,
+            "collectionLagYears": 0
+          }
+        },
+        "income": {
+          "gla": null,
+          "rent": 0,
+          "occupancy": 0,
+          "opex": 0,
+          "wale": 0,
+          "tenantConc": 0,
+          "distFreq": "ربع سنوي (Quarterly)",
+          "assetClass": "عام",
+          "holdStrategy": "exit_sale",
+          "mixedUse": false,
+          "nnn": {
+            "tenantCreditTier": "وطني (National)",
+            "leaseTermRemaining": 0,
+            "pctRent": false,
+            "pctRentRate": 0,
+            "annualSales": 0,
+            "envReserveAnnual": 0
+          },
+          "hospitality": {
+            "adr": 0,
+            "keys": 0,
+            "gopMargin": 0
+          },
+          "logisticsSpec": {
+            "clearHeight": 0,
+            "dockDoors": 0
+          },
+          "dataCenterSpec": {
+            "powerDensityKw": 0,
+            "redundancyTier": "Tier III (N+1)"
+          },
+          "refinance": {
+            "intervalYears": 0,
+            "refiLtv": 0,
+            "refiCostPct": 0,
+            "analysisHorizon": 0
+          }
+        },
+        "development": {
+          "salePrice": 6000,
+          "buildCost": 3000,
+          "constructionYears": 2,
+          "operationYears": 0,
+          "exitCapRate": 0,
+          "efficiency": 0.85,
+          "contingency": 0.05,
+          "scopeType": "both",
+          "infraCostPerSqm": 0,
+          "costBreakdown": {
+            "structure": 0,
+            "mep": 0,
+            "finishes": 0,
+            "external": 0,
+            "fees": 0
+          }
+        },
+        "landbank": {
+          "appreciation": 0,
+          "holdingYears": 0,
+          "carryAnnual": 0,
+          "zoningNote": "",
+          "hbuNote": "",
+          "interimAnnualIncome": 0,
+          "whiteLandFeePct": 0.025,
+          "whiteLandFeeExempt": false
+        },
+        "zakat": {
+          "enabled": false,
+          "ratePct": 0.025
+        },
+        "vat": {
+          "enabled": false,
+          "ratePct": 0.15,
+          "constructionInputVatPct": 0.15,
+          "inputRecoveryPct": null,
+          "refundLagYears": 0,
+          "professionalFeesVatPct": 0.15
+        },
+        "subdivision": {
+          "phasedAbsorption": false,
+          "absorptionYears": 0,
+          "curve": "even",
+          "priceEscalationAnnual": 0
+        },
+        "subscription": {
+          "minInvestment": 0,
+          "subscriptionFee": 0,
+          "lockupYears": 0,
+          "distPolicy": "عند الإغلاق فقط (At Exit Only)",
+          "investorClass": "Class A - تجزئة (Retail)",
+          "hwm": true
+        },
+        "economics": {
+          "hurdle": 0,
+          "carry": 0,
+          "lpShare": 0,
+          "gpShare": 0,
+          "devShare": 0
+        },
+        "fees": {
+          "mgmt": 0,
+          "structuring": 0,
+          "arrangement": 0,
+          "acquisition": 0,
+          "disposition": 0,
+          "assetMgmt": 0,
+          "propMgmt": 0,
+          "regAuditCustodian": 0,
+          "cmaSetup": 0,
+          "dueDiligence": 0,
+          "valuation": 0,
+          "ejarFeePct": 0,
+          "insuranceAnnualPct": 0
+        },
+        "financing": {
+          "ltc": 0.6,
+          "saibor": 0.055,
+          "margin": 0.025,
+          "tenor": 0,
+          "structure": "single",
+          "seniorPct": 0,
+          "mezzMarginAdj": 0,
+          "amortType": "interest_only",
+          "graceYears": 0,
+          "amortYears": 0,
+          "interestDuringConstruction": "capitalized",
+          "shariahStructure": "تقليدي (فائدة تقليدية)",
+          "drawSchedulePct": []
+        },
+        "wacc": {
+          "rf": 0,
+          "mrp": 0,
+          "beta": 0,
+          "crp": 0,
+          "sp": 0,
+          "alpha": 0,
+          "marketCap": 0,
+          "growth": 0
+        },
+        "exitCosts": {
+          "broker": 0,
+          "legal": 0,
+          "rett": 0,
+          "exitFee": 0
+        },
+        "criteria": {
+          "irrMin": 0.15,
+          "dscrMin": 1.3,
+          "moicMin": 1.5,
+          "yocMin": 0.08,
+          "projIrrMin": 0.1,
+          "preLeasingMin": 0.3,
+          "preSaleMin": 0.3,
+          "preLeasingActual": 0,
+          "preSaleActual": 0
+        },
+        "scenarios": {
+          "optimistic": {
+            "rentMult": 1.08,
+            "salePriceMult": 1.08,
+            "costMult": 0.95,
+            "capRateDelta": -0.005,
+            "rateDelta": -0.0025
+          },
+          "pessimistic": {
+            "rentMult": 0.9,
+            "salePriceMult": 0.88,
+            "costMult": 1.1,
+            "capRateDelta": 0.01,
+            "rateDelta": 0.0075
+          }
+        },
+        "closing": {
+          "titleDeed": "completed",
+          "zoning": "in_progress",
+          "environmental": "not_started",
+          "conditions": [
+            {
+              "text": "تثبيت سعر الأرض عبر اتفاقية شراء موقعة",
+              "status": "pending"
+            },
+            {
+              "text": "توقيع عقود إيجار مسبقة ≥ 30% من GLA قبل بدء الإنشاء",
+              "status": "pending"
+            }
+          ],
+          "ddNotes": ""
+        },
+        "regulatory": {
+          "offeringType": "طرح خاص (Private Placement)",
+          "items": [
+            {
+              "text": "عدد المستثمرين ضمن الحد الأقصى المسموح للطرح الخاص حسب لائحة صناديق الاستثمار العقارية",
+              "status": "pending"
+            },
+            {
+              "text": "الحد الأدنى للاستثمار للمستثمر الواحد مستوفى حسب اللائحة",
+              "status": "pending"
+            },
+            {
+              "text": "مذكرة معلومات خاصة (Private Placement Memorandum) مُعدَّة ومُعتمَدة",
+              "status": "pending"
+            },
+            {
+              "text": "مدير الصندوق مرخّص من هيئة السوق المالية لإدارة صناديق استثمار عقارية",
+              "status": "pending"
+            },
+            {
+              "text": "أمين الحفظ (Custodian) مُعيَّن ومرخّص",
+              "status": "pending"
+            }
+          ]
+        },
+        "notes": ""
+      },
+      "financingFacts": {
+        "TPC": 50136115.60000001,
+        "debt": 30081669.360000003,
+        "seniorDebt": 30081669.360000003,
+        "mezzDebt": 0,
+        "equity": 20054446.240000006,
+        "contributedEquity": 20054446.240000006,
+        "interestRate": 0.08,
+        "Kd": 0.08,
+        "amortType": "interest_only",
+        "holdStrategy": "exit_sale",
+        "drawSchedule": null,
+        "balloonBalanceAtExit": 32488202.908800002,
+        "totalYears": 2,
+        "constructionYears": 2,
+        "equityCF": [
+          -20054446.240000006,
+          0,
+          18511797.091199998
+        ],
+        "pnlRows": [
+          {
+            "yr": 1,
+            "phase": "construction",
+            "isExitYear": false,
+            "interestExpense": 2406533.5488000005,
+            "principalPayment": 0,
+            "debtService": 0,
+            "debtPayoffAtExit": 0
+          },
+          {
+            "yr": 2,
+            "phase": "construction",
+            "isExitYear": true,
+            "interestExpense": 2599056.232704,
+            "principalPayment": 0,
+            "debtService": 0,
+            "debtPayoffAtExit": 32488202.908800002
+          }
+        ]
+      },
+      "derivedForDocumentation": {
+        "totalInterest": 5005589.781504001,
+        "pnlRows": [
+          {
+            "yr": 1,
+            "impliedCashInterest": 0,
+            "impliedCapInterest": 2406533.5488000005
+          },
+          {
+            "yr": 2,
+            "impliedCashInterest": 0,
+            "impliedCapInterest": 2599056.232704
+          }
+        ],
+        "equityCFNegativeYearCount": 1,
+        "equityCFNegativeYears": [
+          {
+            "i": 0,
+            "v": -20054446.240000006
+          }
+        ]
+      }
+    },
+    "T07-cash-interest": {
+      "label": "Cash construction interest (explicit contrast to T06)",
+      "scenarioKey": "base",
+      "financingFocus": "فائدة إنشاء نقدية صراحة — نظير T06 للمقارنة المباشرة.",
+      "input": {
+        "id": null,
+        "meta": {
+          "name": "",
+          "city": "الرياض",
+          "neighborhood": "",
+          "tier": "متوسط",
+          "oppType": "development",
+          "useType": "__neutral__",
+          "analyst": "Opal",
+          "createdAt": null,
+          "updatedAt": null,
+          "createdBy": null,
+          "updatedBy": null
+        },
+        "land": {
+          "area": 5000,
+          "price": 2000,
+          "far": 2,
+          "bar": 0.5,
+          "floorsAllowed": 0,
+          "basements": 0,
+          "floorHeight": 3.6,
+          "setbacks": 0,
+          "bonusAreaPct": 0,
+          "basementCostPremiumPct": 0,
+          "basementDepthEscalationPct": 0,
+          "floorHeightPremiumPct": 0
+        },
+        "site": {
+          "soil": 1,
+          "water": 1,
+          "tower": 1,
+          "topo": 1,
+          "infra": 1
+        },
+        "strategy": {
+          "exitStrategy": "مختلط (Mixed Sell+Rent)",
+          "salePct": 1,
+          "offPlanSale": {
+            "enabled": false,
+            "preSalePctThreshold": 0,
+            "curve": "even",
+            "escrowLagYears": 0,
+            "priceEscalationAnnual": 0
+          },
+          "directSale": {
+            "bankFinancedPct": 0,
+            "collectionLagYears": 0
+          }
+        },
+        "income": {
+          "gla": null,
+          "rent": 0,
+          "occupancy": 0,
+          "opex": 0,
+          "wale": 0,
+          "tenantConc": 0,
+          "distFreq": "ربع سنوي (Quarterly)",
+          "assetClass": "عام",
+          "holdStrategy": "exit_sale",
+          "mixedUse": false,
+          "nnn": {
+            "tenantCreditTier": "وطني (National)",
+            "leaseTermRemaining": 0,
+            "pctRent": false,
+            "pctRentRate": 0,
+            "annualSales": 0,
+            "envReserveAnnual": 0
+          },
+          "hospitality": {
+            "adr": 0,
+            "keys": 0,
+            "gopMargin": 0
+          },
+          "logisticsSpec": {
+            "clearHeight": 0,
+            "dockDoors": 0
+          },
+          "dataCenterSpec": {
+            "powerDensityKw": 0,
+            "redundancyTier": "Tier III (N+1)"
+          },
+          "refinance": {
+            "intervalYears": 0,
+            "refiLtv": 0,
+            "refiCostPct": 0,
+            "analysisHorizon": 0
+          }
+        },
+        "development": {
+          "salePrice": 6000,
+          "buildCost": 3000,
+          "constructionYears": 2,
+          "operationYears": 0,
+          "exitCapRate": 0,
+          "efficiency": 0.85,
+          "contingency": 0.05,
+          "scopeType": "both",
+          "infraCostPerSqm": 0,
+          "costBreakdown": {
+            "structure": 0,
+            "mep": 0,
+            "finishes": 0,
+            "external": 0,
+            "fees": 0
+          }
+        },
+        "landbank": {
+          "appreciation": 0,
+          "holdingYears": 0,
+          "carryAnnual": 0,
+          "zoningNote": "",
+          "hbuNote": "",
+          "interimAnnualIncome": 0,
+          "whiteLandFeePct": 0.025,
+          "whiteLandFeeExempt": false
+        },
+        "zakat": {
+          "enabled": false,
+          "ratePct": 0.025
+        },
+        "vat": {
+          "enabled": false,
+          "ratePct": 0.15,
+          "constructionInputVatPct": 0.15,
+          "inputRecoveryPct": null,
+          "refundLagYears": 0,
+          "professionalFeesVatPct": 0.15
+        },
+        "subdivision": {
+          "phasedAbsorption": false,
+          "absorptionYears": 0,
+          "curve": "even",
+          "priceEscalationAnnual": 0
+        },
+        "subscription": {
+          "minInvestment": 0,
+          "subscriptionFee": 0,
+          "lockupYears": 0,
+          "distPolicy": "عند الإغلاق فقط (At Exit Only)",
+          "investorClass": "Class A - تجزئة (Retail)",
+          "hwm": true
+        },
+        "economics": {
+          "hurdle": 0,
+          "carry": 0,
+          "lpShare": 0,
+          "gpShare": 0,
+          "devShare": 0
+        },
+        "fees": {
+          "mgmt": 0,
+          "structuring": 0,
+          "arrangement": 0,
+          "acquisition": 0,
+          "disposition": 0,
+          "assetMgmt": 0,
+          "propMgmt": 0,
+          "regAuditCustodian": 0,
+          "cmaSetup": 0,
+          "dueDiligence": 0,
+          "valuation": 0,
+          "ejarFeePct": 0,
+          "insuranceAnnualPct": 0
+        },
+        "financing": {
+          "ltc": 0.6,
+          "saibor": 0.055,
+          "margin": 0.025,
+          "tenor": 0,
+          "structure": "single",
+          "seniorPct": 0,
+          "mezzMarginAdj": 0,
+          "amortType": "interest_only",
+          "graceYears": 0,
+          "amortYears": 0,
+          "interestDuringConstruction": "cash",
+          "shariahStructure": "تقليدي (فائدة تقليدية)",
+          "drawSchedulePct": []
+        },
+        "wacc": {
+          "rf": 0,
+          "mrp": 0,
+          "beta": 0,
+          "crp": 0,
+          "sp": 0,
+          "alpha": 0,
+          "marketCap": 0,
+          "growth": 0
+        },
+        "exitCosts": {
+          "broker": 0,
+          "legal": 0,
+          "rett": 0,
+          "exitFee": 0
+        },
+        "criteria": {
+          "irrMin": 0.15,
+          "dscrMin": 1.3,
+          "moicMin": 1.5,
+          "yocMin": 0.08,
+          "projIrrMin": 0.1,
+          "preLeasingMin": 0.3,
+          "preSaleMin": 0.3,
+          "preLeasingActual": 0,
+          "preSaleActual": 0
+        },
+        "scenarios": {
+          "optimistic": {
+            "rentMult": 1.08,
+            "salePriceMult": 1.08,
+            "costMult": 0.95,
+            "capRateDelta": -0.005,
+            "rateDelta": -0.0025
+          },
+          "pessimistic": {
+            "rentMult": 0.9,
+            "salePriceMult": 0.88,
+            "costMult": 1.1,
+            "capRateDelta": 0.01,
+            "rateDelta": 0.0075
+          }
+        },
+        "closing": {
+          "titleDeed": "completed",
+          "zoning": "in_progress",
+          "environmental": "not_started",
+          "conditions": [
+            {
+              "text": "تثبيت سعر الأرض عبر اتفاقية شراء موقعة",
+              "status": "pending"
+            },
+            {
+              "text": "توقيع عقود إيجار مسبقة ≥ 30% من GLA قبل بدء الإنشاء",
+              "status": "pending"
+            }
+          ],
+          "ddNotes": ""
+        },
+        "regulatory": {
+          "offeringType": "طرح خاص (Private Placement)",
+          "items": [
+            {
+              "text": "عدد المستثمرين ضمن الحد الأقصى المسموح للطرح الخاص حسب لائحة صناديق الاستثمار العقارية",
+              "status": "pending"
+            },
+            {
+              "text": "الحد الأدنى للاستثمار للمستثمر الواحد مستوفى حسب اللائحة",
+              "status": "pending"
+            },
+            {
+              "text": "مذكرة معلومات خاصة (Private Placement Memorandum) مُعدَّة ومُعتمَدة",
+              "status": "pending"
+            },
+            {
+              "text": "مدير الصندوق مرخّص من هيئة السوق المالية لإدارة صناديق استثمار عقارية",
+              "status": "pending"
+            },
+            {
+              "text": "أمين الحفظ (Custodian) مُعيَّن ومرخّص",
+              "status": "pending"
+            }
+          ]
+        },
+        "notes": ""
+      },
+      "financingFacts": {
+        "TPC": 50136115.60000001,
+        "debt": 30081669.360000003,
+        "seniorDebt": 30081669.360000003,
+        "mezzDebt": 0,
+        "equity": 20054446.240000006,
+        "contributedEquity": 22460979.788800005,
+        "interestRate": 0.08,
+        "Kd": 0.08,
+        "amortType": "interest_only",
+        "holdStrategy": "exit_sale",
+        "drawSchedule": null,
+        "balloonBalanceAtExit": 30081669.360000003,
+        "totalYears": 2,
+        "constructionYears": 2,
+        "equityCF": [
+          -20054446.240000006,
+          -2406533.5488000005,
+          18511797.091199998
+        ],
+        "pnlRows": [
+          {
+            "yr": 1,
+            "phase": "construction",
+            "isExitYear": false,
+            "interestExpense": 2406533.5488000005,
+            "principalPayment": 0,
+            "debtService": 2406533.5488000005,
+            "debtPayoffAtExit": 0
+          },
+          {
+            "yr": 2,
+            "phase": "construction",
+            "isExitYear": true,
+            "interestExpense": 2406533.5488000005,
+            "principalPayment": 0,
+            "debtService": 2406533.5488000005,
+            "debtPayoffAtExit": 30081669.360000003
+          }
+        ]
+      },
+      "derivedForDocumentation": {
+        "totalInterest": 4813067.097600001,
+        "pnlRows": [
+          {
+            "yr": 1,
+            "impliedCashInterest": 2406533.5488000005,
+            "impliedCapInterest": 0
+          },
+          {
+            "yr": 2,
+            "impliedCashInterest": 2406533.5488000005,
+            "impliedCapInterest": 0
+          }
+        ],
+        "equityCFNegativeYearCount": 2,
+        "equityCFNegativeYears": [
+          {
+            "i": 0,
+            "v": -20054446.240000006
+          },
+          {
+            "i": 1,
+            "v": -2406533.5488000005
+          }
+        ]
+      }
+    },
+    "T13-landbank": {
+      "label": "Landbank with real debt (ltc=0.4)",
+      "scenarioKey": "base",
+      "financingFocus": "بنك أراضٍ بدين فعلي — لا سنوات إنشاء، فائدة على كامل مدة الاحتفاظ.",
+      "input": {
+        "id": null,
+        "meta": {
+          "name": "",
+          "city": "الرياض",
+          "neighborhood": "",
+          "tier": "متوسط",
+          "oppType": "landbank",
+          "useType": "__neutral__",
+          "analyst": "Opal",
+          "createdAt": null,
+          "updatedAt": null,
+          "createdBy": null,
+          "updatedBy": null
+        },
+        "land": {
+          "area": 5000,
+          "price": 2000,
+          "far": 2,
+          "bar": 0.5,
+          "floorsAllowed": 0,
+          "basements": 0,
+          "floorHeight": 3.6,
+          "setbacks": 0,
+          "bonusAreaPct": 0,
+          "basementCostPremiumPct": 0,
+          "basementDepthEscalationPct": 0,
+          "floorHeightPremiumPct": 0
+        },
+        "site": {
+          "soil": 1,
+          "water": 1,
+          "tower": 1,
+          "topo": 1,
+          "infra": 1
+        },
+        "strategy": {
+          "exitStrategy": "مختلط (Mixed Sell+Rent)",
+          "salePct": 1,
+          "offPlanSale": {
+            "enabled": false,
+            "preSalePctThreshold": 0,
+            "curve": "even",
+            "escrowLagYears": 0,
+            "priceEscalationAnnual": 0
+          },
+          "directSale": {
+            "bankFinancedPct": 0,
+            "collectionLagYears": 0
+          }
+        },
+        "income": {
+          "gla": null,
+          "rent": 0,
+          "occupancy": 0,
+          "opex": 0,
+          "wale": 0,
+          "tenantConc": 0,
+          "distFreq": "ربع سنوي (Quarterly)",
+          "assetClass": "عام",
+          "holdStrategy": "exit_sale",
+          "mixedUse": false,
+          "nnn": {
+            "tenantCreditTier": "وطني (National)",
+            "leaseTermRemaining": 0,
+            "pctRent": false,
+            "pctRentRate": 0,
+            "annualSales": 0,
+            "envReserveAnnual": 0
+          },
+          "hospitality": {
+            "adr": 0,
+            "keys": 0,
+            "gopMargin": 0
+          },
+          "logisticsSpec": {
+            "clearHeight": 0,
+            "dockDoors": 0
+          },
+          "dataCenterSpec": {
+            "powerDensityKw": 0,
+            "redundancyTier": "Tier III (N+1)"
+          },
+          "refinance": {
+            "intervalYears": 0,
+            "refiLtv": 0,
+            "refiCostPct": 0,
+            "analysisHorizon": 0
+          }
+        },
+        "development": {
+          "salePrice": 6000,
+          "buildCost": 3000,
+          "constructionYears": 2,
+          "operationYears": 0,
+          "exitCapRate": 0,
+          "efficiency": 0.85,
+          "contingency": 0.05,
+          "scopeType": "both",
+          "infraCostPerSqm": 0,
+          "costBreakdown": {
+            "structure": 0,
+            "mep": 0,
+            "finishes": 0,
+            "external": 0,
+            "fees": 0
+          }
+        },
+        "landbank": {
+          "appreciation": 0.08,
+          "holdingYears": 4,
+          "carryAnnual": 250000,
+          "zoningNote": "",
+          "hbuNote": "",
+          "interimAnnualIncome": 0,
+          "whiteLandFeePct": 0.025,
+          "whiteLandFeeExempt": false
+        },
+        "zakat": {
+          "enabled": false,
+          "ratePct": 0.025
+        },
+        "vat": {
+          "enabled": false,
+          "ratePct": 0.15,
+          "constructionInputVatPct": 0.15,
+          "inputRecoveryPct": null,
+          "refundLagYears": 0,
+          "professionalFeesVatPct": 0.15
+        },
+        "subdivision": {
+          "phasedAbsorption": false,
+          "absorptionYears": 0,
+          "curve": "even",
+          "priceEscalationAnnual": 0
+        },
+        "subscription": {
+          "minInvestment": 0,
+          "subscriptionFee": 0,
+          "lockupYears": 0,
+          "distPolicy": "عند الإغلاق فقط (At Exit Only)",
+          "investorClass": "Class A - تجزئة (Retail)",
+          "hwm": true
+        },
+        "economics": {
+          "hurdle": 0,
+          "carry": 0,
+          "lpShare": 0,
+          "gpShare": 0,
+          "devShare": 0
+        },
+        "fees": {
+          "mgmt": 0,
+          "structuring": 0,
+          "arrangement": 0,
+          "acquisition": 0,
+          "disposition": 0,
+          "assetMgmt": 0,
+          "propMgmt": 0,
+          "regAuditCustodian": 0,
+          "cmaSetup": 0,
+          "dueDiligence": 0,
+          "valuation": 0,
+          "ejarFeePct": 0,
+          "insuranceAnnualPct": 0
+        },
+        "financing": {
+          "ltc": 0.4,
+          "saibor": 0.055,
+          "margin": 0.025,
+          "tenor": 0,
+          "structure": "single",
+          "seniorPct": 0,
+          "mezzMarginAdj": 0,
+          "amortType": "interest_only",
+          "graceYears": 0,
+          "amortYears": 0,
+          "interestDuringConstruction": "cash",
+          "shariahStructure": "تقليدي (فائدة تقليدية)",
+          "drawSchedulePct": []
+        },
+        "wacc": {
+          "rf": 0,
+          "mrp": 0,
+          "beta": 0,
+          "crp": 0,
+          "sp": 0,
+          "alpha": 0,
+          "marketCap": 0,
+          "growth": 0
+        },
+        "exitCosts": {
+          "broker": 0,
+          "legal": 0,
+          "rett": 0,
+          "exitFee": 0
+        },
+        "criteria": {
+          "irrMin": 0.15,
+          "dscrMin": 1.3,
+          "moicMin": 1.5,
+          "yocMin": 0.08,
+          "projIrrMin": 0.1,
+          "preLeasingMin": 0.3,
+          "preSaleMin": 0.3,
+          "preLeasingActual": 0,
+          "preSaleActual": 0
+        },
+        "scenarios": {
+          "optimistic": {
+            "rentMult": 1.08,
+            "salePriceMult": 1.08,
+            "costMult": 0.95,
+            "capRateDelta": -0.005,
+            "rateDelta": -0.0025
+          },
+          "pessimistic": {
+            "rentMult": 0.9,
+            "salePriceMult": 0.88,
+            "costMult": 1.1,
+            "capRateDelta": 0.01,
+            "rateDelta": 0.0075
+          }
+        },
+        "closing": {
+          "titleDeed": "completed",
+          "zoning": "in_progress",
+          "environmental": "not_started",
+          "conditions": [
+            {
+              "text": "تثبيت سعر الأرض عبر اتفاقية شراء موقعة",
+              "status": "pending"
+            },
+            {
+              "text": "توقيع عقود إيجار مسبقة ≥ 30% من GLA قبل بدء الإنشاء",
+              "status": "pending"
+            }
+          ],
+          "ddNotes": ""
+        },
+        "regulatory": {
+          "offeringType": "طرح خاص (Private Placement)",
+          "items": [
+            {
+              "text": "عدد المستثمرين ضمن الحد الأقصى المسموح للطرح الخاص حسب لائحة صناديق الاستثمار العقارية",
+              "status": "pending"
+            },
+            {
+              "text": "الحد الأدنى للاستثمار للمستثمر الواحد مستوفى حسب اللائحة",
+              "status": "pending"
+            },
+            {
+              "text": "مذكرة معلومات خاصة (Private Placement Memorandum) مُعدَّة ومُعتمَدة",
+              "status": "pending"
+            },
+            {
+              "text": "مدير الصندوق مرخّص من هيئة السوق المالية لإدارة صناديق استثمار عقارية",
+              "status": "pending"
+            },
+            {
+              "text": "أمين الحفظ (Custodian) مُعيَّن ومرخّص",
+              "status": "pending"
+            }
+          ]
+        },
+        "notes": ""
+      },
+      "financingFacts": {
+        "TPC": 10000000,
+        "debt": 4000000,
+        "seniorDebt": 4000000,
+        "mezzDebt": 0,
+        "equity": 6000000,
+        "contributedEquity": 8460000,
+        "interestRate": 0.08,
+        "Kd": 0.08,
+        "amortType": "interest_only",
+        "holdStrategy": "exit_sale",
+        "drawSchedule": null,
+        "balloonBalanceAtExit": 4000000,
+        "totalYears": 4,
+        "constructionYears": 0,
+        "equityCF": [
+          -6000000,
+          -820000,
+          -820000,
+          -820000,
+          8784889.600000003
+        ],
+        "pnlRows": [
+          {
+            "yr": 1,
+            "phase": "operation",
+            "isExitYear": false,
+            "interestExpense": 320000,
+            "principalPayment": 0,
+            "debtService": 320000,
+            "debtPayoffAtExit": 0
+          },
+          {
+            "yr": 2,
+            "phase": "operation",
+            "isExitYear": false,
+            "interestExpense": 320000,
+            "principalPayment": 0,
+            "debtService": 320000,
+            "debtPayoffAtExit": 0
+          },
+          {
+            "yr": 3,
+            "phase": "operation",
+            "isExitYear": false,
+            "interestExpense": 320000,
+            "principalPayment": 0,
+            "debtService": 320000,
+            "debtPayoffAtExit": 0
+          },
+          {
+            "yr": 4,
+            "phase": "operation",
+            "isExitYear": true,
+            "interestExpense": 320000,
+            "principalPayment": 0,
+            "debtService": 320000,
+            "debtPayoffAtExit": 4000000
+          }
+        ]
+      },
+      "derivedForDocumentation": {
+        "totalInterest": 1280000,
+        "pnlRows": [
+          {
+            "yr": 1,
+            "impliedCashInterest": 320000,
+            "impliedCapInterest": 0
+          },
+          {
+            "yr": 2,
+            "impliedCashInterest": 320000,
+            "impliedCapInterest": 0
+          },
+          {
+            "yr": 3,
+            "impliedCashInterest": 320000,
+            "impliedCapInterest": 0
+          },
+          {
+            "yr": 4,
+            "impliedCashInterest": 320000,
+            "impliedCapInterest": 0
+          }
+        ],
+        "equityCFNegativeYearCount": 4,
+        "equityCFNegativeYears": [
+          {
+            "i": 0,
+            "v": -6000000
+          },
+          {
+            "i": 1,
+            "v": -820000
+          },
+          {
+            "i": 2,
+            "v": -820000
+          },
+          {
+            "i": 3,
+            "v": -820000
+          }
+        ]
+      }
+    },
+    "T14-one-year-project": {
+      "label": "One-year horizon only",
+      "scenarioKey": "base",
+      "financingFocus": "أفق سنة واحدة فقط — حدود منطق isLast مع سنة الإنشاء نفسها.",
+      "input": {
+        "id": null,
+        "meta": {
+          "name": "",
+          "city": "الرياض",
+          "neighborhood": "",
+          "tier": "متوسط",
+          "oppType": "development",
+          "useType": "__neutral__",
+          "analyst": "Opal",
+          "createdAt": null,
+          "updatedAt": null,
+          "createdBy": null,
+          "updatedBy": null
+        },
+        "land": {
+          "area": 5000,
+          "price": 2000,
+          "far": 2,
+          "bar": 0.5,
+          "floorsAllowed": 0,
+          "basements": 0,
+          "floorHeight": 3.6,
+          "setbacks": 0,
+          "bonusAreaPct": 0,
+          "basementCostPremiumPct": 0,
+          "basementDepthEscalationPct": 0,
+          "floorHeightPremiumPct": 0
+        },
+        "site": {
+          "soil": 1,
+          "water": 1,
+          "tower": 1,
+          "topo": 1,
+          "infra": 1
+        },
+        "strategy": {
+          "exitStrategy": "مختلط (Mixed Sell+Rent)",
+          "salePct": 1,
+          "offPlanSale": {
+            "enabled": false,
+            "preSalePctThreshold": 0,
+            "curve": "even",
+            "escrowLagYears": 0,
+            "priceEscalationAnnual": 0
+          },
+          "directSale": {
+            "bankFinancedPct": 0,
+            "collectionLagYears": 0
+          }
+        },
+        "income": {
+          "gla": null,
+          "rent": 0,
+          "occupancy": 0,
+          "opex": 0,
+          "wale": 0,
+          "tenantConc": 0,
+          "distFreq": "ربع سنوي (Quarterly)",
+          "assetClass": "عام",
+          "holdStrategy": "exit_sale",
+          "mixedUse": false,
+          "nnn": {
+            "tenantCreditTier": "وطني (National)",
+            "leaseTermRemaining": 0,
+            "pctRent": false,
+            "pctRentRate": 0,
+            "annualSales": 0,
+            "envReserveAnnual": 0
+          },
+          "hospitality": {
+            "adr": 0,
+            "keys": 0,
+            "gopMargin": 0
+          },
+          "logisticsSpec": {
+            "clearHeight": 0,
+            "dockDoors": 0
+          },
+          "dataCenterSpec": {
+            "powerDensityKw": 0,
+            "redundancyTier": "Tier III (N+1)"
+          },
+          "refinance": {
+            "intervalYears": 0,
+            "refiLtv": 0,
+            "refiCostPct": 0,
+            "analysisHorizon": 0
+          }
+        },
+        "development": {
+          "salePrice": 6000,
+          "buildCost": 3000,
+          "constructionYears": 1,
+          "operationYears": 0,
+          "exitCapRate": 0,
+          "efficiency": 0.85,
+          "contingency": 0.05,
+          "scopeType": "both",
+          "infraCostPerSqm": 0,
+          "costBreakdown": {
+            "structure": 0,
+            "mep": 0,
+            "finishes": 0,
+            "external": 0,
+            "fees": 0
+          }
+        },
+        "landbank": {
+          "appreciation": 0,
+          "holdingYears": 0,
+          "carryAnnual": 0,
+          "zoningNote": "",
+          "hbuNote": "",
+          "interimAnnualIncome": 0,
+          "whiteLandFeePct": 0.025,
+          "whiteLandFeeExempt": false
+        },
+        "zakat": {
+          "enabled": false,
+          "ratePct": 0.025
+        },
+        "vat": {
+          "enabled": false,
+          "ratePct": 0.15,
+          "constructionInputVatPct": 0.15,
+          "inputRecoveryPct": null,
+          "refundLagYears": 0,
+          "professionalFeesVatPct": 0.15
+        },
+        "subdivision": {
+          "phasedAbsorption": false,
+          "absorptionYears": 0,
+          "curve": "even",
+          "priceEscalationAnnual": 0
+        },
+        "subscription": {
+          "minInvestment": 0,
+          "subscriptionFee": 0,
+          "lockupYears": 0,
+          "distPolicy": "عند الإغلاق فقط (At Exit Only)",
+          "investorClass": "Class A - تجزئة (Retail)",
+          "hwm": true
+        },
+        "economics": {
+          "hurdle": 0,
+          "carry": 0,
+          "lpShare": 0,
+          "gpShare": 0,
+          "devShare": 0
+        },
+        "fees": {
+          "mgmt": 0,
+          "structuring": 0,
+          "arrangement": 0,
+          "acquisition": 0,
+          "disposition": 0,
+          "assetMgmt": 0,
+          "propMgmt": 0,
+          "regAuditCustodian": 0,
+          "cmaSetup": 0,
+          "dueDiligence": 0,
+          "valuation": 0,
+          "ejarFeePct": 0,
+          "insuranceAnnualPct": 0
+        },
+        "financing": {
+          "ltc": 0.6,
+          "saibor": 0.055,
+          "margin": 0.025,
+          "tenor": 0,
+          "structure": "single",
+          "seniorPct": 0,
+          "mezzMarginAdj": 0,
+          "amortType": "interest_only",
+          "graceYears": 0,
+          "amortYears": 0,
+          "interestDuringConstruction": "cash",
+          "shariahStructure": "تقليدي (فائدة تقليدية)",
+          "drawSchedulePct": []
+        },
+        "wacc": {
+          "rf": 0,
+          "mrp": 0,
+          "beta": 0,
+          "crp": 0,
+          "sp": 0,
+          "alpha": 0,
+          "marketCap": 0,
+          "growth": 0
+        },
+        "exitCosts": {
+          "broker": 0,
+          "legal": 0,
+          "rett": 0,
+          "exitFee": 0
+        },
+        "criteria": {
+          "irrMin": 0.15,
+          "dscrMin": 1.3,
+          "moicMin": 1.5,
+          "yocMin": 0.08,
+          "projIrrMin": 0.1,
+          "preLeasingMin": 0.3,
+          "preSaleMin": 0.3,
+          "preLeasingActual": 0,
+          "preSaleActual": 0
+        },
+        "scenarios": {
+          "optimistic": {
+            "rentMult": 1.08,
+            "salePriceMult": 1.08,
+            "costMult": 0.95,
+            "capRateDelta": -0.005,
+            "rateDelta": -0.0025
+          },
+          "pessimistic": {
+            "rentMult": 0.9,
+            "salePriceMult": 0.88,
+            "costMult": 1.1,
+            "capRateDelta": 0.01,
+            "rateDelta": 0.0075
+          }
+        },
+        "closing": {
+          "titleDeed": "completed",
+          "zoning": "in_progress",
+          "environmental": "not_started",
+          "conditions": [
+            {
+              "text": "تثبيت سعر الأرض عبر اتفاقية شراء موقعة",
+              "status": "pending"
+            },
+            {
+              "text": "توقيع عقود إيجار مسبقة ≥ 30% من GLA قبل بدء الإنشاء",
+              "status": "pending"
+            }
+          ],
+          "ddNotes": ""
+        },
+        "regulatory": {
+          "offeringType": "طرح خاص (Private Placement)",
+          "items": [
+            {
+              "text": "عدد المستثمرين ضمن الحد الأقصى المسموح للطرح الخاص حسب لائحة صناديق الاستثمار العقارية",
+              "status": "pending"
+            },
+            {
+              "text": "الحد الأدنى للاستثمار للمستثمر الواحد مستوفى حسب اللائحة",
+              "status": "pending"
+            },
+            {
+              "text": "مذكرة معلومات خاصة (Private Placement Memorandum) مُعدَّة ومُعتمَدة",
+              "status": "pending"
+            },
+            {
+              "text": "مدير الصندوق مرخّص من هيئة السوق المالية لإدارة صناديق استثمار عقارية",
+              "status": "pending"
+            },
+            {
+              "text": "أمين الحفظ (Custodian) مُعيَّن ومرخّص",
+              "status": "pending"
+            }
+          ]
+        },
+        "notes": ""
+      },
+      "financingFacts": {
+        "TPC": 50136115.60000001,
+        "debt": 30081669.360000003,
+        "seniorDebt": 30081669.360000003,
+        "mezzDebt": 0,
+        "equity": 20054446.240000006,
+        "contributedEquity": 20054446.240000006,
+        "interestRate": 0.08,
+        "Kd": 0.08,
+        "amortType": "interest_only",
+        "holdStrategy": "exit_sale",
+        "drawSchedule": null,
+        "balloonBalanceAtExit": 30081669.360000003,
+        "totalYears": 1,
+        "constructionYears": 1,
+        "equityCF": [
+          -20054446.240000006,
+          18511797.091199998
+        ],
+        "pnlRows": [
+          {
+            "yr": 1,
+            "phase": "construction",
+            "isExitYear": true,
+            "interestExpense": 2406533.5488000005,
+            "principalPayment": 0,
+            "debtService": 2406533.5488000005,
+            "debtPayoffAtExit": 30081669.360000003
+          }
+        ]
+      },
+      "derivedForDocumentation": {
+        "totalInterest": 2406533.5488000005,
+        "pnlRows": [
+          {
+            "yr": 1,
+            "impliedCashInterest": 2406533.5488000005,
+            "impliedCapInterest": 0
+          }
+        ],
+        "equityCFNegativeYearCount": 1,
+        "equityCFNegativeYears": [
+          {
+            "i": 0,
+            "v": -20054446.240000006
+          }
+        ]
+      }
+    },
+    "T15-senior-mezz": {
+      "label": "Senior + Mezz structure",
+      "scenarioKey": "base",
+      "financingFocus": "هيكل senior_mezz — معدلا فائدة مختلفان يُدمَجان في interestRate مرجَّح واحد وقت التحجيم (t=0) فقط.",
+      "input": {
+        "id": null,
+        "meta": {
+          "name": "",
+          "city": "الرياض",
+          "neighborhood": "",
+          "tier": "متوسط",
+          "oppType": "development",
+          "useType": "__neutral__",
+          "analyst": "Opal",
+          "createdAt": null,
+          "updatedAt": null,
+          "createdBy": null,
+          "updatedBy": null
+        },
+        "land": {
+          "area": 5000,
+          "price": 2000,
+          "far": 2,
+          "bar": 0.5,
+          "floorsAllowed": 0,
+          "basements": 0,
+          "floorHeight": 3.6,
+          "setbacks": 0,
+          "bonusAreaPct": 0,
+          "basementCostPremiumPct": 0,
+          "basementDepthEscalationPct": 0,
+          "floorHeightPremiumPct": 0
+        },
+        "site": {
+          "soil": 1,
+          "water": 1,
+          "tower": 1,
+          "topo": 1,
+          "infra": 1
+        },
+        "strategy": {
+          "exitStrategy": "مختلط (Mixed Sell+Rent)",
+          "salePct": 1,
+          "offPlanSale": {
+            "enabled": false,
+            "preSalePctThreshold": 0,
+            "curve": "even",
+            "escrowLagYears": 0,
+            "priceEscalationAnnual": 0
+          },
+          "directSale": {
+            "bankFinancedPct": 0,
+            "collectionLagYears": 0
+          }
+        },
+        "income": {
+          "gla": null,
+          "rent": 0,
+          "occupancy": 0,
+          "opex": 0,
+          "wale": 0,
+          "tenantConc": 0,
+          "distFreq": "ربع سنوي (Quarterly)",
+          "assetClass": "عام",
+          "holdStrategy": "exit_sale",
+          "mixedUse": false,
+          "nnn": {
+            "tenantCreditTier": "وطني (National)",
+            "leaseTermRemaining": 0,
+            "pctRent": false,
+            "pctRentRate": 0,
+            "annualSales": 0,
+            "envReserveAnnual": 0
+          },
+          "hospitality": {
+            "adr": 0,
+            "keys": 0,
+            "gopMargin": 0
+          },
+          "logisticsSpec": {
+            "clearHeight": 0,
+            "dockDoors": 0
+          },
+          "dataCenterSpec": {
+            "powerDensityKw": 0,
+            "redundancyTier": "Tier III (N+1)"
+          },
+          "refinance": {
+            "intervalYears": 0,
+            "refiLtv": 0,
+            "refiCostPct": 0,
+            "analysisHorizon": 0
+          }
+        },
+        "development": {
+          "salePrice": 6000,
+          "buildCost": 3000,
+          "constructionYears": 2,
+          "operationYears": 0,
+          "exitCapRate": 0,
+          "efficiency": 0.85,
+          "contingency": 0.05,
+          "scopeType": "both",
+          "infraCostPerSqm": 0,
+          "costBreakdown": {
+            "structure": 0,
+            "mep": 0,
+            "finishes": 0,
+            "external": 0,
+            "fees": 0
+          }
+        },
+        "landbank": {
+          "appreciation": 0,
+          "holdingYears": 0,
+          "carryAnnual": 0,
+          "zoningNote": "",
+          "hbuNote": "",
+          "interimAnnualIncome": 0,
+          "whiteLandFeePct": 0.025,
+          "whiteLandFeeExempt": false
+        },
+        "zakat": {
+          "enabled": false,
+          "ratePct": 0.025
+        },
+        "vat": {
+          "enabled": false,
+          "ratePct": 0.15,
+          "constructionInputVatPct": 0.15,
+          "inputRecoveryPct": null,
+          "refundLagYears": 0,
+          "professionalFeesVatPct": 0.15
+        },
+        "subdivision": {
+          "phasedAbsorption": false,
+          "absorptionYears": 0,
+          "curve": "even",
+          "priceEscalationAnnual": 0
+        },
+        "subscription": {
+          "minInvestment": 0,
+          "subscriptionFee": 0,
+          "lockupYears": 0,
+          "distPolicy": "عند الإغلاق فقط (At Exit Only)",
+          "investorClass": "Class A - تجزئة (Retail)",
+          "hwm": true
+        },
+        "economics": {
+          "hurdle": 0,
+          "carry": 0,
+          "lpShare": 0,
+          "gpShare": 0,
+          "devShare": 0
+        },
+        "fees": {
+          "mgmt": 0,
+          "structuring": 0,
+          "arrangement": 0,
+          "acquisition": 0,
+          "disposition": 0,
+          "assetMgmt": 0,
+          "propMgmt": 0,
+          "regAuditCustodian": 0,
+          "cmaSetup": 0,
+          "dueDiligence": 0,
+          "valuation": 0,
+          "ejarFeePct": 0,
+          "insuranceAnnualPct": 0
+        },
+        "financing": {
+          "ltc": 0.6,
+          "saibor": 0.055,
+          "margin": 0.025,
+          "tenor": 0,
+          "structure": "senior_mezz",
+          "seniorPct": 0.8,
+          "mezzMarginAdj": 0.04,
+          "amortType": "interest_only",
+          "graceYears": 0,
+          "amortYears": 0,
+          "interestDuringConstruction": "cash",
+          "shariahStructure": "تقليدي (فائدة تقليدية)",
+          "drawSchedulePct": []
+        },
+        "wacc": {
+          "rf": 0,
+          "mrp": 0,
+          "beta": 0,
+          "crp": 0,
+          "sp": 0,
+          "alpha": 0,
+          "marketCap": 0,
+          "growth": 0
+        },
+        "exitCosts": {
+          "broker": 0,
+          "legal": 0,
+          "rett": 0,
+          "exitFee": 0
+        },
+        "criteria": {
+          "irrMin": 0.15,
+          "dscrMin": 1.3,
+          "moicMin": 1.5,
+          "yocMin": 0.08,
+          "projIrrMin": 0.1,
+          "preLeasingMin": 0.3,
+          "preSaleMin": 0.3,
+          "preLeasingActual": 0,
+          "preSaleActual": 0
+        },
+        "scenarios": {
+          "optimistic": {
+            "rentMult": 1.08,
+            "salePriceMult": 1.08,
+            "costMult": 0.95,
+            "capRateDelta": -0.005,
+            "rateDelta": -0.0025
+          },
+          "pessimistic": {
+            "rentMult": 0.9,
+            "salePriceMult": 0.88,
+            "costMult": 1.1,
+            "capRateDelta": 0.01,
+            "rateDelta": 0.0075
+          }
+        },
+        "closing": {
+          "titleDeed": "completed",
+          "zoning": "in_progress",
+          "environmental": "not_started",
+          "conditions": [
+            {
+              "text": "تثبيت سعر الأرض عبر اتفاقية شراء موقعة",
+              "status": "pending"
+            },
+            {
+              "text": "توقيع عقود إيجار مسبقة ≥ 30% من GLA قبل بدء الإنشاء",
+              "status": "pending"
+            }
+          ],
+          "ddNotes": ""
+        },
+        "regulatory": {
+          "offeringType": "طرح خاص (Private Placement)",
+          "items": [
+            {
+              "text": "عدد المستثمرين ضمن الحد الأقصى المسموح للطرح الخاص حسب لائحة صناديق الاستثمار العقارية",
+              "status": "pending"
+            },
+            {
+              "text": "الحد الأدنى للاستثمار للمستثمر الواحد مستوفى حسب اللائحة",
+              "status": "pending"
+            },
+            {
+              "text": "مذكرة معلومات خاصة (Private Placement Memorandum) مُعدَّة ومُعتمَدة",
+              "status": "pending"
+            },
+            {
+              "text": "مدير الصندوق مرخّص من هيئة السوق المالية لإدارة صناديق استثمار عقارية",
+              "status": "pending"
+            },
+            {
+              "text": "أمين الحفظ (Custodian) مُعيَّن ومرخّص",
+              "status": "pending"
+            }
+          ]
+        },
+        "notes": ""
+      },
+      "financingFacts": {
+        "TPC": 50136115.60000001,
+        "debt": 30081669.360000003,
+        "seniorDebt": 24065335.488000005,
+        "mezzDebt": 6016333.871999998,
+        "equity": 20054446.240000006,
+        "contributedEquity": 22701633.143680006,
+        "interestRate": 0.088,
+        "Kd": 0.088,
+        "amortType": "interest_only",
+        "holdStrategy": "exit_sale",
+        "drawSchedule": null,
+        "balloonBalanceAtExit": 30081669.360000003,
+        "totalYears": 2,
+        "constructionYears": 2,
+        "equityCF": [
+          -20054446.240000006,
+          -2647186.90368,
+          18271143.736319996
+        ],
+        "pnlRows": [
+          {
+            "yr": 1,
+            "phase": "construction",
+            "isExitYear": false,
+            "interestExpense": 2647186.90368,
+            "principalPayment": 0,
+            "debtService": 2647186.90368,
+            "debtPayoffAtExit": 0
+          },
+          {
+            "yr": 2,
+            "phase": "construction",
+            "isExitYear": true,
+            "interestExpense": 2647186.90368,
+            "principalPayment": 0,
+            "debtService": 2647186.90368,
+            "debtPayoffAtExit": 30081669.360000003
+          }
+        ]
+      },
+      "derivedForDocumentation": {
+        "totalInterest": 5294373.80736,
+        "pnlRows": [
+          {
+            "yr": 1,
+            "impliedCashInterest": 2647186.90368,
+            "impliedCapInterest": 0
+          },
+          {
+            "yr": 2,
+            "impliedCashInterest": 2647186.90368,
+            "impliedCapInterest": 0
+          }
+        ],
+        "equityCFNegativeYearCount": 2,
+        "equityCFNegativeYears": [
+          {
+            "i": 0,
+            "v": -20054446.240000006
+          },
+          {
+            "i": 1,
+            "v": -2647186.90368
+          }
+        ]
+      }
+    },
+    "T18-high-leverage": {
+      "label": "High leverage (ltc=0.90)",
+      "scenarioKey": "base",
+      "financingFocus": "رافعة شبه كاملة — حدّي DSCR/equity.",
+      "input": {
+        "id": null,
+        "meta": {
+          "name": "",
+          "city": "الرياض",
+          "neighborhood": "",
+          "tier": "متوسط",
+          "oppType": "development",
+          "useType": "__neutral__",
+          "analyst": "Opal",
+          "createdAt": null,
+          "updatedAt": null,
+          "createdBy": null,
+          "updatedBy": null
+        },
+        "land": {
+          "area": 5000,
+          "price": 2000,
+          "far": 2,
+          "bar": 0.5,
+          "floorsAllowed": 0,
+          "basements": 0,
+          "floorHeight": 3.6,
+          "setbacks": 0,
+          "bonusAreaPct": 0,
+          "basementCostPremiumPct": 0,
+          "basementDepthEscalationPct": 0,
+          "floorHeightPremiumPct": 0
+        },
+        "site": {
+          "soil": 1,
+          "water": 1,
+          "tower": 1,
+          "topo": 1,
+          "infra": 1
+        },
+        "strategy": {
+          "exitStrategy": "مختلط (Mixed Sell+Rent)",
+          "salePct": 1,
+          "offPlanSale": {
+            "enabled": false,
+            "preSalePctThreshold": 0,
+            "curve": "even",
+            "escrowLagYears": 0,
+            "priceEscalationAnnual": 0
+          },
+          "directSale": {
+            "bankFinancedPct": 0,
+            "collectionLagYears": 0
+          }
+        },
+        "income": {
+          "gla": null,
+          "rent": 0,
+          "occupancy": 0,
+          "opex": 0,
+          "wale": 0,
+          "tenantConc": 0,
+          "distFreq": "ربع سنوي (Quarterly)",
+          "assetClass": "عام",
+          "holdStrategy": "exit_sale",
+          "mixedUse": false,
+          "nnn": {
+            "tenantCreditTier": "وطني (National)",
+            "leaseTermRemaining": 0,
+            "pctRent": false,
+            "pctRentRate": 0,
+            "annualSales": 0,
+            "envReserveAnnual": 0
+          },
+          "hospitality": {
+            "adr": 0,
+            "keys": 0,
+            "gopMargin": 0
+          },
+          "logisticsSpec": {
+            "clearHeight": 0,
+            "dockDoors": 0
+          },
+          "dataCenterSpec": {
+            "powerDensityKw": 0,
+            "redundancyTier": "Tier III (N+1)"
+          },
+          "refinance": {
+            "intervalYears": 0,
+            "refiLtv": 0,
+            "refiCostPct": 0,
+            "analysisHorizon": 0
+          }
+        },
+        "development": {
+          "salePrice": 6000,
+          "buildCost": 3000,
+          "constructionYears": 2,
+          "operationYears": 0,
+          "exitCapRate": 0,
+          "efficiency": 0.85,
+          "contingency": 0.05,
+          "scopeType": "both",
+          "infraCostPerSqm": 0,
+          "costBreakdown": {
+            "structure": 0,
+            "mep": 0,
+            "finishes": 0,
+            "external": 0,
+            "fees": 0
+          }
+        },
+        "landbank": {
+          "appreciation": 0,
+          "holdingYears": 0,
+          "carryAnnual": 0,
+          "zoningNote": "",
+          "hbuNote": "",
+          "interimAnnualIncome": 0,
+          "whiteLandFeePct": 0.025,
+          "whiteLandFeeExempt": false
+        },
+        "zakat": {
+          "enabled": false,
+          "ratePct": 0.025
+        },
+        "vat": {
+          "enabled": false,
+          "ratePct": 0.15,
+          "constructionInputVatPct": 0.15,
+          "inputRecoveryPct": null,
+          "refundLagYears": 0,
+          "professionalFeesVatPct": 0.15
+        },
+        "subdivision": {
+          "phasedAbsorption": false,
+          "absorptionYears": 0,
+          "curve": "even",
+          "priceEscalationAnnual": 0
+        },
+        "subscription": {
+          "minInvestment": 0,
+          "subscriptionFee": 0,
+          "lockupYears": 0,
+          "distPolicy": "عند الإغلاق فقط (At Exit Only)",
+          "investorClass": "Class A - تجزئة (Retail)",
+          "hwm": true
+        },
+        "economics": {
+          "hurdle": 0,
+          "carry": 0,
+          "lpShare": 0,
+          "gpShare": 0,
+          "devShare": 0
+        },
+        "fees": {
+          "mgmt": 0,
+          "structuring": 0,
+          "arrangement": 0,
+          "acquisition": 0,
+          "disposition": 0,
+          "assetMgmt": 0,
+          "propMgmt": 0,
+          "regAuditCustodian": 0,
+          "cmaSetup": 0,
+          "dueDiligence": 0,
+          "valuation": 0,
+          "ejarFeePct": 0,
+          "insuranceAnnualPct": 0
+        },
+        "financing": {
+          "ltc": 0.9,
+          "saibor": 0.055,
+          "margin": 0.025,
+          "tenor": 0,
+          "structure": "single",
+          "seniorPct": 0,
+          "mezzMarginAdj": 0,
+          "amortType": "interest_only",
+          "graceYears": 0,
+          "amortYears": 0,
+          "interestDuringConstruction": "cash",
+          "shariahStructure": "تقليدي (فائدة تقليدية)",
+          "drawSchedulePct": []
+        },
+        "wacc": {
+          "rf": 0,
+          "mrp": 0,
+          "beta": 0,
+          "crp": 0,
+          "sp": 0,
+          "alpha": 0,
+          "marketCap": 0,
+          "growth": 0
+        },
+        "exitCosts": {
+          "broker": 0,
+          "legal": 0,
+          "rett": 0,
+          "exitFee": 0
+        },
+        "criteria": {
+          "irrMin": 0.15,
+          "dscrMin": 1.3,
+          "moicMin": 1.5,
+          "yocMin": 0.08,
+          "projIrrMin": 0.1,
+          "preLeasingMin": 0.3,
+          "preSaleMin": 0.3,
+          "preLeasingActual": 0,
+          "preSaleActual": 0
+        },
+        "scenarios": {
+          "optimistic": {
+            "rentMult": 1.08,
+            "salePriceMult": 1.08,
+            "costMult": 0.95,
+            "capRateDelta": -0.005,
+            "rateDelta": -0.0025
+          },
+          "pessimistic": {
+            "rentMult": 0.9,
+            "salePriceMult": 0.88,
+            "costMult": 1.1,
+            "capRateDelta": 0.01,
+            "rateDelta": 0.0075
+          }
+        },
+        "closing": {
+          "titleDeed": "completed",
+          "zoning": "in_progress",
+          "environmental": "not_started",
+          "conditions": [
+            {
+              "text": "تثبيت سعر الأرض عبر اتفاقية شراء موقعة",
+              "status": "pending"
+            },
+            {
+              "text": "توقيع عقود إيجار مسبقة ≥ 30% من GLA قبل بدء الإنشاء",
+              "status": "pending"
+            }
+          ],
+          "ddNotes": ""
+        },
+        "regulatory": {
+          "offeringType": "طرح خاص (Private Placement)",
+          "items": [
+            {
+              "text": "عدد المستثمرين ضمن الحد الأقصى المسموح للطرح الخاص حسب لائحة صناديق الاستثمار العقارية",
+              "status": "pending"
+            },
+            {
+              "text": "الحد الأدنى للاستثمار للمستثمر الواحد مستوفى حسب اللائحة",
+              "status": "pending"
+            },
+            {
+              "text": "مذكرة معلومات خاصة (Private Placement Memorandum) مُعدَّة ومُعتمَدة",
+              "status": "pending"
+            },
+            {
+              "text": "مدير الصندوق مرخّص من هيئة السوق المالية لإدارة صناديق استثمار عقارية",
+              "status": "pending"
+            },
+            {
+              "text": "أمين الحفظ (Custodian) مُعيَّن ومرخّص",
+              "status": "pending"
+            }
+          ]
+        },
+        "notes": ""
+      },
+      "financingFacts": {
+        "TPC": 50136115.60000001,
+        "debt": 45122504.04000001,
+        "seniorDebt": 45122504.04000001,
+        "mezzDebt": 0,
+        "equity": 5013611.560000002,
+        "contributedEquity": 8623411.883200003,
+        "interestRate": 0.08,
+        "Kd": 0.08,
+        "amortType": "interest_only",
+        "holdStrategy": "exit_sale",
+        "drawSchedule": null,
+        "balloonBalanceAtExit": 45122504.04000001,
+        "totalYears": 2,
+        "constructionYears": 2,
+        "equityCF": [
+          -5013611.560000002,
+          -3609800.3232000005,
+          2267695.636799993
+        ],
+        "pnlRows": [
+          {
+            "yr": 1,
+            "phase": "construction",
+            "isExitYear": false,
+            "interestExpense": 3609800.3232000005,
+            "principalPayment": 0,
+            "debtService": 3609800.3232000005,
+            "debtPayoffAtExit": 0
+          },
+          {
+            "yr": 2,
+            "phase": "construction",
+            "isExitYear": true,
+            "interestExpense": 3609800.3232000005,
+            "principalPayment": 0,
+            "debtService": 3609800.3232000005,
+            "debtPayoffAtExit": 45122504.04000001
+          }
+        ]
+      },
+      "derivedForDocumentation": {
+        "totalInterest": 7219600.646400001,
+        "pnlRows": [
+          {
+            "yr": 1,
+            "impliedCashInterest": 3609800.3232000005,
+            "impliedCapInterest": 0
+          },
+          {
+            "yr": 2,
+            "impliedCashInterest": 3609800.3232000005,
+            "impliedCapInterest": 0
+          }
+        ],
+        "equityCFNegativeYearCount": 2,
+        "equityCFNegativeYears": [
+          {
+            "i": 0,
+            "v": -5013611.560000002
+          },
+          {
+            "i": 1,
+            "v": -3609800.3232000005
+          }
+        ]
+      }
+    },
+    "F01-no-debt": {
+      "label": "No debt at all (ltc=0)",
+      "scenarioKey": "base",
+      "financingFocus": "equity=TPC بالكامل، debt=0, seniorDebt=0, mezzDebt=0.",
+      "input": {
+        "id": null,
+        "meta": {
+          "name": "",
+          "city": "الرياض",
+          "neighborhood": "",
+          "tier": "متوسط",
+          "oppType": "development",
+          "useType": "__neutral__",
+          "analyst": "Opal",
+          "createdAt": null,
+          "updatedAt": null,
+          "createdBy": null,
+          "updatedBy": null
+        },
+        "land": {
+          "area": 5000,
+          "price": 2000,
+          "far": 2,
+          "bar": 0.5,
+          "floorsAllowed": 0,
+          "basements": 0,
+          "floorHeight": 3.6,
+          "setbacks": 0,
+          "bonusAreaPct": 0,
+          "basementCostPremiumPct": 0,
+          "basementDepthEscalationPct": 0,
+          "floorHeightPremiumPct": 0
+        },
+        "site": {
+          "soil": 1,
+          "water": 1,
+          "tower": 1,
+          "topo": 1,
+          "infra": 1
+        },
+        "strategy": {
+          "exitStrategy": "مختلط (Mixed Sell+Rent)",
+          "salePct": 1,
+          "offPlanSale": {
+            "enabled": false,
+            "preSalePctThreshold": 0,
+            "curve": "even",
+            "escrowLagYears": 0,
+            "priceEscalationAnnual": 0
+          },
+          "directSale": {
+            "bankFinancedPct": 0,
+            "collectionLagYears": 0
+          }
+        },
+        "income": {
+          "gla": null,
+          "rent": 0,
+          "occupancy": 0,
+          "opex": 0,
+          "wale": 0,
+          "tenantConc": 0,
+          "distFreq": "ربع سنوي (Quarterly)",
+          "assetClass": "عام",
+          "holdStrategy": "exit_sale",
+          "mixedUse": false,
+          "nnn": {
+            "tenantCreditTier": "وطني (National)",
+            "leaseTermRemaining": 0,
+            "pctRent": false,
+            "pctRentRate": 0,
+            "annualSales": 0,
+            "envReserveAnnual": 0
+          },
+          "hospitality": {
+            "adr": 0,
+            "keys": 0,
+            "gopMargin": 0
+          },
+          "logisticsSpec": {
+            "clearHeight": 0,
+            "dockDoors": 0
+          },
+          "dataCenterSpec": {
+            "powerDensityKw": 0,
+            "redundancyTier": "Tier III (N+1)"
+          },
+          "refinance": {
+            "intervalYears": 0,
+            "refiLtv": 0,
+            "refiCostPct": 0,
+            "analysisHorizon": 0
+          }
+        },
+        "development": {
+          "salePrice": 6000,
+          "buildCost": 3000,
+          "constructionYears": 2,
+          "operationYears": 0,
+          "exitCapRate": 0,
+          "efficiency": 0.85,
+          "contingency": 0.05,
+          "scopeType": "both",
+          "infraCostPerSqm": 0,
+          "costBreakdown": {
+            "structure": 0,
+            "mep": 0,
+            "finishes": 0,
+            "external": 0,
+            "fees": 0
+          }
+        },
+        "landbank": {
+          "appreciation": 0,
+          "holdingYears": 0,
+          "carryAnnual": 0,
+          "zoningNote": "",
+          "hbuNote": "",
+          "interimAnnualIncome": 0,
+          "whiteLandFeePct": 0.025,
+          "whiteLandFeeExempt": false
+        },
+        "zakat": {
+          "enabled": false,
+          "ratePct": 0.025
+        },
+        "vat": {
+          "enabled": false,
+          "ratePct": 0.15,
+          "constructionInputVatPct": 0.15,
+          "inputRecoveryPct": null,
+          "refundLagYears": 0,
+          "professionalFeesVatPct": 0.15
+        },
+        "subdivision": {
+          "phasedAbsorption": false,
+          "absorptionYears": 0,
+          "curve": "even",
+          "priceEscalationAnnual": 0
+        },
+        "subscription": {
+          "minInvestment": 0,
+          "subscriptionFee": 0,
+          "lockupYears": 0,
+          "distPolicy": "عند الإغلاق فقط (At Exit Only)",
+          "investorClass": "Class A - تجزئة (Retail)",
+          "hwm": true
+        },
+        "economics": {
+          "hurdle": 0,
+          "carry": 0,
+          "lpShare": 0,
+          "gpShare": 0,
+          "devShare": 0
+        },
+        "fees": {
+          "mgmt": 0,
+          "structuring": 0,
+          "arrangement": 0,
+          "acquisition": 0,
+          "disposition": 0,
+          "assetMgmt": 0,
+          "propMgmt": 0,
+          "regAuditCustodian": 0,
+          "cmaSetup": 0,
+          "dueDiligence": 0,
+          "valuation": 0,
+          "ejarFeePct": 0,
+          "insuranceAnnualPct": 0
+        },
+        "financing": {
+          "ltc": 0,
+          "saibor": 0.055,
+          "margin": 0.025,
+          "tenor": 0,
+          "structure": "single",
+          "seniorPct": 0,
+          "mezzMarginAdj": 0,
+          "amortType": "interest_only",
+          "graceYears": 0,
+          "amortYears": 0,
+          "interestDuringConstruction": "cash",
+          "shariahStructure": "تقليدي (فائدة تقليدية)",
+          "drawSchedulePct": []
+        },
+        "wacc": {
+          "rf": 0,
+          "mrp": 0,
+          "beta": 0,
+          "crp": 0,
+          "sp": 0,
+          "alpha": 0,
+          "marketCap": 0,
+          "growth": 0
+        },
+        "exitCosts": {
+          "broker": 0,
+          "legal": 0,
+          "rett": 0,
+          "exitFee": 0
+        },
+        "criteria": {
+          "irrMin": 0.15,
+          "dscrMin": 1.3,
+          "moicMin": 1.5,
+          "yocMin": 0.08,
+          "projIrrMin": 0.1,
+          "preLeasingMin": 0.3,
+          "preSaleMin": 0.3,
+          "preLeasingActual": 0,
+          "preSaleActual": 0
+        },
+        "scenarios": {
+          "optimistic": {
+            "rentMult": 1.08,
+            "salePriceMult": 1.08,
+            "costMult": 0.95,
+            "capRateDelta": -0.005,
+            "rateDelta": -0.0025
+          },
+          "pessimistic": {
+            "rentMult": 0.9,
+            "salePriceMult": 0.88,
+            "costMult": 1.1,
+            "capRateDelta": 0.01,
+            "rateDelta": 0.0075
+          }
+        },
+        "closing": {
+          "titleDeed": "completed",
+          "zoning": "in_progress",
+          "environmental": "not_started",
+          "conditions": [
+            {
+              "text": "تثبيت سعر الأرض عبر اتفاقية شراء موقعة",
+              "status": "pending"
+            },
+            {
+              "text": "توقيع عقود إيجار مسبقة ≥ 30% من GLA قبل بدء الإنشاء",
+              "status": "pending"
+            }
+          ],
+          "ddNotes": ""
+        },
+        "regulatory": {
+          "offeringType": "طرح خاص (Private Placement)",
+          "items": [
+            {
+              "text": "عدد المستثمرين ضمن الحد الأقصى المسموح للطرح الخاص حسب لائحة صناديق الاستثمار العقارية",
+              "status": "pending"
+            },
+            {
+              "text": "الحد الأدنى للاستثمار للمستثمر الواحد مستوفى حسب اللائحة",
+              "status": "pending"
+            },
+            {
+              "text": "مذكرة معلومات خاصة (Private Placement Memorandum) مُعدَّة ومُعتمَدة",
+              "status": "pending"
+            },
+            {
+              "text": "مدير الصندوق مرخّص من هيئة السوق المالية لإدارة صناديق استثمار عقارية",
+              "status": "pending"
+            },
+            {
+              "text": "أمين الحفظ (Custodian) مُعيَّن ومرخّص",
+              "status": "pending"
+            }
+          ]
+        },
+        "notes": ""
+      },
+      "financingFacts": {
+        "TPC": 50136115.60000001,
+        "debt": 0,
+        "seniorDebt": 0,
+        "mezzDebt": 0,
+        "equity": 50136115.60000001,
+        "contributedEquity": 50136115.60000001,
+        "interestRate": 0.08,
+        "Kd": 0.08,
+        "amortType": "interest_only",
+        "holdStrategy": "exit_sale",
+        "drawSchedule": null,
+        "balloonBalanceAtExit": 0,
+        "totalYears": 2,
+        "constructionYears": 2,
+        "equityCF": [
+          -50136115.60000001,
+          0,
+          51000000
+        ],
+        "pnlRows": [
+          {
+            "yr": 1,
+            "phase": "construction",
+            "isExitYear": false,
+            "interestExpense": 0,
+            "principalPayment": 0,
+            "debtService": 0,
+            "debtPayoffAtExit": 0
+          },
+          {
+            "yr": 2,
+            "phase": "construction",
+            "isExitYear": true,
+            "interestExpense": 0,
+            "principalPayment": 0,
+            "debtService": 0,
+            "debtPayoffAtExit": 0
+          }
+        ]
+      },
+      "derivedForDocumentation": {
+        "totalInterest": 0,
+        "pnlRows": [
+          {
+            "yr": 1,
+            "impliedCashInterest": 0,
+            "impliedCapInterest": 0
+          },
+          {
+            "yr": 2,
+            "impliedCashInterest": 0,
+            "impliedCapInterest": 0
+          }
+        ],
+        "equityCFNegativeYearCount": 1,
+        "equityCFNegativeYears": [
+          {
+            "i": 0,
+            "v": -50136115.60000001
+          }
+        ]
+      }
+    },
+    "F02-empty-draw-schedule-explicit": {
+      "label": "Explicit empty draw schedule ([])",
+      "scenarioKey": "base",
+      "financingFocus": "يثبت أن [] الصريحة تُنتج نفس سلوك عدم التحديد (T01).",
+      "input": {
+        "id": null,
+        "meta": {
+          "name": "",
+          "city": "الرياض",
+          "neighborhood": "",
+          "tier": "متوسط",
+          "oppType": "development",
+          "useType": "__neutral__",
+          "analyst": "Opal",
+          "createdAt": null,
+          "updatedAt": null,
+          "createdBy": null,
+          "updatedBy": null
+        },
+        "land": {
+          "area": 5000,
+          "price": 2000,
+          "far": 2,
+          "bar": 0.5,
+          "floorsAllowed": 0,
+          "basements": 0,
+          "floorHeight": 3.6,
+          "setbacks": 0,
+          "bonusAreaPct": 0,
+          "basementCostPremiumPct": 0,
+          "basementDepthEscalationPct": 0,
+          "floorHeightPremiumPct": 0
+        },
+        "site": {
+          "soil": 1,
+          "water": 1,
+          "tower": 1,
+          "topo": 1,
+          "infra": 1
+        },
+        "strategy": {
+          "exitStrategy": "مختلط (Mixed Sell+Rent)",
+          "salePct": 1,
+          "offPlanSale": {
+            "enabled": false,
+            "preSalePctThreshold": 0,
+            "curve": "even",
+            "escrowLagYears": 0,
+            "priceEscalationAnnual": 0
+          },
+          "directSale": {
+            "bankFinancedPct": 0,
+            "collectionLagYears": 0
+          }
+        },
+        "income": {
+          "gla": null,
+          "rent": 0,
+          "occupancy": 0,
+          "opex": 0,
+          "wale": 0,
+          "tenantConc": 0,
+          "distFreq": "ربع سنوي (Quarterly)",
+          "assetClass": "عام",
+          "holdStrategy": "exit_sale",
+          "mixedUse": false,
+          "nnn": {
+            "tenantCreditTier": "وطني (National)",
+            "leaseTermRemaining": 0,
+            "pctRent": false,
+            "pctRentRate": 0,
+            "annualSales": 0,
+            "envReserveAnnual": 0
+          },
+          "hospitality": {
+            "adr": 0,
+            "keys": 0,
+            "gopMargin": 0
+          },
+          "logisticsSpec": {
+            "clearHeight": 0,
+            "dockDoors": 0
+          },
+          "dataCenterSpec": {
+            "powerDensityKw": 0,
+            "redundancyTier": "Tier III (N+1)"
+          },
+          "refinance": {
+            "intervalYears": 0,
+            "refiLtv": 0,
+            "refiCostPct": 0,
+            "analysisHorizon": 0
+          }
+        },
+        "development": {
+          "salePrice": 6000,
+          "buildCost": 3000,
+          "constructionYears": 2,
+          "operationYears": 0,
+          "exitCapRate": 0,
+          "efficiency": 0.85,
+          "contingency": 0.05,
+          "scopeType": "both",
+          "infraCostPerSqm": 0,
+          "costBreakdown": {
+            "structure": 0,
+            "mep": 0,
+            "finishes": 0,
+            "external": 0,
+            "fees": 0
+          }
+        },
+        "landbank": {
+          "appreciation": 0,
+          "holdingYears": 0,
+          "carryAnnual": 0,
+          "zoningNote": "",
+          "hbuNote": "",
+          "interimAnnualIncome": 0,
+          "whiteLandFeePct": 0.025,
+          "whiteLandFeeExempt": false
+        },
+        "zakat": {
+          "enabled": false,
+          "ratePct": 0.025
+        },
+        "vat": {
+          "enabled": false,
+          "ratePct": 0.15,
+          "constructionInputVatPct": 0.15,
+          "inputRecoveryPct": null,
+          "refundLagYears": 0,
+          "professionalFeesVatPct": 0.15
+        },
+        "subdivision": {
+          "phasedAbsorption": false,
+          "absorptionYears": 0,
+          "curve": "even",
+          "priceEscalationAnnual": 0
+        },
+        "subscription": {
+          "minInvestment": 0,
+          "subscriptionFee": 0,
+          "lockupYears": 0,
+          "distPolicy": "عند الإغلاق فقط (At Exit Only)",
+          "investorClass": "Class A - تجزئة (Retail)",
+          "hwm": true
+        },
+        "economics": {
+          "hurdle": 0,
+          "carry": 0,
+          "lpShare": 0,
+          "gpShare": 0,
+          "devShare": 0
+        },
+        "fees": {
+          "mgmt": 0,
+          "structuring": 0,
+          "arrangement": 0,
+          "acquisition": 0,
+          "disposition": 0,
+          "assetMgmt": 0,
+          "propMgmt": 0,
+          "regAuditCustodian": 0,
+          "cmaSetup": 0,
+          "dueDiligence": 0,
+          "valuation": 0,
+          "ejarFeePct": 0,
+          "insuranceAnnualPct": 0
+        },
+        "financing": {
+          "ltc": 0.6,
+          "saibor": 0.055,
+          "margin": 0.025,
+          "tenor": 0,
+          "structure": "single",
+          "seniorPct": 0,
+          "mezzMarginAdj": 0,
+          "amortType": "interest_only",
+          "graceYears": 0,
+          "amortYears": 0,
+          "interestDuringConstruction": "cash",
+          "shariahStructure": "تقليدي (فائدة تقليدية)",
+          "drawSchedulePct": []
+        },
+        "wacc": {
+          "rf": 0,
+          "mrp": 0,
+          "beta": 0,
+          "crp": 0,
+          "sp": 0,
+          "alpha": 0,
+          "marketCap": 0,
+          "growth": 0
+        },
+        "exitCosts": {
+          "broker": 0,
+          "legal": 0,
+          "rett": 0,
+          "exitFee": 0
+        },
+        "criteria": {
+          "irrMin": 0.15,
+          "dscrMin": 1.3,
+          "moicMin": 1.5,
+          "yocMin": 0.08,
+          "projIrrMin": 0.1,
+          "preLeasingMin": 0.3,
+          "preSaleMin": 0.3,
+          "preLeasingActual": 0,
+          "preSaleActual": 0
+        },
+        "scenarios": {
+          "optimistic": {
+            "rentMult": 1.08,
+            "salePriceMult": 1.08,
+            "costMult": 0.95,
+            "capRateDelta": -0.005,
+            "rateDelta": -0.0025
+          },
+          "pessimistic": {
+            "rentMult": 0.9,
+            "salePriceMult": 0.88,
+            "costMult": 1.1,
+            "capRateDelta": 0.01,
+            "rateDelta": 0.0075
+          }
+        },
+        "closing": {
+          "titleDeed": "completed",
+          "zoning": "in_progress",
+          "environmental": "not_started",
+          "conditions": [
+            {
+              "text": "تثبيت سعر الأرض عبر اتفاقية شراء موقعة",
+              "status": "pending"
+            },
+            {
+              "text": "توقيع عقود إيجار مسبقة ≥ 30% من GLA قبل بدء الإنشاء",
+              "status": "pending"
+            }
+          ],
+          "ddNotes": ""
+        },
+        "regulatory": {
+          "offeringType": "طرح خاص (Private Placement)",
+          "items": [
+            {
+              "text": "عدد المستثمرين ضمن الحد الأقصى المسموح للطرح الخاص حسب لائحة صناديق الاستثمار العقارية",
+              "status": "pending"
+            },
+            {
+              "text": "الحد الأدنى للاستثمار للمستثمر الواحد مستوفى حسب اللائحة",
+              "status": "pending"
+            },
+            {
+              "text": "مذكرة معلومات خاصة (Private Placement Memorandum) مُعدَّة ومُعتمَدة",
+              "status": "pending"
+            },
+            {
+              "text": "مدير الصندوق مرخّص من هيئة السوق المالية لإدارة صناديق استثمار عقارية",
+              "status": "pending"
+            },
+            {
+              "text": "أمين الحفظ (Custodian) مُعيَّن ومرخّص",
+              "status": "pending"
+            }
+          ]
+        },
+        "notes": ""
+      },
+      "financingFacts": {
+        "TPC": 50136115.60000001,
+        "debt": 30081669.360000003,
+        "seniorDebt": 30081669.360000003,
+        "mezzDebt": 0,
+        "equity": 20054446.240000006,
+        "contributedEquity": 22460979.788800005,
+        "interestRate": 0.08,
+        "Kd": 0.08,
+        "amortType": "interest_only",
+        "holdStrategy": "exit_sale",
+        "drawSchedule": null,
+        "balloonBalanceAtExit": 30081669.360000003,
+        "totalYears": 2,
+        "constructionYears": 2,
+        "equityCF": [
+          -20054446.240000006,
+          -2406533.5488000005,
+          18511797.091199998
+        ],
+        "pnlRows": [
+          {
+            "yr": 1,
+            "phase": "construction",
+            "isExitYear": false,
+            "interestExpense": 2406533.5488000005,
+            "principalPayment": 0,
+            "debtService": 2406533.5488000005,
+            "debtPayoffAtExit": 0
+          },
+          {
+            "yr": 2,
+            "phase": "construction",
+            "isExitYear": true,
+            "interestExpense": 2406533.5488000005,
+            "principalPayment": 0,
+            "debtService": 2406533.5488000005,
+            "debtPayoffAtExit": 30081669.360000003
+          }
+        ]
+      },
+      "derivedForDocumentation": {
+        "totalInterest": 4813067.097600001,
+        "pnlRows": [
+          {
+            "yr": 1,
+            "impliedCashInterest": 2406533.5488000005,
+            "impliedCapInterest": 0
+          },
+          {
+            "yr": 2,
+            "impliedCashInterest": 2406533.5488000005,
+            "impliedCapInterest": 0
+          }
+        ],
+        "equityCFNegativeYearCount": 2,
+        "equityCFNegativeYears": [
+          {
+            "i": 0,
+            "v": -20054446.240000006
+          },
+          {
+            "i": 1,
+            "v": -2406533.5488000005
+          }
+        ]
+      }
+    },
+    "F03-draw-schedule-2yr": {
+      "label": "2-year draw schedule [30/70]",
+      "scenarioKey": "base",
+      "financingFocus": "نظير T05 لكن سنتين فقط — تطبيع/تقصير المصفوفة.",
+      "input": {
+        "id": null,
+        "meta": {
+          "name": "",
+          "city": "الرياض",
+          "neighborhood": "",
+          "tier": "متوسط",
+          "oppType": "development",
+          "useType": "__neutral__",
+          "analyst": "Opal",
+          "createdAt": null,
+          "updatedAt": null,
+          "createdBy": null,
+          "updatedBy": null
+        },
+        "land": {
+          "area": 5000,
+          "price": 2000,
+          "far": 2,
+          "bar": 0.5,
+          "floorsAllowed": 0,
+          "basements": 0,
+          "floorHeight": 3.6,
+          "setbacks": 0,
+          "bonusAreaPct": 0,
+          "basementCostPremiumPct": 0,
+          "basementDepthEscalationPct": 0,
+          "floorHeightPremiumPct": 0
+        },
+        "site": {
+          "soil": 1,
+          "water": 1,
+          "tower": 1,
+          "topo": 1,
+          "infra": 1
+        },
+        "strategy": {
+          "exitStrategy": "مختلط (Mixed Sell+Rent)",
+          "salePct": 1,
+          "offPlanSale": {
+            "enabled": false,
+            "preSalePctThreshold": 0,
+            "curve": "even",
+            "escrowLagYears": 0,
+            "priceEscalationAnnual": 0
+          },
+          "directSale": {
+            "bankFinancedPct": 0,
+            "collectionLagYears": 0
+          }
+        },
+        "income": {
+          "gla": null,
+          "rent": 0,
+          "occupancy": 0,
+          "opex": 0,
+          "wale": 0,
+          "tenantConc": 0,
+          "distFreq": "ربع سنوي (Quarterly)",
+          "assetClass": "عام",
+          "holdStrategy": "exit_sale",
+          "mixedUse": false,
+          "nnn": {
+            "tenantCreditTier": "وطني (National)",
+            "leaseTermRemaining": 0,
+            "pctRent": false,
+            "pctRentRate": 0,
+            "annualSales": 0,
+            "envReserveAnnual": 0
+          },
+          "hospitality": {
+            "adr": 0,
+            "keys": 0,
+            "gopMargin": 0
+          },
+          "logisticsSpec": {
+            "clearHeight": 0,
+            "dockDoors": 0
+          },
+          "dataCenterSpec": {
+            "powerDensityKw": 0,
+            "redundancyTier": "Tier III (N+1)"
+          },
+          "refinance": {
+            "intervalYears": 0,
+            "refiLtv": 0,
+            "refiCostPct": 0,
+            "analysisHorizon": 0
+          }
+        },
+        "development": {
+          "salePrice": 6000,
+          "buildCost": 3000,
+          "constructionYears": 2,
+          "operationYears": 0,
+          "exitCapRate": 0,
+          "efficiency": 0.85,
+          "contingency": 0.05,
+          "scopeType": "both",
+          "infraCostPerSqm": 0,
+          "costBreakdown": {
+            "structure": 0,
+            "mep": 0,
+            "finishes": 0,
+            "external": 0,
+            "fees": 0
+          }
+        },
+        "landbank": {
+          "appreciation": 0,
+          "holdingYears": 0,
+          "carryAnnual": 0,
+          "zoningNote": "",
+          "hbuNote": "",
+          "interimAnnualIncome": 0,
+          "whiteLandFeePct": 0.025,
+          "whiteLandFeeExempt": false
+        },
+        "zakat": {
+          "enabled": false,
+          "ratePct": 0.025
+        },
+        "vat": {
+          "enabled": false,
+          "ratePct": 0.15,
+          "constructionInputVatPct": 0.15,
+          "inputRecoveryPct": null,
+          "refundLagYears": 0,
+          "professionalFeesVatPct": 0.15
+        },
+        "subdivision": {
+          "phasedAbsorption": false,
+          "absorptionYears": 0,
+          "curve": "even",
+          "priceEscalationAnnual": 0
+        },
+        "subscription": {
+          "minInvestment": 0,
+          "subscriptionFee": 0,
+          "lockupYears": 0,
+          "distPolicy": "عند الإغلاق فقط (At Exit Only)",
+          "investorClass": "Class A - تجزئة (Retail)",
+          "hwm": true
+        },
+        "economics": {
+          "hurdle": 0,
+          "carry": 0,
+          "lpShare": 0,
+          "gpShare": 0,
+          "devShare": 0
+        },
+        "fees": {
+          "mgmt": 0,
+          "structuring": 0,
+          "arrangement": 0,
+          "acquisition": 0,
+          "disposition": 0,
+          "assetMgmt": 0,
+          "propMgmt": 0,
+          "regAuditCustodian": 0,
+          "cmaSetup": 0,
+          "dueDiligence": 0,
+          "valuation": 0,
+          "ejarFeePct": 0,
+          "insuranceAnnualPct": 0
+        },
+        "financing": {
+          "ltc": 0.6,
+          "saibor": 0.055,
+          "margin": 0.025,
+          "tenor": 0,
+          "structure": "single",
+          "seniorPct": 0,
+          "mezzMarginAdj": 0,
+          "amortType": "interest_only",
+          "graceYears": 0,
+          "amortYears": 0,
+          "interestDuringConstruction": "cash",
+          "shariahStructure": "تقليدي (فائدة تقليدية)",
+          "drawSchedulePct": [
+            0.3,
+            0.7
+          ]
+        },
+        "wacc": {
+          "rf": 0,
+          "mrp": 0,
+          "beta": 0,
+          "crp": 0,
+          "sp": 0,
+          "alpha": 0,
+          "marketCap": 0,
+          "growth": 0
+        },
+        "exitCosts": {
+          "broker": 0,
+          "legal": 0,
+          "rett": 0,
+          "exitFee": 0
+        },
+        "criteria": {
+          "irrMin": 0.15,
+          "dscrMin": 1.3,
+          "moicMin": 1.5,
+          "yocMin": 0.08,
+          "projIrrMin": 0.1,
+          "preLeasingMin": 0.3,
+          "preSaleMin": 0.3,
+          "preLeasingActual": 0,
+          "preSaleActual": 0
+        },
+        "scenarios": {
+          "optimistic": {
+            "rentMult": 1.08,
+            "salePriceMult": 1.08,
+            "costMult": 0.95,
+            "capRateDelta": -0.005,
+            "rateDelta": -0.0025
+          },
+          "pessimistic": {
+            "rentMult": 0.9,
+            "salePriceMult": 0.88,
+            "costMult": 1.1,
+            "capRateDelta": 0.01,
+            "rateDelta": 0.0075
+          }
+        },
+        "closing": {
+          "titleDeed": "completed",
+          "zoning": "in_progress",
+          "environmental": "not_started",
+          "conditions": [
+            {
+              "text": "تثبيت سعر الأرض عبر اتفاقية شراء موقعة",
+              "status": "pending"
+            },
+            {
+              "text": "توقيع عقود إيجار مسبقة ≥ 30% من GLA قبل بدء الإنشاء",
+              "status": "pending"
+            }
+          ],
+          "ddNotes": ""
+        },
+        "regulatory": {
+          "offeringType": "طرح خاص (Private Placement)",
+          "items": [
+            {
+              "text": "عدد المستثمرين ضمن الحد الأقصى المسموح للطرح الخاص حسب لائحة صناديق الاستثمار العقارية",
+              "status": "pending"
+            },
+            {
+              "text": "الحد الأدنى للاستثمار للمستثمر الواحد مستوفى حسب اللائحة",
+              "status": "pending"
+            },
+            {
+              "text": "مذكرة معلومات خاصة (Private Placement Memorandum) مُعدَّة ومُعتمَدة",
+              "status": "pending"
+            },
+            {
+              "text": "مدير الصندوق مرخّص من هيئة السوق المالية لإدارة صناديق استثمار عقارية",
+              "status": "pending"
+            },
+            {
+              "text": "أمين الحفظ (Custodian) مُعيَّن ومرخّص",
+              "status": "pending"
+            }
+          ]
+        },
+        "notes": ""
+      },
+      "financingFacts": {
+        "TPC": 50136115.60000001,
+        "debt": 30081669.360000003,
+        "seniorDebt": 30081669.360000003,
+        "mezzDebt": 0,
+        "equity": 20054446.240000006,
+        "contributedEquity": 20415426.272320006,
+        "interestRate": 0.08,
+        "Kd": 0.08,
+        "amortType": "interest_only",
+        "holdStrategy": "exit_sale",
+        "drawSchedule": [
+          0.3,
+          0.7
+        ],
+        "balloonBalanceAtExit": 30081669.360000003,
+        "totalYears": 2,
+        "constructionYears": 2,
+        "equityCF": [
+          -20054446.240000006,
+          -360980.03232,
+          19354083.833279997
+        ],
+        "pnlRows": [
+          {
+            "yr": 1,
+            "phase": "construction",
+            "isExitYear": false,
+            "interestExpense": 360980.03232,
+            "principalPayment": 0,
+            "debtService": 360980.03232,
+            "debtPayoffAtExit": 0
+          },
+          {
+            "yr": 2,
+            "phase": "construction",
+            "isExitYear": true,
+            "interestExpense": 1564246.8067200002,
+            "principalPayment": 0,
+            "debtService": 1564246.8067200002,
+            "debtPayoffAtExit": 30081669.360000003
+          }
+        ]
+      },
+      "derivedForDocumentation": {
+        "totalInterest": 1925226.8390400002,
+        "pnlRows": [
+          {
+            "yr": 1,
+            "impliedCashInterest": 360980.03232,
+            "impliedCapInterest": 0
+          },
+          {
+            "yr": 2,
+            "impliedCashInterest": 1564246.8067200002,
+            "impliedCapInterest": 0
+          }
+        ],
+        "equityCFNegativeYearCount": 2,
+        "equityCFNegativeYears": [
+          {
+            "i": 0,
+            "v": -20054446.240000006
+          },
+          {
+            "i": 1,
+            "v": -360980.03232
+          }
+        ]
+      }
+    },
+    "F04-amort-amortizing": {
+      "label": "Amortizing repayment",
+      "scenarioKey": "base",
+      "financingFocus": "principalPay = min(remainingDebt, debt/amortYears) لكل سنة تشغيل بعد graceYears.",
+      "input": {
+        "id": null,
+        "meta": {
+          "name": "",
+          "city": "الرياض",
+          "neighborhood": "",
+          "tier": "متوسط",
+          "oppType": "development",
+          "useType": "__neutral__",
+          "analyst": "Opal",
+          "createdAt": null,
+          "updatedAt": null,
+          "createdBy": null,
+          "updatedBy": null
+        },
+        "land": {
+          "area": 5000,
+          "price": 2000,
+          "far": 2,
+          "bar": 0.5,
+          "floorsAllowed": 0,
+          "basements": 0,
+          "floorHeight": 3.6,
+          "setbacks": 0,
+          "bonusAreaPct": 0,
+          "basementCostPremiumPct": 0,
+          "basementDepthEscalationPct": 0,
+          "floorHeightPremiumPct": 0
+        },
+        "site": {
+          "soil": 1,
+          "water": 1,
+          "tower": 1,
+          "topo": 1,
+          "infra": 1
+        },
+        "strategy": {
+          "exitStrategy": "مختلط (Mixed Sell+Rent)",
+          "salePct": 1,
+          "offPlanSale": {
+            "enabled": false,
+            "preSalePctThreshold": 0,
+            "curve": "even",
+            "escrowLagYears": 0,
+            "priceEscalationAnnual": 0
+          },
+          "directSale": {
+            "bankFinancedPct": 0,
+            "collectionLagYears": 0
+          }
+        },
+        "income": {
+          "gla": null,
+          "rent": 0,
+          "occupancy": 0,
+          "opex": 0,
+          "wale": 0,
+          "tenantConc": 0,
+          "distFreq": "ربع سنوي (Quarterly)",
+          "assetClass": "عام",
+          "holdStrategy": "exit_sale",
+          "mixedUse": false,
+          "nnn": {
+            "tenantCreditTier": "وطني (National)",
+            "leaseTermRemaining": 0,
+            "pctRent": false,
+            "pctRentRate": 0,
+            "annualSales": 0,
+            "envReserveAnnual": 0
+          },
+          "hospitality": {
+            "adr": 0,
+            "keys": 0,
+            "gopMargin": 0
+          },
+          "logisticsSpec": {
+            "clearHeight": 0,
+            "dockDoors": 0
+          },
+          "dataCenterSpec": {
+            "powerDensityKw": 0,
+            "redundancyTier": "Tier III (N+1)"
+          },
+          "refinance": {
+            "intervalYears": 0,
+            "refiLtv": 0,
+            "refiCostPct": 0,
+            "analysisHorizon": 0
+          }
+        },
+        "development": {
+          "salePrice": 6000,
+          "buildCost": 3000,
+          "constructionYears": 2,
+          "operationYears": 5,
+          "exitCapRate": 0,
+          "efficiency": 0.85,
+          "contingency": 0.05,
+          "scopeType": "both",
+          "infraCostPerSqm": 0,
+          "costBreakdown": {
+            "structure": 0,
+            "mep": 0,
+            "finishes": 0,
+            "external": 0,
+            "fees": 0
+          }
+        },
+        "landbank": {
+          "appreciation": 0,
+          "holdingYears": 0,
+          "carryAnnual": 0,
+          "zoningNote": "",
+          "hbuNote": "",
+          "interimAnnualIncome": 0,
+          "whiteLandFeePct": 0.025,
+          "whiteLandFeeExempt": false
+        },
+        "zakat": {
+          "enabled": false,
+          "ratePct": 0.025
+        },
+        "vat": {
+          "enabled": false,
+          "ratePct": 0.15,
+          "constructionInputVatPct": 0.15,
+          "inputRecoveryPct": null,
+          "refundLagYears": 0,
+          "professionalFeesVatPct": 0.15
+        },
+        "subdivision": {
+          "phasedAbsorption": false,
+          "absorptionYears": 0,
+          "curve": "even",
+          "priceEscalationAnnual": 0
+        },
+        "subscription": {
+          "minInvestment": 0,
+          "subscriptionFee": 0,
+          "lockupYears": 0,
+          "distPolicy": "عند الإغلاق فقط (At Exit Only)",
+          "investorClass": "Class A - تجزئة (Retail)",
+          "hwm": true
+        },
+        "economics": {
+          "hurdle": 0,
+          "carry": 0,
+          "lpShare": 0,
+          "gpShare": 0,
+          "devShare": 0
+        },
+        "fees": {
+          "mgmt": 0,
+          "structuring": 0,
+          "arrangement": 0,
+          "acquisition": 0,
+          "disposition": 0,
+          "assetMgmt": 0,
+          "propMgmt": 0,
+          "regAuditCustodian": 0,
+          "cmaSetup": 0,
+          "dueDiligence": 0,
+          "valuation": 0,
+          "ejarFeePct": 0,
+          "insuranceAnnualPct": 0
+        },
+        "financing": {
+          "ltc": 0.6,
+          "saibor": 0.055,
+          "margin": 0.025,
+          "tenor": 0,
+          "structure": "single",
+          "seniorPct": 0,
+          "mezzMarginAdj": 0,
+          "amortType": "amortizing",
+          "graceYears": 0,
+          "amortYears": 10,
+          "interestDuringConstruction": "cash",
+          "shariahStructure": "تقليدي (فائدة تقليدية)",
+          "drawSchedulePct": []
+        },
+        "wacc": {
+          "rf": 0,
+          "mrp": 0,
+          "beta": 0,
+          "crp": 0,
+          "sp": 0,
+          "alpha": 0,
+          "marketCap": 0,
+          "growth": 0
+        },
+        "exitCosts": {
+          "broker": 0,
+          "legal": 0,
+          "rett": 0,
+          "exitFee": 0
+        },
+        "criteria": {
+          "irrMin": 0.15,
+          "dscrMin": 1.3,
+          "moicMin": 1.5,
+          "yocMin": 0.08,
+          "projIrrMin": 0.1,
+          "preLeasingMin": 0.3,
+          "preSaleMin": 0.3,
+          "preLeasingActual": 0,
+          "preSaleActual": 0
+        },
+        "scenarios": {
+          "optimistic": {
+            "rentMult": 1.08,
+            "salePriceMult": 1.08,
+            "costMult": 0.95,
+            "capRateDelta": -0.005,
+            "rateDelta": -0.0025
+          },
+          "pessimistic": {
+            "rentMult": 0.9,
+            "salePriceMult": 0.88,
+            "costMult": 1.1,
+            "capRateDelta": 0.01,
+            "rateDelta": 0.0075
+          }
+        },
+        "closing": {
+          "titleDeed": "completed",
+          "zoning": "in_progress",
+          "environmental": "not_started",
+          "conditions": [
+            {
+              "text": "تثبيت سعر الأرض عبر اتفاقية شراء موقعة",
+              "status": "pending"
+            },
+            {
+              "text": "توقيع عقود إيجار مسبقة ≥ 30% من GLA قبل بدء الإنشاء",
+              "status": "pending"
+            }
+          ],
+          "ddNotes": ""
+        },
+        "regulatory": {
+          "offeringType": "طرح خاص (Private Placement)",
+          "items": [
+            {
+              "text": "عدد المستثمرين ضمن الحد الأقصى المسموح للطرح الخاص حسب لائحة صناديق الاستثمار العقارية",
+              "status": "pending"
+            },
+            {
+              "text": "الحد الأدنى للاستثمار للمستثمر الواحد مستوفى حسب اللائحة",
+              "status": "pending"
+            },
+            {
+              "text": "مذكرة معلومات خاصة (Private Placement Memorandum) مُعدَّة ومُعتمَدة",
+              "status": "pending"
+            },
+            {
+              "text": "مدير الصندوق مرخّص من هيئة السوق المالية لإدارة صناديق استثمار عقارية",
+              "status": "pending"
+            },
+            {
+              "text": "أمين الحفظ (Custodian) مُعيَّن ومرخّص",
+              "status": "pending"
+            }
+          ]
+        },
+        "notes": ""
+      },
+      "financingFacts": {
+        "TPC": 50136115.60000001,
+        "debt": 30081669.360000003,
+        "seniorDebt": 30081669.360000003,
+        "mezzDebt": 0,
+        "equity": 20054446.240000006,
+        "contributedEquity": 45082395.147520006,
+        "interestRate": 0.08,
+        "Kd": 0.08,
+        "amortType": "amortizing",
+        "holdStrategy": "exit_sale",
+        "drawSchedule": null,
+        "balloonBalanceAtExit": 15040834.68,
+        "totalYears": 7,
+        "constructionYears": 2,
+        "equityCF": [
+          -20054446.240000006,
+          -2406533.5488000005,
+          -2406533.5488000005,
+          -5414700.484800001,
+          -5174047.12992,
+          -4933393.775040001,
+          -4692740.42016,
+          31507078.254720002
+        ],
+        "pnlRows": [
+          {
+            "yr": 1,
+            "phase": "construction",
+            "isExitYear": false,
+            "interestExpense": 2406533.5488000005,
+            "principalPayment": 0,
+            "debtService": 2406533.5488000005,
+            "debtPayoffAtExit": 0
+          },
+          {
+            "yr": 2,
+            "phase": "construction",
+            "isExitYear": false,
+            "interestExpense": 2406533.5488000005,
+            "principalPayment": 0,
+            "debtService": 2406533.5488000005,
+            "debtPayoffAtExit": 0
+          },
+          {
+            "yr": 3,
+            "phase": "operation",
+            "isExitYear": false,
+            "interestExpense": 2406533.5488000005,
+            "principalPayment": 3008166.936,
+            "debtService": 5414700.484800001,
+            "debtPayoffAtExit": 0
+          },
+          {
+            "yr": 4,
+            "phase": "operation",
+            "isExitYear": false,
+            "interestExpense": 2165880.1939200005,
+            "principalPayment": 3008166.936,
+            "debtService": 5174047.12992,
+            "debtPayoffAtExit": 0
+          },
+          {
+            "yr": 5,
+            "phase": "operation",
+            "isExitYear": false,
+            "interestExpense": 1925226.8390400002,
+            "principalPayment": 3008166.936,
+            "debtService": 4933393.775040001,
+            "debtPayoffAtExit": 0
+          },
+          {
+            "yr": 6,
+            "phase": "operation",
+            "isExitYear": false,
+            "interestExpense": 1684573.4841600002,
+            "principalPayment": 3008166.936,
+            "debtService": 4692740.42016,
+            "debtPayoffAtExit": 0
+          },
+          {
+            "yr": 7,
+            "phase": "operation",
+            "isExitYear": true,
+            "interestExpense": 1443920.12928,
+            "principalPayment": 3008166.936,
+            "debtService": 4452087.06528,
+            "debtPayoffAtExit": 15040834.68
+          }
+        ]
+      },
+      "derivedForDocumentation": {
+        "totalInterest": 14439201.292800002,
+        "pnlRows": [
+          {
+            "yr": 1,
+            "impliedCashInterest": 2406533.5488000005,
+            "impliedCapInterest": 0
+          },
+          {
+            "yr": 2,
+            "impliedCashInterest": 2406533.5488000005,
+            "impliedCapInterest": 0
+          },
+          {
+            "yr": 3,
+            "impliedCashInterest": 2406533.5488000005,
+            "impliedCapInterest": 0
+          },
+          {
+            "yr": 4,
+            "impliedCashInterest": 2165880.19392,
+            "impliedCapInterest": 4.656612873077393e-10
+          },
+          {
+            "yr": 5,
+            "impliedCashInterest": 1925226.8390400005,
+            "impliedCapInterest": -2.3283064365386963e-10
+          },
+          {
+            "yr": 6,
+            "impliedCashInterest": 1684573.48416,
+            "impliedCapInterest": 2.3283064365386963e-10
+          },
+          {
+            "yr": 7,
+            "impliedCashInterest": 1443920.1292799995,
+            "impliedCapInterest": 4.656612873077393e-10
+          }
+        ],
+        "equityCFNegativeYearCount": 7,
+        "equityCFNegativeYears": [
+          {
+            "i": 0,
+            "v": -20054446.240000006
+          },
+          {
+            "i": 1,
+            "v": -2406533.5488000005
+          },
+          {
+            "i": 2,
+            "v": -2406533.5488000005
+          },
+          {
+            "i": 3,
+            "v": -5414700.484800001
+          },
+          {
+            "i": 4,
+            "v": -5174047.12992
+          },
+          {
+            "i": 5,
+            "v": -4933393.775040001
+          },
+          {
+            "i": 6,
+            "v": -4692740.42016
+          }
+        ]
+      }
+    },
+    "F05-amort-partial-balloon": {
+      "label": "Partial amortization + balloon",
+      "scenarioKey": "base",
+      "financingFocus": "نفس صيغة amortizing حرفياً + graceYears=1 يختبر تأجيل بداية الاستهلاك.",
+      "input": {
+        "id": null,
+        "meta": {
+          "name": "",
+          "city": "الرياض",
+          "neighborhood": "",
+          "tier": "متوسط",
+          "oppType": "development",
+          "useType": "__neutral__",
+          "analyst": "Opal",
+          "createdAt": null,
+          "updatedAt": null,
+          "createdBy": null,
+          "updatedBy": null
+        },
+        "land": {
+          "area": 5000,
+          "price": 2000,
+          "far": 2,
+          "bar": 0.5,
+          "floorsAllowed": 0,
+          "basements": 0,
+          "floorHeight": 3.6,
+          "setbacks": 0,
+          "bonusAreaPct": 0,
+          "basementCostPremiumPct": 0,
+          "basementDepthEscalationPct": 0,
+          "floorHeightPremiumPct": 0
+        },
+        "site": {
+          "soil": 1,
+          "water": 1,
+          "tower": 1,
+          "topo": 1,
+          "infra": 1
+        },
+        "strategy": {
+          "exitStrategy": "مختلط (Mixed Sell+Rent)",
+          "salePct": 1,
+          "offPlanSale": {
+            "enabled": false,
+            "preSalePctThreshold": 0,
+            "curve": "even",
+            "escrowLagYears": 0,
+            "priceEscalationAnnual": 0
+          },
+          "directSale": {
+            "bankFinancedPct": 0,
+            "collectionLagYears": 0
+          }
+        },
+        "income": {
+          "gla": null,
+          "rent": 0,
+          "occupancy": 0,
+          "opex": 0,
+          "wale": 0,
+          "tenantConc": 0,
+          "distFreq": "ربع سنوي (Quarterly)",
+          "assetClass": "عام",
+          "holdStrategy": "exit_sale",
+          "mixedUse": false,
+          "nnn": {
+            "tenantCreditTier": "وطني (National)",
+            "leaseTermRemaining": 0,
+            "pctRent": false,
+            "pctRentRate": 0,
+            "annualSales": 0,
+            "envReserveAnnual": 0
+          },
+          "hospitality": {
+            "adr": 0,
+            "keys": 0,
+            "gopMargin": 0
+          },
+          "logisticsSpec": {
+            "clearHeight": 0,
+            "dockDoors": 0
+          },
+          "dataCenterSpec": {
+            "powerDensityKw": 0,
+            "redundancyTier": "Tier III (N+1)"
+          },
+          "refinance": {
+            "intervalYears": 0,
+            "refiLtv": 0,
+            "refiCostPct": 0,
+            "analysisHorizon": 0
+          }
+        },
+        "development": {
+          "salePrice": 6000,
+          "buildCost": 3000,
+          "constructionYears": 2,
+          "operationYears": 5,
+          "exitCapRate": 0,
+          "efficiency": 0.85,
+          "contingency": 0.05,
+          "scopeType": "both",
+          "infraCostPerSqm": 0,
+          "costBreakdown": {
+            "structure": 0,
+            "mep": 0,
+            "finishes": 0,
+            "external": 0,
+            "fees": 0
+          }
+        },
+        "landbank": {
+          "appreciation": 0,
+          "holdingYears": 0,
+          "carryAnnual": 0,
+          "zoningNote": "",
+          "hbuNote": "",
+          "interimAnnualIncome": 0,
+          "whiteLandFeePct": 0.025,
+          "whiteLandFeeExempt": false
+        },
+        "zakat": {
+          "enabled": false,
+          "ratePct": 0.025
+        },
+        "vat": {
+          "enabled": false,
+          "ratePct": 0.15,
+          "constructionInputVatPct": 0.15,
+          "inputRecoveryPct": null,
+          "refundLagYears": 0,
+          "professionalFeesVatPct": 0.15
+        },
+        "subdivision": {
+          "phasedAbsorption": false,
+          "absorptionYears": 0,
+          "curve": "even",
+          "priceEscalationAnnual": 0
+        },
+        "subscription": {
+          "minInvestment": 0,
+          "subscriptionFee": 0,
+          "lockupYears": 0,
+          "distPolicy": "عند الإغلاق فقط (At Exit Only)",
+          "investorClass": "Class A - تجزئة (Retail)",
+          "hwm": true
+        },
+        "economics": {
+          "hurdle": 0,
+          "carry": 0,
+          "lpShare": 0,
+          "gpShare": 0,
+          "devShare": 0
+        },
+        "fees": {
+          "mgmt": 0,
+          "structuring": 0,
+          "arrangement": 0,
+          "acquisition": 0,
+          "disposition": 0,
+          "assetMgmt": 0,
+          "propMgmt": 0,
+          "regAuditCustodian": 0,
+          "cmaSetup": 0,
+          "dueDiligence": 0,
+          "valuation": 0,
+          "ejarFeePct": 0,
+          "insuranceAnnualPct": 0
+        },
+        "financing": {
+          "ltc": 0.6,
+          "saibor": 0.055,
+          "margin": 0.025,
+          "tenor": 0,
+          "structure": "single",
+          "seniorPct": 0,
+          "mezzMarginAdj": 0,
+          "amortType": "partial_amort_balloon",
+          "graceYears": 1,
+          "amortYears": 15,
+          "interestDuringConstruction": "cash",
+          "shariahStructure": "تقليدي (فائدة تقليدية)",
+          "drawSchedulePct": []
+        },
+        "wacc": {
+          "rf": 0,
+          "mrp": 0,
+          "beta": 0,
+          "crp": 0,
+          "sp": 0,
+          "alpha": 0,
+          "marketCap": 0,
+          "growth": 0
+        },
+        "exitCosts": {
+          "broker": 0,
+          "legal": 0,
+          "rett": 0,
+          "exitFee": 0
+        },
+        "criteria": {
+          "irrMin": 0.15,
+          "dscrMin": 1.3,
+          "moicMin": 1.5,
+          "yocMin": 0.08,
+          "projIrrMin": 0.1,
+          "preLeasingMin": 0.3,
+          "preSaleMin": 0.3,
+          "preLeasingActual": 0,
+          "preSaleActual": 0
+        },
+        "scenarios": {
+          "optimistic": {
+            "rentMult": 1.08,
+            "salePriceMult": 1.08,
+            "costMult": 0.95,
+            "capRateDelta": -0.005,
+            "rateDelta": -0.0025
+          },
+          "pessimistic": {
+            "rentMult": 0.9,
+            "salePriceMult": 0.88,
+            "costMult": 1.1,
+            "capRateDelta": 0.01,
+            "rateDelta": 0.0075
+          }
+        },
+        "closing": {
+          "titleDeed": "completed",
+          "zoning": "in_progress",
+          "environmental": "not_started",
+          "conditions": [
+            {
+              "text": "تثبيت سعر الأرض عبر اتفاقية شراء موقعة",
+              "status": "pending"
+            },
+            {
+              "text": "توقيع عقود إيجار مسبقة ≥ 30% من GLA قبل بدء الإنشاء",
+              "status": "pending"
+            }
+          ],
+          "ddNotes": ""
+        },
+        "regulatory": {
+          "offeringType": "طرح خاص (Private Placement)",
+          "items": [
+            {
+              "text": "عدد المستثمرين ضمن الحد الأقصى المسموح للطرح الخاص حسب لائحة صناديق الاستثمار العقارية",
+              "status": "pending"
+            },
+            {
+              "text": "الحد الأدنى للاستثمار للمستثمر الواحد مستوفى حسب اللائحة",
+              "status": "pending"
+            },
+            {
+              "text": "مذكرة معلومات خاصة (Private Placement Memorandum) مُعدَّة ومُعتمَدة",
+              "status": "pending"
+            },
+            {
+              "text": "مدير الصندوق مرخّص من هيئة السوق المالية لإدارة صناديق استثمار عقارية",
+              "status": "pending"
+            },
+            {
+              "text": "أمين الحفظ (Custodian) مُعيَّن ومرخّص",
+              "status": "pending"
+            }
+          ]
+        },
+        "notes": ""
+      },
+      "financingFacts": {
+        "TPC": 50136115.60000001,
+        "debt": 30081669.360000003,
+        "seniorDebt": 30081669.360000003,
+        "mezzDebt": 0,
+        "equity": 20054446.240000006,
+        "contributedEquity": 40028674.69504,
+        "interestRate": 0.08,
+        "Kd": 0.08,
+        "amortType": "partial_amort_balloon",
+        "holdStrategy": "exit_sale",
+        "drawSchedule": null,
+        "balloonBalanceAtExit": 22059890.863999996,
+        "totalYears": 7,
+        "constructionYears": 2,
+        "equityCF": [
+          -20054446.240000006,
+          -2406533.5488000005,
+          -2406533.5488000005,
+          -2406533.5488000005,
+          -4411978.172800001,
+          -4251542.602880001,
+          -4091107.0329600004,
+          25009437.672960002
+        ],
+        "pnlRows": [
+          {
+            "yr": 1,
+            "phase": "construction",
+            "isExitYear": false,
+            "interestExpense": 2406533.5488000005,
+            "principalPayment": 0,
+            "debtService": 2406533.5488000005,
+            "debtPayoffAtExit": 0
+          },
+          {
+            "yr": 2,
+            "phase": "construction",
+            "isExitYear": false,
+            "interestExpense": 2406533.5488000005,
+            "principalPayment": 0,
+            "debtService": 2406533.5488000005,
+            "debtPayoffAtExit": 0
+          },
+          {
+            "yr": 3,
+            "phase": "operation",
+            "isExitYear": false,
+            "interestExpense": 2406533.5488000005,
+            "principalPayment": 0,
+            "debtService": 2406533.5488000005,
+            "debtPayoffAtExit": 0
+          },
+          {
+            "yr": 4,
+            "phase": "operation",
+            "isExitYear": false,
+            "interestExpense": 2406533.5488000005,
+            "principalPayment": 2005444.6240000003,
+            "debtService": 4411978.172800001,
+            "debtPayoffAtExit": 0
+          },
+          {
+            "yr": 5,
+            "phase": "operation",
+            "isExitYear": false,
+            "interestExpense": 2246097.9788800003,
+            "principalPayment": 2005444.6240000003,
+            "debtService": 4251542.602880001,
+            "debtPayoffAtExit": 0
+          },
+          {
+            "yr": 6,
+            "phase": "operation",
+            "isExitYear": false,
+            "interestExpense": 2085662.40896,
+            "principalPayment": 2005444.6240000003,
+            "debtService": 4091107.0329600004,
+            "debtPayoffAtExit": 0
+          },
+          {
+            "yr": 7,
+            "phase": "operation",
+            "isExitYear": true,
+            "interestExpense": 1925226.83904,
+            "principalPayment": 2005444.6240000003,
+            "debtService": 3930671.4630400003,
+            "debtPayoffAtExit": 22059890.863999996
+          }
+        ]
+      },
+      "derivedForDocumentation": {
+        "totalInterest": 15883121.422080003,
+        "pnlRows": [
+          {
+            "yr": 1,
+            "impliedCashInterest": 2406533.5488000005,
+            "impliedCapInterest": 0
+          },
+          {
+            "yr": 2,
+            "impliedCashInterest": 2406533.5488000005,
+            "impliedCapInterest": 0
+          },
+          {
+            "yr": 3,
+            "impliedCashInterest": 2406533.5488000005,
+            "impliedCapInterest": 0
+          },
+          {
+            "yr": 4,
+            "impliedCashInterest": 2406533.5488000005,
+            "impliedCapInterest": 0
+          },
+          {
+            "yr": 5,
+            "impliedCashInterest": 2246097.9788800008,
+            "impliedCapInterest": -4.656612873077393e-10
+          },
+          {
+            "yr": 6,
+            "impliedCashInterest": 2085662.4089600001,
+            "impliedCapInterest": -2.3283064365386963e-10
+          },
+          {
+            "yr": 7,
+            "impliedCashInterest": 1925226.83904,
+            "impliedCapInterest": 0
+          }
+        ],
+        "equityCFNegativeYearCount": 7,
+        "equityCFNegativeYears": [
+          {
+            "i": 0,
+            "v": -20054446.240000006
+          },
+          {
+            "i": 1,
+            "v": -2406533.5488000005
+          },
+          {
+            "i": 2,
+            "v": -2406533.5488000005
+          },
+          {
+            "i": 3,
+            "v": -2406533.5488000005
+          },
+          {
+            "i": 4,
+            "v": -4411978.172800001
+          },
+          {
+            "i": 5,
+            "v": -4251542.602880001
+          },
+          {
+            "i": 6,
+            "v": -4091107.0329600004
+          }
+        ]
+      }
+    }
+  }
+}
