@@ -20,6 +20,7 @@
    ========================================================================= */
 
 import { computePortfolioNetXirr, riyadhDateStr } from '../domain/financial/xirr/portfolio-xirr.js';
+import { getNetXirrLive, LIVE_MARKER } from './net-xirr-live.js';
 
 const WARN_THRESHOLD = 0.35;
 
@@ -44,7 +45,7 @@ function navCompleteness(core, funds){
 }
 
 /* سجلات دفتر الصناديق كما هي (كل الحالات: الأصل لقيد عكسي يجب أن يكون مرئياً). التاريخ المعتمد: callDate للنداءات، distDate للتوزيعات. */
-function ledgerRecords(core, funds){
+export function ledgerRecords(core, funds){
   const out = [];
   funds.forEach(f=>{
     core.capitalCallsFor(f.id).forEach(c=>out.push({ kind:'capitalCall', id:c.id, fundId:f.id, date:c.data.callDate, amount:c.data.amount, status:c.data.status, reversalOfId:c.data.reversalOfId||null, inKindAssetId:c.data.inKindAssetId||null, linkedCommitmentId:c.data.linkedCommitmentId||null }));
@@ -149,11 +150,58 @@ const XIRR_REASON_TEXT = {
   NEGATIVE_AMOUNT_WITHOUT_REVERSAL: ['مبلغ سالب بلا قيد عكسي','Negative amount without a reversal link'],
   UNKNOWN_RECORD_KIND: ['نوع سجل غير معروف','Unknown record kind'],
 };
-const pick = (core, tbl, code) => tbl[code] ? core.T(tbl[code][0], tbl[code][1]) : code;
+const pick = (core, tbl, code) => tbl[code] ? core.T(tbl[code][0], tbl[code][1]) : (typeof LIVE_REASON_TEXT!=='undefined' && LIVE_REASON_TEXT[code] ? core.T(LIVE_REASON_TEXT[code][0], LIVE_REASON_TEXT[code][1]) : code);
+
+/* R1-C3: عند تثبيت المصدر الحي يكون Net XIRR في الشاشتين من مصدر واحد (تقييمات الصناديق المعتمدة بتاريخ اليوم)، لا من NAV الاكتتاب. */
+const LIVE_TEXT = {
+  loading: ['جارٍ قراءة تقييمات الصناديق المعتمدة…','Reading approved fund valuations…'],
+  verifying: ['جارٍ التحقق من بصمات التقييمات المعتمدة…','Verifying approved valuation fingerprints…'],
+  blocked: ['لا معدل: تعذّر قراءة أو التحقق من تقييمات كل الصناديق','No rate: valuations of all funds could not be read or verified'],
+  stopped: ['—','—'],
+};
+const LIVE_REASON_TEXT = {
+  PERMISSION_DENIED: ['رُفضت صلاحية القراءة','Read permission denied'],
+  HEAD_MISSING: ['لا رأس تقييم لليوم الحالي لصندوق','No valuation head for today for a fund'],
+  HEAD_DOC_MISSING: ['لا وثيقة معتمدة مطابقة للرأس','No approved document matches the head'],
+  HEAD_HASH_MISMATCH: ['بصمة الرأس لا تطابق الوثيقة المعتمدة','Head fingerprint does not match the approved document'],
+  HEAD_UNVERIFIABLE: ['تعذّر التحقق من بصمة الرأس','Head fingerprint could not be verified'],
+  ELIGIBILITY_MISSING: ['أهلية الرأس غائبة أو غير معروفة — لا يُفترض أنه سارٍ','Head eligibility missing or unknown — never assumed eligible'],
+  VALUATION_SUSPENDED: ['التقييم الفعّال معلّق — لا رجوع لإصدار أقدم','Effective valuation suspended — no fallback to an older version'],
+  INPUTS_LEDGER_NOT_SERVER_CONFIRMED: ['دفتر الصناديق/التدفقات غير مؤكد من الخادم الآن (ذاكرة محلية أو كتابة معلّقة أو لم يصل بعد)','Fund/flow ledger not confirmed by the server right now (cache, pending write, or not arrived yet)'],
+  INPUTS_LEDGER_CONFIRMATION_UNAVAILABLE: ['معلومات تأكيد الدفتر غائبة أو غير صالحة','Ledger confirmation information missing or invalid'],
+  NO_READ_ACCESS: ['لا صلاحية قراءة','No read access'],
+  INPUTS_INVALID: ['لا صناديق في النطاق أو مدخلات غير صالحة','No funds in scope or invalid inputs'],
+  READ_ERROR: ['فشل قراءة مصدر تقييمات','A valuation source failed to read'],
+  READ_STALE: ['انقطع تأكيد الخادم لمصدر تقييمات','Server confirmation of a valuation source was lost'],
+  ASOF_NOT_CURRENT_RIYADH_DAY: ['تاريخ الحساب ليس يوم الرياض الحالي','As-of date is not the current Riyadh day'],
+};
+const liveReason = (core, r) => { const code = String(r).split(':')[0]; return LIVE_REASON_TEXT[code] ? core.T(LIVE_REASON_TEXT[code][0], LIVE_REASON_TEXT[code][1]) : ''; };
+
+function liveNetXirrHtml(core, v){
+  const mark = `${LIVE_MARKER}="1"`;
+  if(v.status==='ready' && v.result) return renderXirrResult(core, v.result, mark, v);
+  if(v.status==='blocked' && v.result) return renderXirrResult(core, v.result, mark, v);
+  if(v.status==='hidden' || v.status==='stopped') return `<span ${mark} data-netxirr-status="${core.esc(v.status)}">—</span>`;
+  const t = LIVE_TEXT[v.status] || LIVE_TEXT.blocked;
+  const reasons = (v.reasons||[]).length ? `<details style="margin-top:4px;"><summary class="note">${core.T('الأسباب','Reasons')}</summary><ul style="margin:4px 0; padding-inline-start:18px; font-size:11.5px;">${v.reasons.map(r=>`<li><code>${core.esc(r)}</code>${liveReason(core, r) ? ' — '+core.esc(liveReason(core, r)) : ''}</li>`).join('')}</ul></details>` : '';
+  return `<span class="note" ${mark} data-netxirr-status="${core.esc(v.status)}">${core.esc(core.T(t[0], t[1]))}</span>${reasons}`;
+}
+
+export function netXirrDescription(core){
+  return getNetXirrLive()
+    ? core.T('تدفقات مسدَّدة بتاريخَي السجل + قيمة متبقية من تقييمات صناديق معتمدة بتاريخ اليوم (بصمة الرأس متحقَّق منها؛ صحة التقييم غير متحقَّق منها)، وليست تاريخ دفع مثبتاً','paid ledger flows at record dates + residual value from approved fund valuations as of today (head fingerprint verified; valuation correctness not verified), not proven payment dates')
+    : core.T('تدفقات مسدَّدة بتاريخَي السجل + NAV تقديرية من الاكتتاب، ليست NAV رسمية ولا تاريخ دفع مثبت','paid ledger flows at record dates + estimated underwriting NAV, not official NAV and not proven payment dates');
+}
 
 export function netXirrHtml(core, s, opts={}){
+  const live = getNetXirrLive();
+  if(live) return liveNetXirrHtml(core, live.view());
   const x = s && s.netXirr;
   if(!x) return '—';
+  return renderXirrResult(core, x, '', null);
+}
+
+function renderXirrResult(core, x, mark, liveView){
   const ok = x.status==='OK' && isFinite(x.rate);
   const label = ok ? core.fmtPct(x.rate) : pick(core, XIRR_STATUS_TEXT, x.status);
   // تاريخ الحساب وتحذيرات المصدر يظهران في كل الحالات وفي كل العرضين (المحفظة ومركز القيادة)
@@ -174,7 +222,8 @@ export function netXirrHtml(core, s, opts={}){
     if(x.reason) parts.push(`<p class="note" style="margin:4px 0;">${core.esc(x.reason)}</p>`);
   }
   const details = parts.length ? `<details style="margin-top:4px;"><summary class="note">${core.T('التفاصيل','Details')} <code>${core.esc(x.status)}</code></summary>${parts.join('')}</details>` : '';
-  return `<span${ok?'':' class="note"'} data-netxirr-status="${core.esc(x.status)}">${core.esc(label)}</span>${asOf}${details}`;
+  const navNote = (liveView && ok && typeof x.navValue==='number') ? `<div class="note" data-netxirr-nav="${core.esc(x.navSource||'')}" style="font-size:11px;">${core.T('القيمة المتبقية المعتمدة','Approved residual value')}: ${core.fmtSAR(x.navValue)}</div>` : '';
+  return `<span${ok?'':' class="note"'} data-netxirr-status="${core.esc(x.status)}"${mark?' '+mark:''}>${core.esc(label)}</span>${asOf}${navNote}${details}`;
 }
 
 export function blockedNotice(core, s){
@@ -231,7 +280,7 @@ export function registerPortfolio(core){
       <div class="panel-head"><h3>${core.T('العوائد','Returns')}</h3></div>
       <div class="kv">
         <div class="k">Gross IRR <span style="font-size:10.5px; color:var(--ink-faint);">(${core.T('على مستوى الأصول، مرجَّح بحقوق الملكية','asset-level, equity-weighted')})</span></div><div class="v">${s.grossIRR!=null? core.fmtPct(s.grossIRR): '—'}</div>
-        <div class="k">Indicative Net IRR <span style="font-size:10.5px; color:var(--ink-faint);">(${core.T('تدفقات مسدَّدة بتاريخَي السجل + NAV تقديرية من الاكتتاب، ليست NAV رسمية ولا تاريخ دفع مثبت','paid ledger flows at record dates + estimated underwriting NAV, not official NAV and not proven payment dates')})</span></div><div class="v">${netXirrHtml(core, s)}</div>
+        <div class="k">Indicative Net IRR <span style="font-size:10.5px; color:var(--ink-faint);">(${netXirrDescription(core)})</span></div><div class="v">${netXirrHtml(core, s)}</div>
         <div class="k">${core.T('مضاعف المحفظة (TVPI)','Portfolio Multiple (TVPI)')}</div><div class="v">${s.portfolioMOIC!=null? s.portfolioMOIC.toFixed(2)+'×':'—'}</div>
       </div>
     </div>

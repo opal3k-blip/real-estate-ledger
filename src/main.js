@@ -109,6 +109,8 @@ registerEvidenceTracking(core);
 /* ---------------- المرحلة ٣ ---------------- */
 import { registerPortfolio } from './features/portfolio.js';
 registerPortfolio(core);
+import { installNetXirrLive } from './features/net-xirr-live-wiring.js';
+installNetXirrLive(core);   // R1-C3: ONE Net XIRR source for the portfolio and command-center screens
 
 import { registerConcentrationRisk } from './features/concentration-risk.js';
 registerConcentrationRisk(core);
