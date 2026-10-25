@@ -93,10 +93,20 @@ await t('V0 the page boots on the real core.js with a senior_ic: the reviewer se
 });
 await t('V1 TYPING a 200-character reason one key at a time while core.render() runs every 40 ms: nothing lost, focus kept, state equals the field', async () => {
   const { ctx, page } = await fresh(); await openReturn(page); await click(page, RF); await storm(page, 40);
-  const text = 'سبب الإرجاع '.repeat(17).slice(0, 200); await page.keyboard.insertText ? null : null; for (const ch of text) await page.keyboard.insertText(ch);
+  // The typing and the renders are COORDINATED, which lowers the test's dependence on execution speed: every 8 keys, while text is still left to type, the test waits (up to 2 s, no retry)
+  // until the storm has really executed one more render. `typed` is fixed at the LAST such checkpoint, before the text is complete; renders after it are never counted.
+  // A render blocked during typing, or timers frozen for longer than the wait, still fail the test.
+  const text = 'سبب الإرجاع '.repeat(17).slice(0, 200); const r0 = await page.evaluate(() => window.__b1.renderCount()); let last = r0; let k = 0; let typed = 0;
+  for (const ch of text) {
+    await page.keyboard.insertText(ch); k += 1;
+    if (k % 8 === 0 && k < text.length) {
+      await page.waitForFunction((n) => window.__b1.renderCount() > n, last, { timeout: 2000 }).catch(() => { throw new Error(`no render ran while typing (key ${k}/${text.length}, renders since typing started: ${last - r0})`); });
+      last = await page.evaluate(() => window.__b1.renderCount()); typed = last - r0;
+    }
+  }
   await stopStorm(page); await page.waitForTimeout(150);
   const v = await page.evaluate(() => { const e = document.querySelector('[data-fvp-field="rv.reason"]'); return { value: e.value, start: e.selectionStart }; });
-  eq(v.value, text); eq(v.start, text.length, 'caret'); eq((await rv(page)).rv.reason, text, 'state'); eq((await dom(page)).active, 'rv.reason', 'focus'); ok((await dom(page)).renders > 20, 'renders ran'); await ctx.close();
+  eq(v.value, text); eq(v.start, text.length, 'caret'); eq((await rv(page)).rv.reason, text, 'state'); eq((await dom(page)).active, 'rv.reason', 'focus'); ok(typed > 20, `renders ran while typing: ${typed} at the last checkpoint (need > 20; nothing after the typing is counted)`); await ctx.close();
 });
 await t('V2 IME COMPOSITION in the reason field under renders every 200 ms: no render during it, the commit leaves the text intact in field and state', async () => {
   const { ctx, page } = await fresh(); await openReturn(page); await click(page, RF); const cdp = await ctx.newCDPSession(page); await storm(page, 200);
