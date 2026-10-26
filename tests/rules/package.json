@@ -22,6 +22,9 @@
     "qs": "^6.14.0",
     "csv-parse": "^7.0.2",
     "stream-json": "^3.6.0",
-    "@opentelemetry/core": "^2.8.0"
+    "@opentelemetry/core": "^2.8.0",
+    "@firebase/firestore": {
+      "@grpc/grpc-js": "1.14.6"
+    }
   }
 }
