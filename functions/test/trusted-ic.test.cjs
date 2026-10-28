@@ -1,0 +1,261 @@
+'use strict';
+// Callable logic and transaction callback contract. Fakes do not prove Rules or isolation.
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const os = require('node:os');
+const crypto = require('node:crypto');
+const { execFileSync } = require('node:child_process');
+const { loadIndexWithFakes } = require('./load-index-with-fakes');
+const { recompute, loadEngine, documentHash } = require('../trusted-ic.cjs');
+const { fns, db } = loadIndexWithFakes();
+const EMAIL = 'ic@example.com';
+const EMAIL2 = 'ic2@example.com';
+const clone = x => JSON.parse(JSON.stringify(x));
+let passed = 0;
+async function test(name, fn) { await fn(); passed++; console.log(`OK ${name}`); }
+function seed(o) {
+  db.__reset();
+  db.__seed('team_members', EMAIL, { expiresAt: null });
+  db.__seed('team_roles', EMAIL, { role: 'senior_ic' });
+  db.__seed('opportunities', 'OPP', clone(o));
+}
+let __reqSeq = 0;
+// 3A-3: an approval must name the document it reviewed. By default the helper "reviews" the document as stored
+// right now (what getApprovalPreview would have returned); a test can override or omit expectedDocHash explicitly.
+function req(data = {}) {
+  const base = { oppId: 'OPP', decision: { decision: 'approve' }, requestId: 'REQ-' + (++__reqSeq), ...data };
+  if (!('expectedDocHash' in data)) {
+    const doc = db.__get('opportunities', base.oppId);
+    base.expectedDocHash = doc ? documentHash(doc) : '0'.repeat(64);
+  }
+  return { auth: { token: { email: EMAIL } }, data: base };
+}
+async function denied(request, code = 'failed-precondition') {
+  const before = JSON.stringify(db.__get('opportunities', 'OPP'));
+  await assert.rejects(fns.approveOpportunity(request), e => e.code === code);
+  assert.equal(Object.keys(db.__all('icDecisions')).length, 0);
+  assert.equal(Object.keys(db.__all('underwritingVersions')).length, 0);
+  assert.equal(Object.keys(db.__all('icDecisionRequests')).length, 0);
+  assert.equal(JSON.stringify(db.__get('opportunities', 'OPP')), before, 'rejection must not mutate the opportunity');
+}
+async function readyFixture() {
+  const engine = await loadEngine();
+  const o = engine.withDefaults({});
+  Object.assign(o.meta, { name: 'Ready Development', city: 'Riyadh', neighborhood: 'Test', analyst: 'Analyst', oppType: 'development', tier: 'متوسط', useType: '__neutral__' });
+  for (const k of ['soil', 'water', 'tower', 'topo', 'infra']) o.site[k] = 1;
+  Object.assign(o.land, { area: 5000, price: 2000, far: 2, bar: 0.5, setbacks: 0.15, floorsAllowed: 10, floorHeight: 3.6 });
+  Object.assign(o.development, { salePrice: 9000, buildCost: 3000, efficiency: 0.85, contingency: 0.05, constructionYears: 2, operationYears: 1, scopeType: 'both', exitCapRate: 0.08 });
+  o.strategy.salePct = 1;
+  Object.assign(o.financing, { ltc: 0.5, saibor: 0.05, margin: 0.02 });
+  o.regulatory.offeringType = 'private';
+  Object.assign(o.criteria, { irrMin: 0.05, projIrrMin: -1, moicMin: 0, dscrMin: null });
+  const { defaultItemsDict } = await import('../generated/src/domain/due-diligence/dd-engine.js');
+  o.dd = { items: defaultItemsDict() };
+  Object.values(o.dd.items).forEach(it => { it.status = 'completed'; it.severity = 'medium'; });
+  const { KEY_FIELDS } = await import('../generated/src/domain/evidence/evidence-engine.js');
+  o.evidence = {};
+  for (const f of KEY_FIELDS.filter(f => !f.appliesTo || f.appliesTo === 'development')) {
+    o.evidence[f.path] = { source: 'test-source', tier: 'tier1', confidence: 'high', verifiedBy: EMAIL, date: '2099-01-01' };
+  }
+  return o;
+}
+
+(async () => {
+  const ready = await readyFixture();
+  const unready = clone(ready); unready.meta.city = '';
+  await test('complete saved opportunity approves without client readiness; audit binds input and engine', async () => {
+    seed(ready);
+    // 3A-3: forged top-level fields (readiness/metrics/status...) are REJECTED, not ignored — see server-validation tests.
+    const response = await fns.approveOpportunity(req({ override: true }));
+    const audit = db.__get('icDecisions', response.decisionId);
+    const mirror = db.__get('opportunities', 'OPP').ic.decisions.at(-1);
+    assert.equal(audit.version, 2); assert.equal(audit.readiness.ready, true);
+    assert.equal(audit.decision.decidedBy, EMAIL); assert.equal(audit.decision.arbitrary, undefined);
+    assert.equal(audit.decision.docHash, documentHash(ready)); assert.equal(audit.decision.validation.color === 'green' || audit.decision.validation.color === 'yellow', true);
+    assert.equal(audit.decision.overridden, false); assert.equal(audit.decision.decidedAt, audit.evaluation.evaluatedAt);
+    assert.deepEqual(audit.decision, mirror);
+    assert.equal(audit.evaluation.inputHash, crypto.createHash('sha256').update(audit.evaluation.inputJson).digest('hex'));
+    assert.equal(audit.evaluation.engineVersion, (await loadEngine()).engineVersion);
+    const input = JSON.parse(audit.evaluation.inputJson);
+    assert.equal(input.ic, undefined); assert.equal(input.land.price, ready.land.price);
+    assert.notEqual(audit.evaluation.metrics.equityIRR, 999);
+    const replay = await recompute(input, Date.parse(audit.evaluation.evaluatedAt));
+    assert.deepEqual(clone(replay.audit.readiness), audit.readiness);
+  });
+  await test('fabricated ready with empty gates cannot approve incomplete stored inputs', async () => {
+    seed(unready);
+    await denied(req({ readiness: { ready: true, gates: {} } }), 'invalid-argument'); // forged field rejected outright
+    await denied(req()); // and without it, incomplete stored inputs still cannot approve
+  });
+  for (const override of [false, undefined]) await test(`override must be explicit boolean true (${String(override)})`, async () => {
+    seed(unready); await denied(req({ override, reasons: ['Justification'] }));
+  });
+  for (const override of ['true', 1, 'yes', {}, []]) await test(`non-boolean override rejected outright (${JSON.stringify(override)})`, async () => {
+    seed(unready); await denied(req({ override, reasons: ['Justification'] }), 'invalid-argument');
+  });
+  for (const reasons of [[], ['   '], ['\n\t']]) await test(`blank justification rejected ${JSON.stringify(reasons)}`, async () => {
+    seed(unready); await denied(req({ override: true, reasons }));
+  });
+  for (const reasons of [[{}], [42], 'Justification']) await test(`non-text reason rejected ${JSON.stringify(reasons)}`, async () => {
+    seed(unready); await denied(req({ override: true, reasons }), 'invalid-argument');
+  });
+  await test('justified override records actual failed gates and bilingual reasons', async () => {
+    seed(unready);
+    const result = await fns.approveOpportunity(req({ override: true, reasons: ['  City evidence pending  '], decision: { decision: 'approve_conditions' },
+      conditions: [{ text: '  Confirm city  ', status: 'met' }] }));
+    const record = db.__get('icDecisions', result.decisionId);
+    assert.equal(record.readiness.ready, false); assert.equal(record.decision.overridden, true);
+    assert.deepEqual(record.decision.reasons, ['City evidence pending']);
+    assert.ok(record.readiness.reasons.some(r => r.code === 'DQ_CRITICAL_MISSING'));
+    assert.ok(record.decision.gateReasonsAtDecision.every(r => typeof r.ar === 'string' && typeof r.en === 'string'));
+    assert.deepEqual(record.decision.conditions, [{ text: 'Confirm city', status: 'pending', owner: '', dueDate: '' }]);
+  });
+  await test('override cannot approve undefined financial return', async () => {
+    seed({}); await denied(req({ override: true, reasons: ['Accept risk'] }));
+  });
+  for (const decision of ['reject', 'hold', 'revise']) await test(`non-approval ${decision} records actual readiness`, async () => {
+    seed(unready);
+    const result = await fns.approveOpportunity(req({ decision: { decision }, override: true }));
+    const record = db.__get('icDecisions', result.decisionId);
+    assert.equal(record.readiness.ready, false); assert.equal(record.decision.overridden, false);
+  });
+  await test('unknown decision rejected', async () => { seed(ready); await denied(req({ decision: { decision: 'approved' } }), 'invalid-argument'); });
+  await test('missing document rejected', async () => { seed(ready); await denied(req({ oppId: 'MISSING' }), 'not-found'); });
+  await test('unauthenticated request rejected', async () => { seed(ready); await denied({ data: req().data }, 'unauthenticated'); });
+  await test('analyst cannot decide', async () => { seed(ready); db.__seed('team_roles', EMAIL, { role: 'analyst' }); await denied(req(), 'permission-denied'); });
+  await test('expired IC member cannot decide', async () => {
+    seed(ready); db.__seed('team_members', EMAIL, { expiresAt: { toMillis: () => 1 } }); await denied(req(), 'permission-denied');
+  });
+  await test('stored horizon bounds fail before computation and no override bypass', async () => {
+    const o = clone(ready); o.strategy.offPlanSale.escrowLagYears = 1e9;
+    seed(o); await denied(req({ override: true, reasons: ['Accept'] }));
+  });
+  await test('non-finite saved input fails closed', async () => {
+    seed(ready); db.__get('opportunities', 'OPP').land.price = Infinity;
+    await denied(req({ override: true, reasons: ['Accept'] }));
+  });
+  await test('unsafe object keys fail closed', async () => {
+    seed(ready); Object.defineProperty(db.__get('opportunities', 'OPP'), '__proto__', { enumerable: true, value: { forged: true } });
+    await denied(req()); assert.equal({}.forged, undefined);
+  });
+  await test('retry callback recomputes the newly read document and leaves no stale decision', async () => {
+    seed(ready); const original = db.runTransaction;
+    let reads = 0;
+    db.runTransaction = async callback => {
+      // Dry-run the first attempt; Firestore discards writes before a retry.
+      await callback({ get: async ref => { reads++; return ref.get(); }, set() {}, update() {} });
+      db.__seed('opportunities', 'OPP', clone(unready));
+      return original.call(db, callback);
+    };
+    try { await assert.rejects(fns.approveOpportunity(req()), e => e.code === 'failed-precondition'); }
+    finally { db.runTransaction = original; }
+    assert.equal(reads, 2); assert.equal(Object.keys(db.__all('icDecisions')).length, 0);
+    assert.equal(db.__get('opportunities', 'OPP').ic, undefined);
+  });
+  // --- Phase 2R-4E: requestId contract -----------------------------------------------------
+  // The client generates and reuses a requestId per decision attempt; a retry with the exact
+  // same requestId+payload must replay the frozen original result rather than execute again,
+  // and a requestId reused with a different payload (including a different caller) must be
+  // rejected rather than silently applied. requestId only guards against duplicate execution
+  // of the SAME request - it says nothing about whether two different, competing requests for
+  // the same opportunity should both be allowed to proceed; that remains a separate, open
+  // policy question (approved-plan point 6).
+  for (const requestId of [undefined, '', '   ', 42]) {
+    await test(`missing/invalid requestId rejected (${JSON.stringify(requestId)})`, async () => {
+      seed(ready); await denied(req({ requestId }), 'invalid-argument');
+    });
+  }
+  await test('resending the identical requestId+payload replays the ORIGINAL result without a second decision', async () => {
+    seed(ready);
+    const request = req({ decision: { decision: 'approve' } });
+    const first = await fns.approveOpportunity(request);
+    const second = await fns.approveOpportunity(request);
+    assert.deepEqual(second, first);
+    assert.equal(Object.keys(db.__all('icDecisions')).length, 1);
+    assert.equal(Object.keys(db.__all('underwritingVersions')).length, 1);
+    assert.equal(db.__get('opportunities', 'OPP').ic.decisions.length, 1);
+  });
+  await test('resending the identical requestId+payload AFTER the opportunity was edited still replays the frozen original', async () => {
+    seed(ready);
+    const request = req({ decision: { decision: 'approve' } });
+    const first = await fns.approveOpportunity(request);
+    db.__seed('opportunities', 'OPP', clone(unready));
+    const second = await fns.approveOpportunity(request);
+    assert.deepEqual(second, first);
+    assert.equal(Object.keys(db.__all('icDecisions')).length, 1);
+    assert.equal(Object.keys(db.__all('underwritingVersions')).length, 1);
+  });
+  await test('same requestId with a different payload is rejected, not silently executed', async () => {
+    seed(ready);
+    const requestId = 'REQ-fixed-1';
+    await fns.approveOpportunity(req({ requestId, decision: { decision: 'approve' } }));
+    await assert.rejects(
+      fns.approveOpportunity(req({ requestId, decision: { decision: 'reject' } })),
+      e => e.code === 'already-exists'
+    );
+    assert.equal(Object.keys(db.__all('icDecisions')).length, 1);
+  });
+  await test('same requestId reused by a different user is rejected (payload is bound to the caller)', async () => {
+    seed(ready);
+    db.__seed('team_members', EMAIL2, { expiresAt: null });
+    db.__seed('team_roles', EMAIL2, { role: 'senior_ic' });
+    const requestId = 'REQ-fixed-2';
+    await fns.approveOpportunity(req({ requestId, decision: { decision: 'approve' } }));
+    await assert.rejects(
+      fns.approveOpportunity({ auth: { token: { email: EMAIL2 } }, data: { oppId: 'OPP', decision: { decision: 'approve' }, requestId, expectedDocHash: req().data.expectedDocHash } }),
+      e => e.code === 'already-exists'
+    );
+    assert.equal(Object.keys(db.__all('icDecisions')).length, 1);
+  });
+  for (const decision of ['reject', 'hold', 'revise']) {
+    await test(`${decision} is recorded with its request result but creates no v4 version`, async () => {
+      seed(unready);
+      const result = await fns.approveOpportunity(req({ decision: { decision }, override: true }));
+      assert.equal(result.versionId, null);
+      assert.equal(Object.keys(db.__all('icDecisions')).length, 1);
+      assert.equal(Object.keys(db.__all('underwritingVersions')).length, 0);
+      assert.equal(Object.keys(db.__all('icDecisionRequests')).length, 1);
+    });
+  }
+  await test('two different requestIds with an identical payload each create their own independent decision and version', async () => {
+    seed(ready);
+    const first = await fns.approveOpportunity(req({ requestId: 'REQ-a', decision: { decision: 'approve' } }));
+    const second = await fns.approveOpportunity(req({ requestId: 'REQ-b', decision: { decision: 'approve' } }));
+    assert.notEqual(first.decisionId, second.decisionId);
+    assert.notEqual(first.versionId, second.versionId);
+    assert.equal(Object.keys(db.__all('icDecisions')).length, 2);
+    assert.equal(Object.keys(db.__all('underwritingVersions')).length, 2);
+  });
+  await test('approved v4 version fields are fully provenanced from the server-trusted evaluation, not the client', async () => {
+    seed(ready);
+    const result = await fns.approveOpportunity(req({ decision: { decision: 'approve' } }));
+    const decisionRecord = db.__get('icDecisions', result.decisionId);
+    const version = db.__get('underwritingVersions', result.versionId);
+    assert.equal(version.oppId, 'OPP');
+    assert.equal(version.stage, 'v4_ic_approved');
+    assert.equal(version.sourceDecisionId, result.decisionId);
+    assert.equal(version.savedBy, EMAIL);
+    assert.equal(version.engineVersion, decisionRecord.evaluation.engineVersion);
+    assert.equal(version.inputHash, decisionRecord.evaluation.inputHash);
+    assert.equal(version.metrics.equityIRR, decisionRecord.evaluation.metrics.equityIRR);
+    assert.equal(version.metrics.projectIRR, decisionRecord.evaluation.metrics.projectIRR);
+    assert.equal(version.metrics.MOIC, decisionRecord.evaluation.metrics.MOIC);
+    assert.equal(version.metrics.dscrMin, decisionRecord.evaluation.metrics.dscrMin);
+    assert.equal(version.metrics.price, ready.land.price);
+    assert.equal(version.thesisSnapshot, (ready.thesis || '').trim());
+  });
+  // --- end Phase 2R-4E block ----------------------------------------------------------------
+  await test('engine package runs without src outside functions; tampering is rejected', async () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'opal-ic-'));
+    try {
+      fs.cpSync(path.join(__dirname, '../generated'), path.join(tmp, 'generated'), { recursive: true });
+      fs.copyFileSync(path.join(__dirname, '../trusted-ic.cjs'), path.join(tmp, 'trusted-ic.cjs'));
+      const run = "require('./trusted-ic.cjs').loadEngine().then(e=>console.log(e.compute(e.withDefaults({})).totalYears)).catch(e=>{console.error(e.message);process.exit(1)})";
+      execFileSync(process.execPath, ['-e', run], { cwd: tmp, stdio: 'pipe' });
+      fs.appendFileSync(path.join(tmp, 'generated/src/domain/financial/financial-engine.js'), '\n// unexpected drift\n');
+      assert.throws(() => execFileSync(process.execPath, ['-e', run], { cwd: tmp, stdio: 'pipe' }));
+    } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+  });
+  console.log(`\n${passed}/${passed} trusted IC tests passed (fakes; not a Rules/concurrency certification).`);
+})().catch(error => { console.error(error); process.exitCode = 1; });

@@ -6,8 +6,12 @@
     "test:financial": "node run_tests_node.js",
     "test:rules": "npm --prefix tests/rules test",
     "test:functions": "npm --prefix functions run lint && npm --prefix functions test",
+    "test:domain": "node scripts/run-verify-suite.mjs domain xirr tooling",
     "test:performance": "node scripts/performance-smoke.mjs",
+    "test:features": "node tests/features/capital-allocation-engine.landfirst.test.mjs && node tests/features/fund-ledger-inkind-classification.test.mjs && node tests/features/asset-link-fund-sync.test.mjs && node tests/features/xirr-comparison-panel.test.mjs && node tests/features/input-validation-panel.test.mjs && node tests/features/blocked-cross-view.test.mjs && node tests/features/document-hash-parity.test.mjs && node tests/features/ic-workflow-approval.test.mjs && node tests/features/portfolio-net-xirr.test.mjs && node tests/features/fund-valuation-model.test.mjs && node tests/features/fund-valuation-requests.test.mjs && node tests/features/fund-valuation-reader.test.mjs && node tests/features/fund-valuation-panel.test.mjs && node tests/features/fund-valuation-editor.test.mjs && node tests/features/fund-valuation-actions.test.mjs && node tests/features/fund-valuation-read-contract.test.mjs && node tests/features/fund-valuation-b0-integration.test.mjs && node tests/features/fund-valuation-editor-wiring.test.mjs && node tests/features/fund-valuation-server-contract.test.mjs && node tests/features/fund-valuation-actions-review.test.mjs && node tests/features/fund-valuation-reviewer-wiring.test.mjs && node tests/features/fund-valuation-eligibility-actions.test.mjs && node tests/features/fund-valuation-eligibility-contract.test.mjs && node tests/features/fund-valuation-eligibility-wiring.test.mjs && node tests/features/portfolio-valuation-source.test.mjs && node tests/features/portfolio-ledger-source.test.mjs && node tests/features/net-xirr-live.test.mjs && node tests/features/net-xirr-screens.test.mjs",
+    "test:emulator": "npm --prefix tests/rules run test:emulator && npm --prefix tests/rules run test:emulator:portfolio",
+    "test:browser": "node scripts/run-browser-tests.mjs",
     "test:load": "npm --prefix tests/rules run test:load",
-    "test": "npm run check:js && npm run test:financial && npm run test:functions && npm run test:performance"
+    "test": "npm run check:js && npm run test:financial && npm run test:domain && npm run test:functions && npm run test:performance && npm run test:features"
   }
 }

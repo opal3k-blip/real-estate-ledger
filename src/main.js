@@ -16,7 +16,7 @@
    Firestore)، فأي مجموعة بيانات إضافية (registerDataCollection) يجب أن تكون مُسجَّلة قبلها
    حتى تُحمَّل من أول تشغيل.
    ========================================================================= */
-import * as core from './core.js?v=20260913-institutional-intelligence';
+import * as core from './core.js?v=20261011-b2-1-fund-valuation-panel';
 
 // إتاحة كل صادرات core.js على window — للتوافق الخلفي الكامل مع كل سكربتات
 // الاختبار (Playwright) المكتوبة طوال هذا المشروع (تستدعي
@@ -83,6 +83,14 @@ registerICWorkflow(core);
 import { registerMaxAcquisitionPrice } from './features/max-acquisition-price.js';
 registerMaxAcquisitionPrice(core);
 
+// لوحة XIRR المقارنة (Shadow، للمقارنة فقط، تاريخ أساس يدوي) — لا تغيّر IRR ولا بوابة اللجنة.
+import { registerXirrComparisonPanel } from './features/xirr-comparison-panel.js';
+registerXirrComparisonPanel(core);
+
+// لوحة التحقق من المدخلات (Phase 3A-2): تعرض المشكلات وتحجب مؤشرات الربحية عند INVALID/INCOMPLETE؛ لا تغيّر الحساب ولا الحفظ.
+import { registerInputValidationPanel } from './features/input-validation-panel.js';
+registerInputValidationPanel(core);
+
 import { registerNegotiation } from './features/negotiation.js';
 registerNegotiation(core);
 
@@ -101,6 +109,8 @@ registerEvidenceTracking(core);
 /* ---------------- المرحلة ٣ ---------------- */
 import { registerPortfolio } from './features/portfolio.js';
 registerPortfolio(core);
+import { installNetXirrLive } from './features/net-xirr-live-wiring.js';
+installNetXirrLive(core);   // R1-C3: ONE Net XIRR source for the portfolio and command-center screens
 
 import { registerConcentrationRisk } from './features/concentration-risk.js';
 registerConcentrationRisk(core);
@@ -143,6 +153,11 @@ registerICPresentation(core);
 // بترتيب التسجيل نفسه (وحدات ES تُحل عند الاستيراد بصرف النظر عن هذا الترتيب)، فقط توضيح منطقي.
 import { registerRolesPermissions } from './features/roles-permissions.js';
 registerRolesPermissions(core);
+
+/* R1-B2 / B2-1 — لوحة تقييم القيمة المتبقية للصندوق (قراءة فقط) داخل تفاصيل الصندوق. بعد الأدوار (تعتمد على team_roles)
+   وقبل core.initDb(). لا callables ولا كتابة ولا تفعيل لـNet XIRR. */
+import { registerFundValuationPanel } from './features/fund-valuation-panel.js';
+registerFundValuationPanel(core);
 
 // مكتبة الكفاءة المعمارية والتكلفة المرجعية — تُسجَّل بعد الأدوار مباشرة (تستورد
 // canManageLibraries/certifyBadge منها). طلب المستخدم الثاني في هذه المرحلة: مكتبة

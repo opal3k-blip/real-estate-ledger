@@ -1,0 +1,3 @@
+{
+  "emulators": { "firestore": { "port": 8181 } }
+}

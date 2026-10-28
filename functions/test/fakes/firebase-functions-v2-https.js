@@ -1,7 +1,8 @@
 class HttpsError extends Error {
-  constructor(code, message) {
+  constructor(code, message, details) {
     super(message);
     this.code = code;
+    this.details = details; // the real HttpsError exposes the third constructor argument as .details
   }
 }
 function onCall(handler) {

@@ -3,9 +3,13 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "postinstall": "node scripts/fix-stream-json-legacy-paths.cjs",
     "pretest": "node -e \"require('fs').copyFileSync('../../firestore.rules','./firestore.rules')\"",
     "pretest:load": "node -e \"require('fs').copyFileSync('../../firestore.rules','./firestore.rules')\"",
-    "test": "firebase emulators:exec --only firestore --project demo-test \"node rules.test.mjs\"",
+    "test": "firebase emulators:exec --only firestore --project demo-test \"node rules.test.mjs && node transactions-canonical-id.test.mjs\"",
+    "pretest:emulator": "node -e \"require('fs').copyFileSync('../../firestore.rules','./firestore.rules')\"",
+    "test:emulator": "firebase emulators:exec --only firestore --project demo-test \"node ../../functions/test/p0-approve-validation.emulator.test.js && node ../../functions/test/p0-approve-opportunity-concurrency.emulator.test.js && node document-hash-parity.emulator.test.mjs && node ../../functions/test/fund-valuations.emulator.test.js\"",
+    "test:emulator:portfolio": "firebase emulators:exec --config firebase.portfolio-reads.json --only firestore --project demo-test \"node portfolio-valuation-adapter.emulator.test.mjs\"",
     "test:load": "firebase emulators:exec --only firestore --project demo-load \"node load-stress.test.mjs\""
   },
   "devDependencies": {
@@ -18,6 +22,9 @@
     "qs": "^6.14.0",
     "csv-parse": "^7.0.2",
     "stream-json": "^3.6.0",
-    "@opentelemetry/core": "^2.8.0"
+    "@opentelemetry/core": "^2.8.0",
+    "@firebase/firestore": {
+      "@grpc/grpc-js": "1.14.6"
+    }
   }
 }

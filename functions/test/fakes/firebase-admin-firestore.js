@@ -94,6 +94,11 @@ class FakeTransaction {
     if (!this.store[ref.coll] || !this.store[ref.coll][ref.id]) throw new Error('update on missing doc: ' + ref.coll + '/' + ref.id);
     applyDotted(this.store[ref.coll][ref.id], JSON.parse(JSON.stringify(patch)));
   }
+  // Phase 2R-4D4-C: archiveOrDeleteFund's genuine-hard-delete branch calls tx.delete(fundRef) —
+  // not exercised by any test before this phase, so the fake transaction never needed it.
+  delete(ref) {
+    if (this.store[ref.coll]) delete this.store[ref.coll][ref.id];
+  }
 }
 
 class FakeFirestore {

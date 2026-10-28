@@ -1,0 +1,8 @@
+{
+  "name": "browser-tests",
+  "private": true,
+  "description": "Headless-Chromium browser tests (run by scripts/run-browser-tests.mjs). Playwright is pinned to the version the tests were validated with.",
+  "devDependencies": {
+    "playwright": "1.56.0"
+  }
+}
