@@ -38,12 +38,14 @@ const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..
 const FORBIDDEN = [/^capture-/i, /^golden-fixtures\./i, /golden-master.*generate/i];
 
 export const GROUPS = {
-  // tests/domain: the 16 tracked verify-*.mjs (capture-*.mjs are NOT matched).
+  // tests/domain: the 18 tracked verify-*.mjs (capture-*.mjs are NOT matched).
   domain: {
     dir: 'tests/domain',
     pattern: /^verify-.*\.mjs$/,
     expected: [
       'verify-construction-spend-schedule.mjs',
+      'verify-descartes-sturm-exit-code.mjs',
+      'verify-evidence-quality-timezone.mjs',
       'verify-financial-authority-cutover.mjs',
       'verify-financial-event-model.mjs',
       'verify-financial-golden-master.mjs',

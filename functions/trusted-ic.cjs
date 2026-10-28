@@ -7,15 +7,57 @@ const generated = path.join(__dirname, 'generated');
 const hash = value => crypto.createHash('sha256').update(value).digest('hex');
 let enginePromise;
 
+/* Review comment #1. The manifest used to be the only source of truth for "which files must be intact", so deleting
+   an entry (and recomputing engineVersion) made a module run unverified. This list is FIXED IN CODE: every file the
+   IC decision path can execute must be present in the manifest with a matching hash. It must equal what
+   functions/scripts/build-domain.cjs emits (trusted-ic-bundle.test.cjs fails on drift; `npm run check:domain` already
+   fails on a stale bundle).
+   This is an integrity / drift check. It is NOT authenticity: whoever can rewrite the deployed bundle can rewrite a
+   file and its manifest hash together. Authenticity needs an anchor outside generated/. */
+const REQUIRED_BUNDLE_FILES = Object.freeze([
+  'document-canonical.cjs',
+  'package.json',
+  'src/domain/data-quality/data-quality-engine.js',
+  'src/domain/due-diligence/dd-engine.js',
+  'src/domain/evidence/evidence-engine.js',
+  'src/domain/financial/financial-context.js',
+  'src/domain/financial/financial-engine.js',
+  'src/domain/financial/max-acquisition-price.js',
+  'src/domain/financial/xirr/portfolio-xirr.js',
+  'src/domain/financial/xirr/residual-valuation.js',
+  'src/domain/financial/xirr/xirr-opportunity.js',
+  'src/domain/ic/ic-readiness-engine.js',
+  'src/domain/planning/planning-engine.js',
+  'src/domain/validation/debt-coverage.js',
+  'src/domain/validation/document-canonical.js',
+  'src/domain/validation/input-validation-engine.js',
+  'src/domain/validation/risk-classification.js',
+  'src/features/ic-decision-gate.js',
+]);
+
+// Synchronous, memoised on success only (a failed check is re-run, never cached as "verified"). Nothing from
+// generated/ may be executed before this returns: documentHash (document-canonical.cjs) and loadEngine both call it.
+let verifiedManifest;
+function verifyBundle() {
+  if (verifiedManifest) return verifiedManifest;
+  const manifest = JSON.parse(fs.readFileSync(path.join(generated, 'manifest.json'), 'utf8'));
+  if (manifest.schema !== 1 || !manifest.files || typeof manifest.files !== 'object'
+    || hash(JSON.stringify(manifest.files)) !== manifest.engineVersion) throw new Error('Invalid domain manifest');
+  for (const file of REQUIRED_BUNDLE_FILES) {
+    if (!Object.prototype.hasOwnProperty.call(manifest.files, file)) throw new Error(`Domain bundle is missing required module: ${file}`);
+  }
+  for (const [file, expected] of Object.entries(manifest.files)) {
+    if (file.includes('..') || path.isAbsolute(file)) throw new Error('Invalid bundle path');
+    const bytes = fs.readFileSync(path.join(generated, file), 'utf8').replace(/\r\n/g, '\n');
+    if (hash(bytes) !== expected) throw new Error(`Domain bundle integrity failure: ${file}`);
+  }
+  verifiedManifest = manifest;
+  return manifest;
+}
+
 function loadEngine() {
   if (!enginePromise) enginePromise = (async () => {
-    const manifest = JSON.parse(fs.readFileSync(path.join(generated, 'manifest.json'), 'utf8'));
-    if (manifest.schema !== 1 || hash(JSON.stringify(manifest.files)) !== manifest.engineVersion) throw new Error('Invalid domain manifest');
-    for (const [file, expected] of Object.entries(manifest.files)) {
-      if (file.includes('..') || path.isAbsolute(file)) throw new Error('Invalid bundle path');
-      const bytes = fs.readFileSync(path.join(generated, file), 'utf8').replace(/\r\n/g, '\n');
-      if (hash(bytes) !== expected) throw new Error(`Domain bundle integrity failure: ${file}`);
-    }
+    const manifest = verifyBundle();
     const read = file => import(pathToFileURL(path.join(generated, file)).href);
     const [context, financial, ic, presentation, risk] = await Promise.all([
       read('src/domain/financial/financial-context.js'), read('src/domain/financial/financial-engine.js'),
@@ -74,9 +116,17 @@ function validateInput(value, depth = 0, pathParts = []) {
 const VOLATILE_DOC_FIELDS = Object.freeze([]);
 // The encoding itself lives in src/domain/validation/document-canonical.js (single source shared with the browser);
 // build-domain derives this CJS file from it and `--check` fails on drift.
-const { canonicalDocValue, omitCanonicalPaths } = require('./generated/document-canonical.cjs');
+// Loaded lazily and only AFTER verifyBundle(): it used to be require()d at module load, i.e. executed before any
+// integrity check, although it computes the hash every approval is bound to.
+let canonicalApi;
+function canonical() {
+  if (!canonicalApi) { verifyBundle(); canonicalApi = require('./generated/document-canonical.cjs'); }
+  return canonicalApi;
+}
+function canonicalDocValue(doc) { return canonical().canonicalDocValue(doc); }
 function documentHash(doc, volatilePaths = VOLATILE_DOC_FIELDS) {
-  return hash(JSON.stringify(omitCanonicalPaths(canonicalDocValue(doc), volatilePaths)));
+  const { canonicalDocValue: encode, omitCanonicalPaths } = canonical();
+  return hash(JSON.stringify(omitCanonicalPaths(encode(doc), volatilePaths)));
 }
 
 // Bounds protect synchronous compute from unbounded year/level loops; values are never clamped.
@@ -134,4 +184,4 @@ async function recompute(stored, nowMs) {
       readiness: auditValue(readiness) },
   };
 }
-module.exports = { recompute, loadEngine, auditValue, documentHash, canonicalDocValue, validateInput, VOLATILE_DOC_FIELDS };
+module.exports = { recompute, loadEngine, auditValue, documentHash, canonicalDocValue, validateInput, VOLATILE_DOC_FIELDS, REQUIRED_BUNDLE_FILES };

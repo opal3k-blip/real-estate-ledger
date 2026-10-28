@@ -41,13 +41,15 @@ export function normalizeConstructionSpendSchedule(schedule,{acquisitionDate,con
   const entries=schedule.entries.map((row,index)=>{
     if(!row || typeof row!=='object') throw new Error(`INVALID_CONSTRUCTION_SPEND_ENTRY:${index}`);
     const date=row.date;
-    const share=num(row.share);
+    // A share must already BE a number. Number() coercion would silently turn true, [1], " 1 " or "1" into 1
+    // (review comment #3); the header promise is "never normalizes malformed shares".
+    const share=row.share;
     if(!isStrictIsoDate(date)) throw new Error(`INVALID_CONSTRUCTION_SPEND_DATE:${index}:${date}`);
     if(date<acquisitionDate) throw new Error(`CONSTRUCTION_SPEND_BEFORE_ACQUISITION:${index}:${date}`);
     if(date>completionDate) throw new Error(`CONSTRUCTION_SPEND_AFTER_MODELED_COMPLETION:${index}:${date}:${completionDate}`);
     if(seen.has(date)) throw new Error(`DUPLICATE_CONSTRUCTION_SPEND_DATE:${date}`);
     seen.add(date);
-    if(!Number.isFinite(share) || share<=0 || share>1) throw new Error(`INVALID_CONSTRUCTION_SPEND_SHARE:${index}:${row.share}`);
+    if(typeof share!=='number' || !Number.isFinite(share) || share<=0 || share>1) throw new Error(`INVALID_CONSTRUCTION_SPEND_SHARE:${index}:${row.share}`);
     return Object.freeze({date,share,sourceIndex:index});
   });
 

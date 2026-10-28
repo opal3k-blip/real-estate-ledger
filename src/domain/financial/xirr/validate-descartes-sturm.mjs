@@ -4,11 +4,13 @@
    (not cashflow data) so the numerics can be judged on their own, separate
    from any opportunity data. This is a review artifact, not a feature --
    per instruction, the algebraic solver itself is NOT being expanded now.
+   Exit status: 0 only if every CORE check passes; 1 if any fails (enforced by test:domain). Boundary probes are informational.
    Run: node src/domain/financial/xirr/validate-descartes-sturm.mjs
    ========================================================================= */
 import { sturmRealRootCount } from "./xirr-opportunity.js";
 
-let pass = 0, fail = 0;
+let pass = 0, fail = 0;          // core known-answer checks: a failure fails the run
+let probePass = 0, probeFail = 0; // boundary probes (Wilkinson, degree-20): reported, NOT enforced until their contract is decided
 function check(name, actual, expected) {
   const ok = actual === expected;
   console.log(`${ok ? "PASS" : "FAIL"}  ${name}: sturmRealRootCount=${actual}  expected=${expected}`);
@@ -52,15 +54,15 @@ check("degree-3 SCALED by 1e7 (real-estate-magnitude coefficients)", sturmRealRo
 const wilkinson10 = expandRoots([1,2,3,4,5,6,7,8,9,10]);
 const w10count = sturmRealRootCount(wilkinson10, 0, 11);
 console.log(`INFO  Wilkinson-style degree-10 (roots 1..10): sturmRealRootCount(0,11) = ${w10count}  (expected 10; this is a KNOWN hard case for floating-point polynomial algebra)`);
-if (w10count === 10) { console.log("PASS  Wilkinson-10 held up at this scale."); pass++; }
-else { console.log("FAIL  Wilkinson-10 did NOT hold up -- documented as a numerical limit below, not silently hidden."); fail++; }
+if (w10count === 10) { console.log("PROBE-PASS  Wilkinson-10 held up at this scale."); probePass++; }
+else { console.log("PROBE-FAIL  Wilkinson-10 did NOT hold up -- documented as a numerical limit below, not silently hidden."); probeFail++; }
 
 // Even harder: same roots but coefficients additionally scaled by 1e6 (cashflow magnitude).
 const wilkinson10Scaled = wilkinson10.map((c) => c * 1e6);
 const w10ScaledCount = sturmRealRootCount(wilkinson10Scaled, 0, 11);
 console.log(`INFO  Wilkinson-style degree-10 SCALED by 1e6: sturmRealRootCount(0,11) = ${w10ScaledCount}  (expected 10)`);
-if (w10ScaledCount === 10) { console.log("PASS  Wilkinson-10 scaled held up."); pass++; }
-else { console.log("FAIL  Wilkinson-10 scaled did NOT hold up -- see numerical-limits note."); fail++; }
+if (w10ScaledCount === 10) { console.log("PROBE-PASS  Wilkinson-10 scaled held up."); probePass++; }
+else { console.log("PROBE-FAIL  Wilkinson-10 scaled did NOT hold up -- see numerical-limits note."); probeFail++; }
 
 // Degree-20 stress test (roots 1..20) -- the upper end of a plausible real-estate
 // holding horizon if the Sturm fallback were ever reached at that length. This is
@@ -73,8 +75,12 @@ const c20 = sturmRealRootCount(deg20, 0, 21);
 const c20s = sturmRealRootCount(deg20Scaled, 0, 21);
 console.log(`INFO  degree-20 (roots 1..20), unscaled: sturmRealRootCount(0,21) = ${c20}  (expected 20)`);
 console.log(`INFO  degree-20 (roots 1..20), scaled by 1e6: sturmRealRootCount(0,21) = ${c20s}  (expected 20)`);
-if (c20 === 20) { pass++; } else { fail++; console.log("FAIL  degree-20 unscaled broke down -- documented limit, see report."); }
-if (c20s === 20) { pass++; } else { fail++; console.log("FAIL  degree-20 scaled broke down -- documented limit, see report."); }
+if (c20 === 20) { probePass++; } else { probeFail++; console.log("PROBE-FAIL  degree-20 unscaled broke down -- documented limit, see report."); }
+if (c20s === 20) { probePass++; } else { probeFail++; console.log("PROBE-FAIL  degree-20 scaled broke down -- documented limit, see report."); }
 
 console.log(`\n${pass} passed, ${fail} failed.`);
-process.exit(0); // informational run: exit 0 regardless, findings are reported above (not hidden by a failing exit code during review).
+console.log(`${probePass} boundary probes passed, ${probeFail} failed (informational; not part of the exit status).`);
+// Review comment #4: a failed CORE check MUST fail the run, otherwise `npm run test:domain` (which only looks at the exit
+// code) can never catch a Sturm/Descartes regression. The boundary probes document known numerical limits and are
+// reported but do not decide the exit status until the owner decides whether they are acceptance conditions.
+process.exit(fail > 0 ? 1 : 0);

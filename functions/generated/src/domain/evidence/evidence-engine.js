@@ -40,6 +40,22 @@ export function evidenceCoverageStats(d){
   return { total, sourcedCount:sourced.length, pct, verifiedCount:verified.length, verifiedPct, unsourcedCritical, unsourcedMinor };
 }
 
+// Evidence dates are date-only (YYYY-MM-DD). They are read as midnight in a FIXED Riyadh offset (UTC+3, no DST), not in the
+// runtime's local zone: parsing as local midnight made the same evidence stale in a Riyadh browser and fresh on a UTC server near
+// the 730-day boundary. The fixed offset keeps the day boundary Riyadh users already see and makes browser and server agree.
+// Only the zone handling differs from the previous `new Date(date+'T00:00:00')`: the accepted shapes are the same (month 1-12,
+// day 1-31, day overflow rolls over, anything else is NaN), and years 0000-0099 are read literally (setUTCFullYear, not Date.UTC).
+const RIYADH_OFFSET_MS = 3 * 3600000;
+function evidenceDateMs(s){
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(s));
+  if(!m) return NaN;
+  const mo = +m[2], da = +m[3];
+  if(mo < 1 || mo > 12 || da < 1 || da > 31) return NaN;
+  const d = new Date(0);
+  d.setUTCFullYear(+m[1], mo-1, da);
+  return d.getTime() - RIYADH_OFFSET_MS;
+}
+
 export function evidenceQuality(d, nowMs = Date.now()){
   const evidence = (d && d.evidence) || {};
   const critical = KEY_FIELDS.filter(f=>f.critical && (!f.appliesTo || f.appliesTo===(d && d.meta && d.meta.oppType)));
@@ -50,7 +66,7 @@ export function evidenceQuality(d, nowMs = Date.now()){
     if(!ev.source) return;
     if(ev.tier==='tier4' || ev.confidence==='low' || !ev.verifiedBy) weak.push(f);
     if(ev.date){
-      const ageDays = Math.floor((nowMs - new Date(ev.date+'T00:00:00').getTime())/86400000);
+      const ageDays = Math.floor((nowMs - evidenceDateMs(ev.date))/86400000);
       if(isFinite(ageDays) && ageDays>730) stale.push(f);
     }
   });

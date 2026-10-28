@@ -34,6 +34,12 @@ assert.throws(()=>normalizeConstructionSpendSchedule({...schedule,entries:[{date
 assert.throws(()=>normalizeConstructionSpendSchedule({...schedule,entries:[{date:'2026-04-15',share:0.5},{date:'2026-04-15',share:0.5}]},{acquisitionDate,constructionYears:2}),/DUPLICATE_CONSTRUCTION_SPEND_DATE/);
 assert.throws(()=>normalizeConstructionSpendSchedule({...schedule,entries:[{date:'2026-04-15',share:0.5},{date:'2028-04-15',share:0.5}]},{acquisitionDate,constructionYears:2}),/CONSTRUCTION_SPEND_AFTER_MODELED_COMPLETION/);
 
+// Review comment #3: a share is never coerced. Only a real finite number in (0,1] is accepted.
+for(const bad of [true,[1],' 1 ','1',null,'',{},undefined,NaN,Infinity,0,-0.5,1.5]){
+  assert.throws(()=>normalizeConstructionSpendSchedule({...schedule,entries:[{date:'2026-04-15',share:bad}]},{acquisitionDate,constructionYears:2}),/INVALID_CONSTRUCTION_SPEND_SHARE/,`non-strict share must be rejected: ${String(JSON.stringify(bad))}`);
+}
+assert.equal(normalizeConstructionSpendSchedule({...schedule,entries:[{date:'2026-04-15',share:1}]},{acquisitionDate,constructionYears:2}).entries[0].share,1,'a genuine number 1 is still accepted');
+
 const base=get('T01-base-development');
 const baseInput=JSON.parse(JSON.stringify(base.input));
 const baseC=C.compute(baseInput,'base');

@@ -396,6 +396,19 @@ service cloud.firestore {
     function transactionCanonicalId(data) {
       return data.type + '-' + data.action + '-' + data.relatedId;
     }
+    // Review comment #5: the canonical id above is only as good as its parts. `action` used to be free text, so
+    // (a) one real event could be logged under unlimited ids and (b) '-' inside `action` made different events derive
+    // the SAME id (action="create", relatedId="x-y" vs action="create-x", relatedId="y"), letting a free-text write
+    // block the genuine one. Closed here with an allow-list of the (type, action) pairs the clients and the server
+    // actually use (src/core.js create/approve/post/waive; waive is capital calls only). No allowed type or action
+    // contains '-', so (type, action, relatedId) is recoverable from the id and the id format is unchanged.
+    function transactionActionAllowed(data) {
+      let t = data.get('type', null);
+      let a = data.get('action', null);
+      return (t == 'commitment' && a == 'create')
+        || (t == 'capitalCall' && a in ['create', 'approve', 'post', 'waive'])
+        || (t == 'distribution' && a in ['create', 'approve', 'post']);
+    }
     match /transactions/{id} {
       allow read: if isAuthorized();
       // Phase 2R-4D4-C (assetLink hardening): the previous unconditional exception for
@@ -412,6 +425,7 @@ service cloud.firestore {
       // requestId-keyed idempotent replay (functions/index.js, assetLinkRequests below).
       allow create: if isFundManagerOrAbove() && transactionAttributionHonest(request.resource.data)
           && request.resource.data.get('type', null) != 'assetLink'
+          && transactionActionAllowed(request.resource.data)
           && transactionMatchesRecord(request.resource.data) && id == transactionCanonicalId(request.resource.data);
       allow update, delete: if false;
     }
